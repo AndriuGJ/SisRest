@@ -1,0 +1,114 @@
+# Modelo de datos de SisRest
+
+Las migraciones son la fuente de verdad del esquema. Esta guía explica su organización y las relaciones principales.
+
+## Convenciones
+
+- Tablas de dominio en español y modelo User de Laravel conservado.
+- Dinero DECIMAL(14,2); cantidades DECIMAL(16,4); costos unitarios DECIMAL(18,6).
+- Estados mediante enums de PHP y columnas enum de base de datos.
+- Claves foráneas con eliminación restringida para conservar referencias históricas.
+- Productos y configuraciones se desactivan en lugar de borrar su historia.
+- Campos de instantánea conservan descripción, precio y datos fiscales históricos.
+
+## Configuración y catálogos
+
+| Tabla | Modelo | Relaciones directas |
+| --- | --- | --- |
+| tipos_documento_identidad | TipoDocumentoIdentidad | Catálogo o configuración |
+| tipos_comprobante | TipoComprobante | Catálogo o configuración |
+| medios_pago | MedioPago | Catálogo o configuración |
+| unidades_medida | UnidadMedida | Catálogo o configuración |
+| categorias_producto | CategoriaProducto | Catálogo o configuración |
+| motivos_beneficio | MotivoBeneficio | Catálogo o configuración |
+| empresa | Empresa | Catálogo o configuración |
+| configuraciones_facturacion | ConfiguracionFacturacion | empresa → Empresa |
+| salones | Salon | Catálogo o configuración |
+| areas_preparacion | AreaPreparacion | Catálogo o configuración |
+| impresoras | Impresora | areaPreparacion → AreaPreparacion |
+| cajas | Caja | impresora → Impresora |
+| mesas | Mesa | salon → Salon |
+| clientes | Cliente | tipoDocumento → TipoDocumentoIdentidad |
+| proveedores | Proveedor | tipoDocumento → TipoDocumentoIdentidad |
+
+## Inventario, producción y compras
+
+| Tabla | Modelo | Relaciones directas |
+| --- | --- | --- |
+| articulos | Articulo | unidadMedida → UnidadMedida, presentaciones → PresentacionArticulo |
+| presentaciones_articulo | PresentacionArticulo | articulo → Articulo |
+| productos | Producto | articulo → Articulo, categoria → CategoriaProducto, areaPreparacion → AreaPreparacion, receta → Receta, componentes → ComboComponente |
+| combo_componentes | ComboComponente | combo → Producto, producto → Producto |
+| recetas | Receta | producto → Producto, detalles → RecetaDetalle |
+| receta_detalles | RecetaDetalle | receta → Receta, articulo → Articulo |
+| preparaciones | Preparacion | producto → Producto, receta → Receta, usuario → User, detalles → PreparacionDetalle |
+| preparacion_detalles | PreparacionDetalle | preparacion → Preparacion, articulo → Articulo |
+| compras | Compra | proveedor → Proveedor, usuario → User, detalles → CompraDetalle, pagos → PagoCompra |
+| compra_detalles | CompraDetalle | compra → Compra, articulo → Articulo, presentacion → PresentacionArticulo |
+| turnos_caja | TurnoCaja | caja → Caja, usuario → User, movimientos → MovimientoCaja, arqueos → ArqueoCaja |
+| pagos_compra | PagoCompra | compra → Compra, medioPago → MedioPago, turnoCaja → TurnoCaja, usuario → User |
+
+## Pedidos y cocina
+
+| Tabla | Modelo | Relaciones directas |
+| --- | --- | --- |
+| pedidos | Pedido | mesa → Mesa, mozo → User, cliente → Cliente, detalles → PedidoDetalle, cobros → Cobro, delivery → EntregaDelivery |
+| ocupaciones_mesa | OcupacionMesa | mesa → Mesa, pedido → Pedido |
+| entregas_delivery | EntregaDelivery | pedido → Pedido |
+| pedido_detalles | PedidoDetalle | pedido → Pedido, producto → Producto, padre → PedidoDetalle, hijos → PedidoDetalle, reservas → ReservaInventario |
+| reservas_inventario | ReservaInventario | detallePedido → PedidoDetalle, articulo → Articulo |
+| envios_cocina | EnvioCocina | pedido → Pedido, areaPreparacion → AreaPreparacion, detalles → EnvioCocinaDetalle |
+| envio_cocina_detalles | EnvioCocinaDetalle | envio → EnvioCocina, detallePedido → PedidoDetalle |
+
+## Cobros, caja y devoluciones
+
+| Tabla | Modelo | Relaciones directas |
+| --- | --- | --- |
+| cobros | Cobro | pedido → Pedido, cliente → Cliente, turnoCaja → TurnoCaja, detalles → CobroDetalle, pagos → Pago, comprobante → Comprobante |
+| cobro_detalles | CobroDetalle | cobro → Cobro, detallePedido → PedidoDetalle |
+| pagos | Pago | cobro → Cobro, medioPago → MedioPago |
+| devoluciones | Devolucion | cobro → Cobro, turnoCaja → TurnoCaja, detalles → DevolucionDetalle, pagos → DevolucionPago |
+| devolucion_detalles | DevolucionDetalle | devolucion → Devolucion, detalleCobro → CobroDetalle |
+| devolucion_pagos | DevolucionPago | devolucion → Devolucion, pagoOriginal → Pago, medioPago → MedioPago |
+| movimientos_caja | MovimientoCaja | turnoCaja → TurnoCaja, usuario → User |
+| arqueos_caja | ArqueoCaja | turnoCaja → TurnoCaja, usuario → User |
+| movimientos_inventario | MovimientoInventario | articulo → Articulo, usuario → User |
+
+## Comprobantes e impresión
+
+| Tabla | Modelo | Relaciones directas |
+| --- | --- | --- |
+| series_comprobante | SerieComprobante | tipoComprobante → TipoComprobante |
+| comprobantes | Comprobante | serie → SerieComprobante, cobro → Cobro, referencia → Comprobante, detalles → ComprobanteDetalle, envios → ComprobanteEnvio |
+| comprobante_detalles | ComprobanteDetalle | comprobante → Comprobante, detalleCobro → CobroDetalle |
+| comprobante_envios | ComprobanteEnvio | comprobante → Comprobante |
+| trabajos_impresion | TrabajoImpresion | impresora → Impresora, reimpresionDe → TrabajoImpresion |
+
+## Restricciones principales
+
+- Solo un turno abierto por caja mediante columna generada e índice único; los turnos cerrados no chocan entre sí.
+- Solo una ocupación activa por mesa y un pedido por ocupación.
+- Serie y correlativo únicos por comprobante.
+- Claves de idempotencia únicas en pagos, devoluciones, movimientos y trabajos.
+- En MySQL: reservas entre cero y stock físico; cantidades y costos válidos; contadores de preparación coherentes; descuentos sin acumulación.
+- Las restricciones entre varias tablas o sumas de detalles requieren los servicios transaccionales descritos en contratos-operativos.md.
+
+## Inventario y producción
+
+Un artículo es una identidad de inventario: insumo, preparado o reventa. Un producto es una oferta de venta. Cada producto que no es combo enlaza su artículo. El combo enlaza productos y utiliza sus existencias.
+
+Una receta indica consumos estándar. Una preparación conserva cantidades estándar y reales utilizadas, más costos de esa operación. Los movimientos registran entradas y salidas; las reservas registran compromisos del pedido sin descontar otra vez ingredientes.
+
+## Pedido, cobro y documento
+
+Un pedido contiene consumos. Cada cobro asigna productos y cantidades de ese pedido a un grupo pagador y a una caja. Los pagos desglosan los medios utilizados. El comprobante conserva su contenido y estado tributario independientemente del pago.
+
+Los adicionales y componentes de combos se guardan como líneas hijas del pedido. Los componentes no facturan un segundo precio. Los envíos a cocina conservan el destino y las cantidades de cada lote.
+
+## Tablas de infraestructura
+
+La plantilla mantiene users, sesiones, recuperación, cache, colas, passkeys y doble factor. Spatie aporta roles, permissions, sus pivotes y activity_log. Las migraciones publicadas están incluidas y se pueden revertir.
+
+## Límites de esta entrega
+
+No hay todavía formularios de módulos ni servicios completos de operación. El esquema no sustituye la autorización en servidor, el bloqueo de filas, la validación de totales, el control de operaciones ya confirmadas ni los procedimientos tributarios.
