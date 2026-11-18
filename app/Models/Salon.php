@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property int $id
@@ -24,6 +25,12 @@ class Salon extends Model
         'orden',
         'activo',
     ];
+
+    /** @return HasMany<Mesa, $this> */
+    public function mesas(): HasMany
+    {
+        return $this->hasMany(Mesa::class, 'salon_id');
+    }
 
     /** @return array<string, string> */
     protected function casts(): array

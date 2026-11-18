@@ -27,7 +27,9 @@ class ConfiguracionInicialSeeder extends Seeder
             'entorno' => 'beta',
         ]);
 
-        Salon::firstOrCreate(['codigo' => 'principal'], ['nombre' => 'Principal']);
+        if (! Salon::query()->exists()) {
+            Salon::create(['codigo' => 'principal', 'nombre' => 'Principal']);
+        }
         $cocina = AreaPreparacion::firstOrCreate(['codigo' => 'cocina'], ['nombre' => 'Cocina']);
         $barra = AreaPreparacion::firstOrCreate(['codigo' => 'barra'], ['nombre' => 'Barra', 'activo' => false]);
 

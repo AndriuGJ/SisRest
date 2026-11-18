@@ -25,6 +25,17 @@ No modificar saldos desde Livewire sin el correspondiente movimiento.
 - Anular libera lo reutilizable o registra merma; no devuelve automáticamente ingredientes consumidos.
 - Cambiar recetas, combos o precios no reescribe operaciones históricas.
 
+## Configuración de salones y mesas
+
+Las pantallas de Salones y Mesas usan `configuracion.restaurante` y el servicio `GestionRestaurante`. No eliminan registros; los cambios conservan responsable y valores en auditoría.
+
+- Una mesa se puede ofrecer únicamente si ella y su salón están activos. Desactivar un salón conserva las activaciones individuales de sus mesas.
+- El número/nombre de mesa es único dentro de cada salón; el código de salón es globalmente único.
+- Una ocupación en `ocupaciones_mesa` bloquea cambios a la mesa aunque su pedido ya esté cerrado. También bloquea cualquier pedido no cerrado ni anulado, aunque falte la ocupación.
+- Antes de editar, mover o cambiar el estado de una mesa, se comprueba que esté libre. Antes de desactivar un salón se comprueba lo mismo para todas sus mesas. Guardar un formulario no permite saltarse estas comprobaciones.
+- La configuración bloquea los salones en orden por ID y después la mesa afectada. **El futuro servicio POS debe adquirir primero el bloqueo del salón y luego el de la mesa**, comprobar ambos estados y crear la ocupación dentro de la misma transacción. De esta forma no podrá abrir una atención mientras otra transacción desactiva o mueve la mesa.
+- Las operaciones que afecten varias mesas/salones deben mantener ese mismo orden de bloqueo. Las pruebas actuales comprueban que una nueva ocupación/pedido entre abrir y guardar el formulario impide la modificación; las carreras reales con el POS deberán probarse al implementar ese servicio.
+
 ## Pedidos y cocina
 
 - Debe existir caja abierta para operar ventas.
@@ -77,4 +88,4 @@ No modificar saldos desde Livewire sin el correspondiente movimiento.
 
 ## Siguiente alcance
 
-Usuarios y permisos ya tiene sus pantallas, servicio transaccional y autorización de acciones. Para los módulos operativos siguen pendientes servicios, validaciones, pantallas Livewire, gráficos, exportaciones, pruebas de concurrencia, impresión con POS80 y facturación de pruebas. Esta entrega no envía documentos a SUNAT ni trabajos a impresoras.
+Usuarios y permisos, Salones y Mesas ya tienen pantallas, servicios transaccionales y autorización de acciones. Para los módulos operativos siguen pendientes servicios, validaciones, pantallas Livewire, gráficos, exportaciones, pruebas de concurrencia, impresión con POS80 y facturación de pruebas. Esta entrega no envía documentos a SUNAT ni trabajos a impresoras.

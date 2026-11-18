@@ -1,5 +1,4 @@
 <div class="mx-auto w-full max-w-7xl space-y-5">
-    <x-administracion.tabs active="roles" />
     <header class="flex flex-wrap items-start justify-between gap-4">
         <div>
             <p class="mb-1 text-xs font-medium tracking-wide text-zinc-500">ADMINISTRACIÓN</p>

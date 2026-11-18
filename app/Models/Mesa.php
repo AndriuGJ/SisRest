@@ -5,6 +5,8 @@ namespace App\Models;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * @property int $id
@@ -25,6 +27,18 @@ class Mesa extends Model
         'capacidad',
         'activo',
     ];
+
+    /** @return HasOne<OcupacionMesa, $this> */
+    public function ocupacion(): HasOne
+    {
+        return $this->hasOne(OcupacionMesa::class, 'mesa_id');
+    }
+
+    /** @return HasMany<Pedido, $this> */
+    public function pedidos(): HasMany
+    {
+        return $this->hasMany(Pedido::class, 'mesa_id');
+    }
 
     /** @return array<string, string> */
     protected function casts(): array

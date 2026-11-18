@@ -4,7 +4,7 @@ Base de un sistema de restaurante para un local, con dos cajas, atención en mes
 
 ## Estado
 
-Incluye la base de datos, dependencias y el módulo de **Usuarios y permisos** implementado con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. Los módulos operativos del restaurante se implementarán en las siguientes entregas.
+Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos** y **Salones y Mesas** implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. Los módulos operativos del restaurante se implementarán en las siguientes entregas.
 
 Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. La presencia de estas tablas no significa que ya existan los servicios de confirmación de compras, producción, cobros o emisión fiscal.
 
@@ -26,6 +26,24 @@ Las tablas soportan preparación real, reservas de existencias, combos por compo
 - Cambios de acceso serializados en transacciones y registrados en auditoría; las contraseñas no se incluyen en los registros.
 
 Los accesos aparecen en el sidebar según `usuarios.gestionar` y `roles.gestionar`. No se eliminan usuarios desde estas pantallas.
+
+## Salones y Mesas
+
+Accesos desde el sidebar, en **Configuración del restaurante**, con el permiso `configuracion.restaurante`. No hay una segunda navegación entre módulos en la cabecera; se retiró también de Usuarios y Roles.
+
+- `/configuracion/restaurante/salones`: búsqueda, filtro por estado, paginación, registro y edición de nombre, código, orden de visualización y estado. Cada fila permite consultar las mesas del salón.
+- `/configuracion/restaurante/mesas`: búsqueda, filtros por salón y estado, paginación, registro y edición de número/nombre de mesa y capacidad opcional.
+- Código de salón único, normalizado en minúsculas. Número/nombre de mesa único **dentro del salón**, normalizado en mayúsculas. Dos salones pueden tener una mesa 01.
+- Activación/desactivación con SweetAlert2. Los formularios muestran errores junto a sus campos.
+- Desactivar un salón conserva el estado individual de sus mesas. Para la futura atención se requiere que **el salón y la mesa estén activos**.
+- Se bloquea habilitar una mesa en un salón inactivo. No hay eliminación de salones ni mesas desde estas pantallas.
+- Una ocupación registrada o un pedido que aún no esté cerrado/anulado impide editar, mover o desactivar la mesa y desactivar su salón. Incluso un pedido cerrado mantiene bloqueada la mesa si no se liberó su ocupación.
+- Las comprobaciones se repiten al guardar dentro de transacciones, con auditoría del responsable y valores anteriores/posteriores.
+- El seeder crea Principal solo cuando no existen salones; no vuelve a crearlo si fue renombrado.
+
+Estas pantallas configuran el catálogo. Abrir, atender, cerrar y liberar mesas corresponde al futuro POS. El contrato de bloqueo para ese módulo está en `docs/contratos-operativos.md`.
+
+No se necesitan migraciones nuevas para esta entrega: utiliza las tablas ya existentes.
 
 ## Alertas reutilizables
 

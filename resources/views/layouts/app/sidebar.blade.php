@@ -26,6 +26,12 @@
                         @endcan
                     </flux:sidebar.group>
                 @endcanany
+                @can('configuracion.restaurante')
+                    <flux:sidebar.group heading="Config. restaurante" class="mt-5 grid">
+                        <flux:sidebar.item icon="building-storefront" :href="route('configuracion.salones')" :current="request()->routeIs('configuracion.salones')" wire:navigate>Salones</flux:sidebar.item>
+                        <flux:sidebar.item icon="squares-2x2" :href="route('configuracion.mesas')" :current="request()->routeIs('configuracion.mesas')" wire:navigate>Mesas</flux:sidebar.item>
+                    </flux:sidebar.group>
+                @endcan
             </flux:sidebar.nav>
 
             <flux:spacer />
