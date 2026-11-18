@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
+ * @property string|null $descripcion
+ * @property string|null $unidad_codigo
  * @property int $preparacion_id
  * @property int $articulo_id
  * @property numeric-string $cantidad_estandar
@@ -22,6 +24,7 @@ class PreparacionDetalle extends Model
     protected $table = 'preparacion_detalles';
 
     protected $fillable = [
+        'descripcion', 'unidad_codigo',
         'preparacion_id',
         'articulo_id',
         'cantidad_estandar',

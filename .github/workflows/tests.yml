@@ -67,3 +67,7 @@ jobs:
 
       - name: Run CI Checks
         run: composer ci:check
+
+      - name: Verify concurrent production
+        if: matrix.database == 'mysql'
+        run: php tests/Support/production-concurrency.php

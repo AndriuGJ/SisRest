@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'date_format' => 'Ingresa una fecha válida con el formato :format.',
+    'before_or_equal' => 'La fecha de :attribute no puede ser posterior a :date.',
+    'gt' => ['numeric' => 'El campo :attribute debe ser mayor que :value.'],
     'required' => 'El campo :attribute es obligatorio.',
     'present' => 'El campo :attribute debe estar presente.',
     'string' => 'El campo :attribute debe ser un texto.',

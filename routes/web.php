@@ -9,8 +9,12 @@ use App\Livewire\Configuracion\Mesas;
 use App\Livewire\Configuracion\Salones;
 use App\Livewire\Inventario\InsumoFormulario;
 use App\Livewire\Inventario\Insumos;
+use App\Livewire\Inventario\PreparacionDetalle;
+use App\Livewire\Inventario\Preparaciones;
+use App\Livewire\Inventario\PreparacionFormulario;
 use App\Livewire\Inventario\ProductoFormulario;
 use App\Livewire\Inventario\Productos;
+use App\Livewire\Inventario\RecetaFormulario;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
@@ -26,7 +30,15 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware('permission:productos.ver')->prefix('inventario/productos')->name('productos.')->group(function () {
         Route::get('/', Productos::class)->name('index');
         Route::get('nuevo', ProductoFormulario::class)->middleware('permission:productos.crear')->name('crear');
+        Route::get('{producto}/receta', RecetaFormulario::class)->middleware('permission:recetas.gestionar')->name('receta');
         Route::get('{producto}/editar', ProductoFormulario::class)->middleware('permission:productos.editar')->name('editar');
+    });
+
+    Route::middleware('permission:preparaciones.ver')->prefix('inventario/preparaciones')->name('preparaciones.')->group(function () {
+        Route::get('/', Preparaciones::class)->name('index');
+        Route::get('nueva', PreparacionFormulario::class)->middleware('permission:preparaciones.crear')->name('crear');
+        Route::get('{preparacion}/editar', PreparacionFormulario::class)->middleware('permission:preparaciones.crear')->name('editar');
+        Route::get('{preparacion}', PreparacionDetalle::class)->name('ver');
     });
 
     Route::get('usuarios', Usuarios::class)

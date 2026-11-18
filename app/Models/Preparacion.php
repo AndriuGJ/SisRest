@@ -15,6 +15,15 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
+ * @property string|null $clave_registro
+ * @property string|null $receta_huella
+ * @property numeric-string|null $rendimiento_receta
+ * @property string|null $producto_nombre
+ * @property string|null $unidad_codigo
+ * @property string|null $motivo_ajuste
+ * @property int|null $confirmada_por
+ * @property int|null $anulada_por
+ * @property CarbonImmutable|null $anulada_at
  * @property string $codigo
  * @property int $producto_id
  * @property int|null $receta_id
@@ -34,6 +43,8 @@ class Preparacion extends Model
     protected $table = 'preparaciones';
 
     protected $fillable = [
+        'clave_registro', 'receta_huella', 'rendimiento_receta', 'producto_nombre', 'unidad_codigo',
+        'motivo_ajuste', 'confirmada_por', 'anulada_por', 'anulada_at',
         'codigo',
         'producto_id',
         'receta_id',
@@ -51,6 +62,7 @@ class Preparacion extends Model
     protected function casts(): array
     {
         return [
+            'rendimiento_receta' => 'decimal:4', 'anulada_at' => 'immutable_datetime',
             'fecha' => 'immutable_date',
             'estado' => EstadoPreparacion::class,
             'cantidad_producida' => 'decimal:4',
@@ -75,6 +87,12 @@ class Preparacion extends Model
     public function usuario(): BelongsTo
     {
         return $this->belongsTo(User::class, 'usuario_id');
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function confirmadaPor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'confirmada_por');
     }
 
     /** @return HasMany<PreparacionDetalle, $this> */

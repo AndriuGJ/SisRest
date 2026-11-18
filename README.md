@@ -4,9 +4,9 @@ Base de un sistema de restaurante para un local, con dos cajas, atención en mes
 
 ## Estado
 
-Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos** y **Productos para la venta** implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. Los módulos operativos del restaurante se implementarán en las siguientes entregas.
+Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas** y **Preparación diaria** implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. Las compras, atención, cobros y demás módulos operativos se implementarán en las siguientes entregas.
 
-Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. La presencia de estas tablas no significa que ya existan los servicios de confirmación de compras, producción, cobros o emisión fiscal.
+Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. La presencia de estas tablas no significa que ya existan los servicios de confirmación de compras, cobros o emisión fiscal. La confirmación de preparación diaria ya está implementada.
 
 ## Usuarios y permisos
 
@@ -105,7 +105,7 @@ El editor de presentaciones se reutiliza en Insumos y reventa: nombre, equivalen
 
 Se bloquea desactivar artículos con reservas o utilizados por recetas activas, y productos incluidos en combos activos o pedidos en curso. Los estados se vuelven a comprobar al confirmar/guardar. Los cambios quedan auditados.
 
-**Este módulo configura el catálogo y consulta cantidades. No permite escribir saldos manualmente ni inventa ingresos.** Compras, recetas y preparación diaria tendrán sus servicios de confirmación en las siguientes entregas. Los menús son productos fijos, sin elección dinámica de entrada y segundo.
+**Este módulo configura el catálogo y consulta cantidades. No permite escribir saldos manualmente ni inventa ingresos.** Las recetas y preparación diaria ya tienen sus pantallas y servicios descritos abajo; el ingreso de insumos mediante Compras sigue pendiente. Los menús son productos fijos, sin elección dinámica de entrada y segundo.
 
 ### Actualización de una instalación existente
 
@@ -117,6 +117,51 @@ npm run build
 ~~~
 
 `storage:link` se necesita una sola vez para servir las fotografías. La migración `000059` agrega `insumos.crear` e `insumos.editar`: en instalaciones existentes los concede una vez a los roles/usuarios que ya tenían `inventario.ajustar`. Los lectores no reciben gestión. Después pueden ajustarse desde Roles; repetir seeders no restablece permisos revocados. Las instalaciones nuevas reciben los 62 permisos del catálogo para el administrador inicial.
+
+## Recetas y Preparación diaria
+
+### Recetas
+
+Desde **Productos para la venta**, usar el botón de receta de un producto preparado. La ruta `/inventario/productos/{producto}/receta` requiere `productos.ver` y `recetas.gestionar`.
+
+Definir el rendimiento y los ingredientes correspondientes a ese rendimiento. Ejemplo ilustrativo: para 10 porciones se registran las cantidades de arroz, pollo y huevo en sus unidades de inventario; al preparar 5, se utiliza la mitad. Se admiten hasta 50 ingredientes, sin repetidos, sin consumir el propio producto y sin dependencias circulares. Un preparado puede ser ingrediente de otro: se consume su existencia preparada, sin volver a consumir su materia prima.
+
+Guardar una receta no mueve existencias. Las ediciones se auditan y se bloquea sobrescribir una versión cambiada desde otra sesión. La receta puede desactivarse; sus preparaciones guardadas conservan cantidades y datos anteriores.
+
+### Flujo de preparación
+
+Acceso **Preparación diaria** en el sidebar (`/inventario/preparaciones`), con historial, búsqueda por código/producto, filtros de estado y fechas y paginación.
+
+1. **Nueva preparación**: elegir producto con receta activa, cantidad y fecha no futura.
+2. **Calcular ingredientes**: aplica la receta vigente en las unidades base de cada artículo. Se utilizan cuatro decimales y se redondea el consumo hacia arriba para evitar consumos cero por pérdida de precisión.
+3. Revisar el consumo estándar y el real. Cambiar cantidades requiere `preparaciones.ajustar_consumos` y un motivo de al menos cinco caracteres. Se admite omitir un ingrediente en ese lote, pero no registrar todos los consumos en cero.
+4. **Guardar borrador**: no consume ni reserva insumos y no produce existencias. Se guarda una instantánea de nombres, unidades, rendimiento y cantidades.
+5. Desde el detalle, **Confirmar producción** con SweetAlert2. Se vuelven a comprobar permisos, estado del borrador, productos/ingredientes activos y cantidades disponibles descontando reservas.
+6. En una sola transacción, descontar consumos reales, registrar movimientos de consumo, ingresar la cantidad producida, registrar su movimiento y guardar responsable, fecha y costos de confirmación.
+
+Ejemplo: diez chaufas confirmados ingresan diez porciones y descuentan los ingredientes realmente usados. Guardar precios o cobrar después no vuelve a consumir esos ingredientes. Las existencias permanecen entre días; filtrar por fecha no las reinicia.
+
+### Costos, historial y correcciones
+
+Los costos de ingredientes se toman del costo promedio vigente **al confirmar**, no de valores enviados por el navegador. Los importes se calculan con BCMath a seis decimales; el artículo producido actualiza su costo promedio ponderado considerando las existencias previas. Los costos del lote quedan fijos en sus detalles e historial y solo se muestran con `costos.ver`.
+
+Un borrador conserva la receta con la que fue guardado y puede confirmarse con esa instantánea aunque luego cambie la definición estándar, mientras la receta siga activa. Al editarlo/recalcularlo se utiliza la receta vigente y se restablecen consumos estándar; guardar exige revisar el nuevo cálculo. Las revisiones simultáneas de recetas y borradores y las confirmaciones sobre borradores cambiados se rechazan.
+
+Las preparaciones confirmadas son de solo lectura. Esta entrega **solo anula borradores**, con motivo, sin movimientos ni restituciones automáticas. Las correcciones de producción confirmada se definirán mediante los movimientos de inventario que correspondan; no se devuelve materia prima usada automáticamente.
+
+### Permisos y actualización
+
+- `preparaciones.ver`: historial y detalle.
+- `preparaciones.crear`: nuevos borradores, edición y anulación de los propios. Con `preparaciones.confirmar` también se pueden administrar borradores de otros responsables.
+- `preparaciones.confirmar`: confirmar la producción. No necesita permiso para modificar recetas.
+- `preparaciones.ajustar_consumos`: modificar consumos reales, con motivo; no habilita editar recetas.
+- `costos.ver`: consultar los costos, que no se incluyen en propiedades públicas de Livewire.
+
+Estos permisos ya estaban en el catálogo inicial. La nueva migración `000060` agrega instantáneas, UUID para no duplicar borradores y responsables de confirmación/anulación. Ejecutar `php artisan migrate` al actualizar.
+
+Las claves de movimientos y el estado bloqueado impiden duplicar consumos al repetir una confirmación. Además de Pest en SQLite/MySQL, CI ejecuta `tests/Support/production-concurrency.php` con procesos simultáneos: dos lotes compitiendo por las últimas existencias y dos confirmaciones del mismo borrador. Ese script solo funciona con `APP_ENV=testing`, controlador mysql y base desechable `sisrest_test`.
+
+**Para confirmar debe haber insumos disponibles.** Los seeders normales no inventan existencias. Las pruebas utilizan bases y existencias desechables; el módulo Compras será el siguiente ingreso operativo de materia prima.
 
 ## Alertas reutilizables
 

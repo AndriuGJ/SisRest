@@ -27,7 +27,7 @@ No modificar saldos desde Livewire sin el correspondiente movimiento.
 
 ## Catálogos de inventario implementados
 
-`GestionInsumos`, `GestionProductos` y `Presentaciones` administran metadatos; no generan movimientos, preparaciones, compras ni reservas. Los saldos y costos no se reciben de propiedades Livewire. El catálogo usa transacciones y el orden de bloqueo **áreas por ID → artículos por ID → productos por ID**, compatible con la configuración de destinos. Los futuros servicios de recetas/producción/compra deben conservar ese orden al combinar recursos.
+`GestionInsumos`, `GestionProductos` y `Presentaciones` administran metadatos; no generan movimientos, preparaciones, compras ni reservas. Los saldos y costos no se reciben de propiedades Livewire. El catálogo usa transacciones y el orden de bloqueo **áreas por ID → artículos por ID → productos por ID**, compatible con la configuración de destinos. Los servicios de recetas y producción mantienen ese orden. El futuro servicio de compra deberá conservarlo al combinar recursos.
 
 - Consulta de insumos: `inventario.ver`. Gestión: `insumos.crear` / `insumos.editar`, agregados por migración sin dar gestión a lectores. Productos conserva `productos.ver`, `productos.crear` y `productos.editar`.
 - La identidad del insumo conserva código y unidad; la del producto conserva además tipo y origen del artículo. Cada producto no combo obtiene un artículo propio y único. No se crean artículos para combos.
@@ -36,6 +36,21 @@ No modificar saldos desde Livewire sin el correspondiente movimiento.
 - Desactivar se bloquea por reservas, recetas activas, combos activos o pedidos en curso según el recurso. Los cambios de precio, visibilidad, nombre y fotografía conservan saldos y costo promedio.
 - Disponible se calcula con BCMath desde saldos menos reservas, y en combos toma el mínimo entero de sus componentes. Esta consulta no sustituye la validación y reserva transaccional del futuro POS.
 - Las fotografías se validan, guardan con nombres generados en el disco público y se limpian si falla la transacción; el archivo anterior se elimina después de guardar correctamente.
+
+## Recetas y producción implementadas
+
+`GestionRecetas` y `GestionPreparaciones` comparten áreas → artículos → productos, en orden por ID. Después se bloquea el borrador afectado. El cálculo no utiliza floats; BCMath normaliza cantidades a cuatro decimales y costos a seis.
+
+- Receta única por producto preparado, rendimiento positivo, hasta 50 ingredientes únicos y sin consumo de su propia salida. Se recorre el grafo de recetas para impedir ciclos indirectos. Los preparados pueden consumirse como ingredientes usando sus saldos existentes, sin producción recursiva ni nuevo consumo de su materia prima.
+- La previsualización escala por rendimiento y redondea hacia arriba en cuatro decimales. Su huella incorpora producto, cantidad y versión de la receta; guardar exige que siga vigente. Los costos no se reciben del cliente.
+- UUID único para creación de borradores. El borrador copia producto, unidad, rendimiento y cantidades estándar/reales; no altera ni reserva inventario. Los cambios de consumos requieren permiso independiente y motivo. No se permite agregar ingredientes ajenos al cálculo ni consumos totalmente cero.
+- Edición/anulación requiere crear y ser responsable, o crear y poder confirmar. Las revisiones de borrador usan una huella para rechazar sobrescrituras. La confirmación captura otra huella al abrir SweetAlert2 y comprueba que no cambió la revisión.
+- Confirmar un borrador vuelve a leer saldos y costos bajo bloqueo, comprueba activos/unidades y compara el consumo contra actual menos reservado. Todas las validaciones preceden a movimientos y saldos. Un error revierte también los costos y estado.
+- Por cada consumo positivo se registra un movimiento `consumo_preparacion` con cantidad negativa; por la salida se registra uno `produccion`. Clave única `prep:{id}:{tipo}:{articulo_id}` y estado confirmado bajo bloqueo hacen idempotente la repetición. Un consumo real cero conserva su detalle sin generar un movimiento cero.
+- Costos por línea = consumo real × costo promedio vigente al confirmar, redondeados a seis decimales. Total = suma de líneas. La salida utiliza promedio ponderado de valor anterior y costo del lote sobre saldo resultante; su movimiento conserva el costo unitario de ese lote. No se alteran reservas ni el costo promedio de los ingredientes al consumirlos.
+- Preparación confirmada es inmutable. Cambiar receta, precios, nombres o costos después no cambia los datos guardados. Una receta modificada pero activa no recalcula borradores ya guardados al confirmarlos; editar exige recalcular. Una receta desactivada impide confirmar sus borradores.
+- Anulación solo para borradores con motivo, sin movimientos. Las correcciones de lotes confirmados y mermas siguen pendientes de sus servicios; no se implementa devolución automática de ingredientes utilizados.
+- CI añade prueba real en MySQL con procesos simultáneos: distintos borradores no pueden gastar las mismas últimas existencias y la misma preparación solo genera sus movimientos una vez. Las pruebas se restringen a `sisrest_test` en entorno testing y limpian sus propias filas.
 
 ## Configuración de salones y mesas
 
@@ -113,4 +128,4 @@ Las pantallas de Salones y Mesas usan `configuracion.restaurante` y el servicio 
 
 ## Siguiente alcance
 
-Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos y Productos para la venta ya tienen pantallas, servicios transaccionales y autorización de acciones. Para los módulos operativos siguen pendientes servicios, validaciones, pantallas Livewire, gráficos, exportaciones, pruebas de concurrencia, impresión con POS80 y facturación de pruebas. Esta entrega permite enviar tickets de prueba por TCP. La impresión operativa de comandas, precuentas y comprobantes y el envío a SUNAT siguen pendientes.
+Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas y Preparación diaria ya tienen pantallas, servicios transaccionales y autorización de acciones. Siguen pendientes Compras/Proveedores, atención POS/Cocina, cajas/cobros, movimientos de ajuste/merma, gráficos, reportes, impresión operativa con POS80 y facturación de pruebas. Esta entrega permite enviar tickets de prueba por TCP. La impresión operativa de comandas, precuentas y comprobantes y el envío a SUNAT siguen pendientes.
