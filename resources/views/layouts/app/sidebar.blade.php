@@ -15,6 +15,9 @@
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
+                    @can('clientes.ver')
+                        <flux:sidebar.item icon="user-group" :href="route('clientes.index')" :current="request()->routeIs('clientes.*')" wire:navigate>Clientes</flux:sidebar.item>
+                    @endcan
                 </flux:sidebar.group>
                 @canany(['productos.ver', 'inventario.ver', 'preparaciones.ver'])
                     <flux:sidebar.group heading="Inventario" class="mt-5 grid">

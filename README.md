@@ -4,7 +4,7 @@ Base de un sistema de restaurante para un local, con dos cajas, atención en mes
 
 ## Estado
 
-Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores**, **Cajas y Arqueos** implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. La atención, cobros y demás módulos operativos se implementarán en las siguientes entregas.
+Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores**, **Cajas y Arqueos**, **Clientes** implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. La atención, cobros y demás módulos operativos se implementarán en las siguientes entregas.
 
 Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. La presencia de estas tablas no significa que ya existan los servicios de cobros de ventas o emisión fiscal. La confirmación de compras y preparación diaria ya está implementada.
 
@@ -236,6 +236,23 @@ Los nombres de caja y responsable se conservan desde la apertura. El historial d
 La migración `000062` agrega UUID y responsables/instantáneas de apertura, y UUID/resumen de arqueos. Los turnos previos conservan sus datos; los campos nuevos son opcionales para registros antiguos. No se agregan permisos ni se restablecen roles existentes. Actualizar con `php artisan migrate` y `npm run build`.
 
 CI ejecuta `tests/Support/cash-concurrency.php` en MySQL: apertura doble de una caja, egreso frente a cierre, cierre repetido, pago a proveedor frente a cierre y movimiento manual repetido. Usa barreras para iniciar procesos simultáneos y se restringe al entorno testing y base desechable `sisrest_test`. Limpia solo sus propios datos.
+
+## Clientes
+
+`/clientes` requiere `clientes.ver`. Incluye listado con nombre, documento, teléfono, correo, dirección y estado; búsqueda por nombre/documento/teléfono/correo; filtros por persona/empresa y activo/inactivo; paginación y contador de resultados. La navegación permanece únicamente en el sidebar.
+
+- **Persona natural**: nombres y apellidos obligatorios. Documento y contacto opcionales. Puede registrarse sin documento o con DNI, RUC, carné de extranjería o pasaporte del catálogo.
+- **Empresa**: razón social, RUC y dirección obligatorios como regla del registro. El formulario selecciona RUC al elegir Empresa; una persona con RUC no se convierte automáticamente en empresa.
+- Si se indica documento, se exigen tipo y número juntos. DNI de ocho dígitos y RUC de once, conservando ceros iniciales; otros documentos admiten letras/números/guion y hasta veinte caracteres según el catálogo. Se normalizan espacios externos y letras a mayúsculas. No se duplica el mismo tipo/número, aunque el cliente esté inactivo.
+- Teléfono, correo y dirección de persona son opcionales; se validan formato de correo y longitudes. La captura es manual: no consulta RENIEC/SUNAT, no comprueba existencia o condición tributaria ni completa automáticamente nombres.
+
+`clientes.crear` habilita altas y `clientes.editar` habilita edición y cambios de estado, además del permiso de consulta. Editar no requiere permiso de crear. Se vuelven a comprobar usuario activo y permisos en el servicio transaccional; ID, versión y UUID permanecen bloqueados en Livewire.
+
+**Guardar** notifica con SweetAlert2 tras redirigir. **Activar/Desactivar** pide confirmación con la alerta global. No se borran clientes ni se alteran sus pedidos, cobros o comprobantes. Los cambios de información y estado se auditan con responsable y valores anteriores/nuevos. La integración de selección/alta desde la venta se realizará con el POS.
+
+Las ediciones comprueban una versión para no sobrescribir cambios de otra sesión. Si ya existen pedidos/cobros, se conserva el tipo de cliente y el documento previamente registrado; se permite completar un documento que faltaba, sin cambiar el tipo, y actualizar nombre/contacto. El formulario indica y bloquea los campos protegidos; el servidor comprueba la misma regla.
+
+La migración `000063` agrega UUID de registro y usuario creador para impedir altas repetidas, incluso sin documento. Los clientes anteriores conservan sus datos y no reciben una autoría ficticia. No se crean clientes de ejemplo ni se modifican permisos existentes. Actualizar con `php artisan migrate` y `npm run build`.
 
 ## Alertas reutilizables
 

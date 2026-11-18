@@ -6,6 +6,8 @@ use App\Livewire\Administracion\RolFormulario;
 use App\Livewire\Administracion\Usuarios;
 use App\Livewire\Cajas\Cajas;
 use App\Livewire\Cajas\TurnoDetalle;
+use App\Livewire\Clientes\ClienteFormulario;
+use App\Livewire\Clientes\Clientes;
 use App\Livewire\Compras\CompraDetalle;
 use App\Livewire\Compras\CompraFormulario;
 use App\Livewire\Compras\Compras;
@@ -65,6 +67,12 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware('permission:cajas.ver_propias|cajas.ver_todas')->prefix('cajas')->name('cajas.')->group(function () {
         Route::get('/', Cajas::class)->name('index');
         Route::get('turnos/{turno}', TurnoDetalle::class)->name('turno');
+    });
+
+    Route::middleware('permission:clientes.ver')->prefix('clientes')->name('clientes.')->group(function () {
+        Route::get('/', Clientes::class)->name('index');
+        Route::get('nuevo', ClienteFormulario::class)->middleware('permission:clientes.crear')->name('crear');
+        Route::get('{cliente}/editar', ClienteFormulario::class)->middleware('permission:clientes.editar')->name('editar');
     });
 
     Route::get('usuarios', Usuarios::class)

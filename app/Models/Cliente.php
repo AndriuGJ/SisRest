@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
+ * @property string|null $clave_registro
+ * @property int|null $creado_por
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -25,6 +27,7 @@ class Cliente extends Model
     protected $table = 'clientes';
 
     protected $fillable = [
+        'clave_registro', 'creado_por',
         'tipo_documento_identidad_id',
         'numero_documento',
         'tipo',

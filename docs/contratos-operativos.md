@@ -152,10 +152,21 @@ Las pantallas de Salones y Mesas usan `configuracion.restaurante` y el servicio 
 - Resumen final y nombres de apertura se conservan aunque se renombren medios, caja o usuarios. Registros previos sin instantánea usan datos existentes como respaldo; no se inventan valores históricos.
 - Pruebas reales de procesos simultáneos para aperturas, egreso/cierre, pago a proveedor/cierre e idempotencia de cierre/movimiento. Entorno y base de pruebas obligatorios; solo se limpian filas del escenario.
 
+## Clientes implementados
+
+- Consultar, crear y editar son permisos distintos; todo acceso exige usuario activo y `clientes.ver`. La activación/desactivación requiere editar. Cambiar el rol después de abrir un formulario o alerta se comprueba de nuevo al escribir.
+- Persona con documento opcional; empresa con RUC/razón social/dirección. RUC también puede pertenecer a persona natural. Validación local de formato/longitud, sin consulta de identidad ni condición fiscal externa.
+- Documento único por tipo/número incluso inactivo; conservar ceros iniciales y normalizar a mayúsculas. Sin documento se permiten personas diferentes con el mismo nombre, pero repetir el UUID de una misma alta no crea otro cliente.
+- Transacción: tipos de documento por ID → cliente → comprobación de vínculos de pedidos/cobros. Lecturas actuales bajo bloqueo al escribir. El futuro POS debe registrar/editar al cliente antes de su transacción de atención, y bloquear el cliente antes de asignarlo para comprobar estado; no llamar este servicio desde un pedido/cobro ya bloqueado.
+- UUID y creador para altas idempotentes; versión de campos guardados para edición/estado. Un UUID ajeno no puede usarse para consultar o actualizar otra alta. Registros antiguos mantienen metadatos nulos.
+- Si hay pedidos o cobros, no cambiar tipo ni un documento ya registrado. Se puede completar un documento pendiente y actualizar nombre/contacto. Los comprobantes deben conservar su propia instantánea del receptor cuando se implemente emisión; editar el catálogo no reescribe otros modelos.
+- Desactivar no elimina información ni altera vínculos. El POS futuro omitirá inactivos en nuevas selecciones; el historial debe conservar sus referencias. No hay borrado físico desde estas pantallas.
+- Auditoría explícita de creación/edición/estado, con actor y campos antes/después. Alertas globales para confirmar estado y notificar guardado. Sin enlaces de módulo repetidos en cabeceras.
+
 ## Fotografías de productos
 
 La foto guardada se sirve por una ruta autenticada con `productos.ver`, relativa al origen actual y sin depender de `APP_URL` ni del enlace `public/storage`. El controlador solo acepta nombres simples bajo `productos/`, extensiones JPG/PNG/WebP y MIME real de imagen; rutas ajenas, archivos ausentes o contenido inválido devuelven 404. La URL versiona el nombre del archivo para actualizar la caché al reemplazarlo. No es un servidor genérico de archivos ni recibe rutas del navegador.
 
 ## Siguiente alcance
 
-Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas, Preparación diaria, Compras, Proveedores, Cajas y Arqueos ya tienen pantallas, servicios transaccionales y autorización de acciones. Siguen pendientes atención POS/Cocina y cobros de ventas, movimientos de ajuste/merma, gráficos, reportes, impresión operativa con POS80 y facturación de pruebas. Esta entrega permite enviar tickets de prueba por TCP. La impresión operativa de comandas, precuentas y comprobantes y el envío a SUNAT siguen pendientes.
+Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas, Preparación diaria, Compras, Proveedores, Cajas, Arqueos y Clientes ya tienen pantallas, servicios transaccionales y autorización de acciones. Siguen pendientes atención POS/Cocina y cobros de ventas, movimientos de ajuste/merma, gráficos, reportes, impresión operativa con POS80 y facturación de pruebas. Esta entrega permite enviar tickets de prueba por TCP. La impresión operativa de comandas, precuentas y comprobantes y el envío a SUNAT siguen pendientes.
