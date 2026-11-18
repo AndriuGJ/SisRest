@@ -4,6 +4,8 @@ use App\Http\Controllers\Inventario\ImagenProductoController;
 use App\Livewire\Administracion\Roles;
 use App\Livewire\Administracion\RolFormulario;
 use App\Livewire\Administracion\Usuarios;
+use App\Livewire\Cajas\Cajas;
+use App\Livewire\Cajas\TurnoDetalle;
 use App\Livewire\Compras\CompraDetalle;
 use App\Livewire\Compras\CompraFormulario;
 use App\Livewire\Compras\Compras;
@@ -58,6 +60,11 @@ Route::middleware(['auth'])->group(function () {
         Route::get('nueva', CompraFormulario::class)->middleware('permission:compras.crear')->name('crear');
         Route::get('{compra}/editar', CompraFormulario::class)->middleware('permission:compras.crear')->name('editar');
         Route::get('{compra}', CompraDetalle::class)->name('ver');
+    });
+
+    Route::middleware('permission:cajas.ver_propias|cajas.ver_todas')->prefix('cajas')->name('cajas.')->group(function () {
+        Route::get('/', Cajas::class)->name('index');
+        Route::get('turnos/{turno}', TurnoDetalle::class)->name('turno');
     });
 
     Route::get('usuarios', Usuarios::class)

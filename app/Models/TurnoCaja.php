@@ -14,6 +14,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
+ * @property string|null $clave_apertura
+ * @property string|null $caja_nombre
+ * @property string|null $responsable_nombre
+ * @property int|null $abierta_por
  * @property int $caja_id
  * @property int $usuario_id
  * @property EstadoTurnoCaja $estado
@@ -29,6 +33,7 @@ class TurnoCaja extends Model
     protected $table = 'turnos_caja';
 
     protected $fillable = [
+        'clave_apertura', 'caja_nombre', 'responsable_nombre', 'abierta_por',
         'caja_id',
         'usuario_id',
         'estado',
@@ -75,11 +80,15 @@ class TurnoCaja extends Model
     }
 
     /** @return numeric-string */
-    public function efectivoEsperado(): string
+    public function efectivoEsperado(bool $bloquear = false): string
     {
         $saldo = $this->fondo_inicial;
 
-        foreach ($this->movimientos()->cursor() as $movimiento) {
+        $movimientos = $this->movimientos()->orderBy('id');
+        if ($bloquear) {
+            $movimientos->lockForUpdate();
+        }
+        foreach ($movimientos->cursor() as $movimiento) {
             $saldo = $movimiento->tipo === TipoMovimientoCaja::INGRESO
                 ? bcadd($saldo, $movimiento->monto, 2)
                 : bcsub($saldo, $movimiento->monto, 2);

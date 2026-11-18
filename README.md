@@ -4,7 +4,7 @@ Base de un sistema de restaurante para un local, con dos cajas, atención en mes
 
 ## Estado
 
-Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores** implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. La atención, cobros y demás módulos operativos se implementarán en las siguientes entregas.
+Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores**, **Cajas y Arqueos** implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. La atención, cobros y demás módulos operativos se implementarán en las siguientes entregas.
 
 Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. La presencia de estas tablas no significa que ya existan los servicios de cobros de ventas o emisión fiscal. La confirmación de compras y preparación diaria ya está implementada.
 
@@ -192,13 +192,50 @@ Confirmar otra vez no duplica ingresos. Las compras confirmadas y sus pagos son 
 - **Dinero del dueño**: efectivo o digital externo; no modifica el efectivo del restaurante ni crea un ingreso ficticio en caja.
 - **Efectivo de caja abierta**: exige `cajas.registrar_egreso`, turno abierto propio (o `cajas.ver_todas`), medio que afecte efectivo y saldo esperado suficiente. Genera un único egreso enlazado al pago. No permite asociar un pago digital a una salida física de caja.
 
-El detalle muestra pagos y saldo; pagar no vuelve a ingresar existencias. El usuario revisa el pago y lo confirma con SweetAlert2; los valores revisados quedan bloqueados durante la confirmación. La apertura/cierre de cajas todavía no tiene pantalla: solo aparecen turnos abiertos existentes y autorizados, sin crear uno automáticamente. Puede trabajarse con pagos digitales o del dueño hasta implementar Cajas y Arqueos.
+El detalle muestra pagos y saldo; pagar no vuelve a ingresar existencias. El usuario revisa el pago y lo confirma con SweetAlert2; los valores revisados quedan bloqueados durante la confirmación. La apertura y el cierre se realizan desde Cajas y Arqueos; el selector muestra únicamente turnos abiertos autorizados. No se crea un turno automáticamente al pagar una compra.
 
 ### Actualización y concurrencia
 
 Los permisos ya estaban en el catálogo. La migración `000061` agrega UUID, instantáneas y responsables a compras/detalles, y el nombre del medio en pagos. Ejecutar `php artisan migrate` y recompilar recursos.
 
 CI añade `tests/Support/purchase-concurrency.php` en MySQL: recepciones simultáneas del mismo artículo conservan cantidades y costo promedio; repetir una recepción no duplica movimientos; dos pagos no pueden superar la misma deuda; repetir un pago con su UUID no lo duplica. El script solo opera en `APP_ENV=testing` y base MySQL desechable `sisrest_test`, y limpia sus propias filas.
+
+## Cajas y Arqueos
+
+`/cajas` requiere `cajas.ver_propias` o `cajas.ver_todas`. El sidebar contiene un solo enlace. Incluye tarjetas de las dos cajas iniciales, estado y acceso al turno e historial con filtros por caja, estado y fechas. Los importes e historial ajenos solo se muestran con `cajas.ver_todas`; el cajero ve los suyos y únicamente “en uso” en la caja ocupada por otro responsable.
+
+### Apertura
+
+- `cajas.abrir`: abrir una caja activa sin turno abierto, con fondo inicial no negativo y hasta dos decimales. El cajero es responsable de su turno; con `cajas.ver_todas` se puede asignar a otro usuario activo con acceso a cajas. Se guarda también quién abrió el turno.
+- Revisar y confirmar con SweetAlert2 antes de escribir. UUID de apertura y restricción de una caja abierta por caja física: repetir no duplica fondos ni turnos.
+- Fondo inicial guardado en el turno; no se crea además un ingreso ni una venta. El mismo usuario puede ser responsable de más de una caja física si la operación lo necesita; cada turno mantiene sus propios movimientos.
+
+### Efectivo y movimientos
+
+El detalle `/cajas/turnos/{turno}` separa fondo, ingresos, egresos, retiros y efectivo esperado. **Esperado = fondo + ingresos − egresos − retiros**. Solo son movimientos físicos; un pago digital no aumenta el efectivo.
+
+Ingresos (`cajas.registrar_ingreso`), egresos (`cajas.registrar_egreso`) y retiros (`cajas.retirar`) requieren monto positivo, concepto y motivo. Las salidas no pueden superar el efectivo esperado; se comprueba rango y precisión decimal en el servidor. Cada movimiento conserva usuario, fecha/hora, origen y UUID, y se confirma con SweetAlert2. No hay edición ni borrado de movimientos registrados.
+
+Los pagos de proveedores hechos con efectivo desde ese turno aparecen como egresos automáticos, identificados en el filtro de origen. No se registran una segunda vez de forma manual. Pagos digitales de empresa y dinero externo del dueño no se asocian a caja ni alteran su efectivo.
+
+El resumen de cobros por medio utiliza pagos de ventas **confirmadas**, antes de devoluciones. Monto aplicado y vuelto se distinguen: solo el importe aplicado en efectivo corresponde al movimiento de ingreso. Ese resumen no incluye fondos ni aportes manuales y no se suma de nuevo al efectivo esperado. Si todavía no existen ventas, indica que no hay cobros; POS y su servicio de cobro siguen pendientes.
+
+### Arqueos y cierre
+
+- Arqueo parcial (`cajas.arquear`): indicar efectivo físico contado; se conserva esperado, contado y diferencia (contado − esperado). Si hay diferencia, se exige explicación de al menos cinco caracteres. No ajusta el dinero ni cierra el turno.
+- Cierre (`cajas.cerrar`): cuenta final en la misma transacción que cierra el turno. Conserva un único arqueo final, fecha/hora, responsable del cierre y resumen de movimientos/cobros. Cerrar requiere permiso de cierre, sin exigir además el de arqueo parcial.
+- Los importes revisados quedan bloqueados hasta confirmar. Si el turno cambia mientras se revisa, se exige actualizar y repetir la revisión. Se leen los movimientos y cobros con bloqueo actual al escribir, evitando usar una instantánea anterior de MySQL después de esperar otro movimiento.
+- Un turno cerrado no recibe ingresos, egresos, retiros, pagos a proveedores ni más arqueos. Sus importes y resumen final se conservan; no se puede reabrir el mismo turno.
+- Se permite cerrar aunque existan pedidos pendientes; no se modifican ni liberan mesas/pedidos por cerrar caja. Los cobros posteriores corresponderán al turno que los reciba.
+- Para usar nuevamente la caja se crea otro turno con un fondo explícito. No se arrastra efectivo ni se inventa una transferencia automática del cierre anterior.
+
+Los nombres de caja y responsable se conservan desde la apertura. El historial de arqueos y movimientos tiene paginación independiente; la consulta y los filtros se autorizan siempre en servidor. “Consultar todas” amplía el alcance, pero cada acción mantiene su permiso específico.
+
+### Actualización y pruebas
+
+La migración `000062` agrega UUID y responsables/instantáneas de apertura, y UUID/resumen de arqueos. Los turnos previos conservan sus datos; los campos nuevos son opcionales para registros antiguos. No se agregan permisos ni se restablecen roles existentes. Actualizar con `php artisan migrate` y `npm run build`.
+
+CI ejecuta `tests/Support/cash-concurrency.php` en MySQL: apertura doble de una caja, egreso frente a cierre, cierre repetido, pago a proveedor frente a cierre y movimiento manual repetido. Usa barreras para iniciar procesos simultáneos y se restringe al entorno testing y base desechable `sisrest_test`. Limpia solo sus propios datos.
 
 ## Alertas reutilizables
 

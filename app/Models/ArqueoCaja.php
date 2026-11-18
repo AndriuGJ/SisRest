@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
+ * @property string|null $clave_idempotencia
+ * @property array<string,mixed>|null $resumen
  * @property int $turno_caja_id
  * @property int $usuario_id
  * @property TipoArqueoCaja $tipo
@@ -27,6 +29,7 @@ class ArqueoCaja extends Model
     protected $table = 'arqueos_caja';
 
     protected $fillable = [
+        'clave_idempotencia', 'resumen',
         'turno_caja_id',
         'usuario_id',
         'tipo',
@@ -41,6 +44,7 @@ class ArqueoCaja extends Model
     protected function casts(): array
     {
         return [
+            'resumen' => 'array',
             'tipo' => TipoArqueoCaja::class,
             'efectivo_esperado' => 'decimal:2',
             'efectivo_contado' => 'decimal:2',

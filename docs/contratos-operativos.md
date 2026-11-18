@@ -128,7 +128,7 @@ Las pantallas de Salones y Mesas usan `configuracion.restaurante` y el servicio 
 
 ## Compras y pagos implementados
 
-- `GestionCompras` y `GestionProveedores` reautorizan al usuario activo dentro de la transacción. Orden compartido: áreas → artículos → productos → proveedores (todos por ID), después compra → turno de caja → medio de pago. No introducir bloqueos inversos al conectar cierre de turnos u otros egresos.
+- `GestionCompras` y `GestionProveedores` reautorizan al usuario activo dentro de la transacción. Orden compartido: áreas → artículos → productos → proveedores (todos por ID), después compra → turno de caja → medio de pago. Caja usa el prefijo áreas/artículos/productos y después cajas por ID → turno. Nunca tomar cajas después de bloquear un turno. Todos los escritores financieros deben bloquear el turno antes de su historial; no introducir bloqueos inversos.
 - Solo insumos/reventa activos, unidades activas y presentaciones propias. El factor y la cantidad base se conservan; se rechaza pérdida de precisión en la conversión. Sin duplicados por artículo, máximo 50 líneas.
 - Precio final por presentación con seis decimales, total de línea redondeado a dos menos descuento. El impuesto incluido se desglosa, no se suma otra vez ni se deduce del valor operativo ingresado. No se supone una tasa ni un tratamiento de crédito fiscal.
 - Borrador sin movimientos. UUID para alta idempotente; versión de cabecera/detalles para edición/confirmación. Documento único por proveedor/tipo/serie/número.
@@ -139,10 +139,23 @@ Las pantallas de Salones y Mesas usan `configuracion.restaurante` y el servicio 
 - Instantáneas de proveedor/documento, descripción/unidad/presentación/factor/precio y nombre del medio de pago. Las compras tienen su propio permiso de consulta de importes; no exponen el costo promedio de inventario en propiedades públicas Livewire.
 - CI MySQL añade recepciones simultáneas con valorización, repetición de recepción, pagos compitiendo por la deuda y pago repetido concurrente. Entorno/base desechable obligatorios y limpieza limitada a sus fixtures.
 
+## Cajas y arqueos implementados
+
+- Acceso propio o general con usuario activo, comprobado en consulta y escritura. Ver todas no concede acciones. La ocupación de cajas ajenas puede consultarse sin exponer responsable, turno ni importes.
+- Apertura con UUID y una caja física activa/libre bajo bloqueo de caja. Fondo en el turno, sin movimiento duplicado. Responsable propio o asignación explícita con alcance general; nombre de caja/responsable e iniciador conservados.
+- Prefijo transaccional compatible con inventario (áreas/artículos/productos), luego cajas por ID → turno. Compras mantiene proveedor → compra → turno → medio después del prefijo. No leer/bloquear compras o cajas desde un turno ya bloqueado; la relación de caja en pagos es lectura normal, no bloqueo.
+- Al escribir, usar lecturas actuales con bloqueo para el turno, UUIDs, movimientos, cobros y pagos del resumen. Una lectura normal de MySQL REPEATABLE READ iniciada antes de esperar otro escritor no basta para validar el efectivo. `efectivoEsperado(bloquear: true)` se utiliza al pagar desde caja.
+- Movimientos manuales positivos, concepto/motivo, permiso por tipo, versión e idempotencia. No editar/borrar filas del historial. Rechazar saldo negativo o desborde; fondo + ingresos − egresos − retiros es la única fuente del efectivo esperado.
+- Cobros por medio suman importes aplicados de ventas confirmadas antes de devoluciones; no incluyen fondo ni ingresos manuales. Se muestran separados del efectivo; no se suman de nuevo al saldo.
+- Arqueo parcial sin ajuste de dinero. Cierre atómico y único, guardando esperado/contado/diferencia, resumen, autor y fecha. Diferencia exige explicación; los valores revisados son inmutables durante la confirmación.
+- Si cambia el historial durante la revisión, rechazar y actualizar. Tras cierre no hay nuevos movimientos/pagos ni arqueos, ni reapertura del mismo turno. Nuevo turno con fondo explícito, sin arrastre automático. Cerrar no altera pedidos/mesas pendientes.
+- Resumen final y nombres de apertura se conservan aunque se renombren medios, caja o usuarios. Registros previos sin instantánea usan datos existentes como respaldo; no se inventan valores históricos.
+- Pruebas reales de procesos simultáneos para aperturas, egreso/cierre, pago a proveedor/cierre e idempotencia de cierre/movimiento. Entorno y base de pruebas obligatorios; solo se limpian filas del escenario.
+
 ## Fotografías de productos
 
 La foto guardada se sirve por una ruta autenticada con `productos.ver`, relativa al origen actual y sin depender de `APP_URL` ni del enlace `public/storage`. El controlador solo acepta nombres simples bajo `productos/`, extensiones JPG/PNG/WebP y MIME real de imagen; rutas ajenas, archivos ausentes o contenido inválido devuelven 404. La URL versiona el nombre del archivo para actualizar la caché al reemplazarlo. No es un servidor genérico de archivos ni recibe rutas del navegador.
 
 ## Siguiente alcance
 
-Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas, Preparación diaria, Compras y Proveedores ya tienen pantallas, servicios transaccionales y autorización de acciones. Siguen pendientes atención POS/Cocina, cajas/cobros, movimientos de ajuste/merma, gráficos, reportes, impresión operativa con POS80 y facturación de pruebas. Esta entrega permite enviar tickets de prueba por TCP. La impresión operativa de comandas, precuentas y comprobantes y el envío a SUNAT siguen pendientes.
+Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas, Preparación diaria, Compras, Proveedores, Cajas y Arqueos ya tienen pantallas, servicios transaccionales y autorización de acciones. Siguen pendientes atención POS/Cocina y cobros de ventas, movimientos de ajuste/merma, gráficos, reportes, impresión operativa con POS80 y facturación de pruebas. Esta entrega permite enviar tickets de prueba por TCP. La impresión operativa de comandas, precuentas y comprobantes y el envío a SUNAT siguen pendientes.

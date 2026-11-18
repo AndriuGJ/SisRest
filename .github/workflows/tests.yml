@@ -75,3 +75,7 @@ jobs:
       - name: Verify concurrent purchases and payments
         if: matrix.database == 'mysql'
         run: php tests/Support/purchase-concurrency.php
+
+      - name: Verify concurrent cash sessions
+        if: matrix.database == 'mysql'
+        run: php tests/Support/cash-concurrency.php

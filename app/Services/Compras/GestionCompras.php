@@ -215,7 +215,7 @@ class GestionCompras
         if (! $medio->activo || ($turno && ! $medio->afecta_efectivo) || ($datos['origen'] === 'empresa' && $medio->afecta_efectivo)) {
             throw ValidationException::withMessages(['medioId' => 'Usa efectivo para caja, un medio digital para empresa o el origen dinero del dueño.']);
         }
-        if ($turno && bccomp($monto, $turno->efectivoEsperado(), 2) > 0) {
+        if ($turno && bccomp($monto, $turno->efectivoEsperado(bloquear: true), 2) > 0) {
             throw ValidationException::withMessages(['monto' => 'El turno no tiene suficiente efectivo esperado para este pago.']);
         }
         $pago = $compra->pagos()->create(['usuario_id' => $actor->id, 'medio_pago_id' => $medio->id, 'medio_pago_nombre' => $medio->nombre,

@@ -39,6 +39,11 @@
                         @endcan
                     </flux:sidebar.group>
                 @endcanany
+                @canany(['cajas.ver_propias', 'cajas.ver_todas'])
+                    <flux:sidebar.group heading="Caja" class="mt-5 grid">
+                        <flux:sidebar.item icon="banknotes" :href="route('cajas.index')" :current="request()->routeIs('cajas.*')" wire:navigate>Cajas y arqueos</flux:sidebar.item>
+                    </flux:sidebar.group>
+                @endcanany
                 @canany(['usuarios.gestionar', 'roles.gestionar'])
                     <flux:sidebar.group heading="Administración" class="mt-5 grid">
                         @can('usuarios.gestionar')

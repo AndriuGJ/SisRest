@@ -5,6 +5,7 @@ namespace App\Models;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property int $id
@@ -32,6 +33,12 @@ class Caja extends Model
         return [
             'activo' => 'boolean',
         ];
+    }
+
+    /** @return HasMany<TurnoCaja, $this> */
+    public function turnos(): HasMany
+    {
+        return $this->hasMany(TurnoCaja::class, 'caja_id');
     }
 
     /** @return BelongsTo<Impresora, $this> */
