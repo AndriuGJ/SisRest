@@ -16,6 +16,16 @@
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
                 </flux:sidebar.group>
+                @canany(['productos.ver', 'inventario.ver'])
+                    <flux:sidebar.group heading="Inventario" class="mt-5 grid">
+                        @can('productos.ver')
+                            <flux:sidebar.item icon="cube" :href="route('productos.index')" :current="request()->routeIs('productos.*')" wire:navigate>Productos para la venta</flux:sidebar.item>
+                        @endcan
+                        @can('inventario.ver')
+                            <flux:sidebar.item icon="archive-box" :href="route('insumos.index')" :current="request()->routeIs('insumos.*')" wire:navigate>Insumos</flux:sidebar.item>
+                        @endcan
+                    </flux:sidebar.group>
+                @endcanany
                 @canany(['usuarios.gestionar', 'roles.gestionar'])
                     <flux:sidebar.group heading="Administración" class="mt-5 grid">
                         @can('usuarios.gestionar')

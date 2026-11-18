@@ -96,7 +96,7 @@ Las migraciones son la fuente de verdad del esquema. Esta guía explica su organ
 
 ## Inventario y producción
 
-Un artículo es una identidad de inventario: insumo, preparado o reventa. Un producto es una oferta de venta. Cada producto que no es combo enlaza su artículo. El combo enlaza productos y utiliza sus existencias.
+Un artículo es una identidad de inventario: insumo, preparado o reventa. Un producto es una oferta de venta. El formulario crea su artículo de inventario automáticamente para preparados y reventa; los insumos se administran por separado. Los catálogos no modifican saldos ni generan movimientos. Cada producto que no es combo enlaza su artículo. El combo enlaza productos y utiliza sus existencias.
 
 Una receta indica consumos estándar. Una preparación conserva cantidades estándar y reales utilizadas, más costos de esa operación. Los movimientos registran entradas y salidas; las reservas registran compromisos del pedido sin descontar otra vez ingredientes.
 
@@ -112,4 +112,4 @@ La plantilla mantiene users, sesiones, recuperación, cache, colas, passkeys y d
 
 ## Límites de esta entrega
 
-Usuarios y permisos, Salones y Mesas, Destinos de preparación e Impresoras disponen de pantallas Livewire y servicios. Las pruebas ESC/POS se registran por UUID con una instantánea de conexión y estados que distinguen envío, error y resultado incierto. Los módulos operativos del restaurante siguen pendientes. El esquema no sustituye la autorización en servidor, el bloqueo de filas, la validación de totales, el control de operaciones ya confirmadas ni los procedimientos tributarios.
+Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos y Productos para la venta disponen de pantallas Livewire y servicios. Las pruebas ESC/POS se registran por UUID con una instantánea de conexión y estados que distinguen envío, error y resultado incierto. Los módulos operativos del restaurante siguen pendientes. El esquema no sustituye la autorización en servidor, el bloqueo de filas, la validación de totales, el control de operaciones ya confirmadas ni los procedimientos tributarios.

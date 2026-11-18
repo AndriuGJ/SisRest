@@ -4,7 +4,7 @@ Base de un sistema de restaurante para un local, con dos cajas, atención en mes
 
 ## Estado
 
-Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación** e **Impresoras** implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. Los módulos operativos del restaurante se implementarán en las siguientes entregas.
+Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos** y **Productos para la venta** implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. Los módulos operativos del restaurante se implementarán en las siguientes entregas.
 
 Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. La presencia de estas tablas no significa que ya existan los servicios de confirmación de compras, producción, cobros o emisión fiscal.
 
@@ -73,6 +73,50 @@ La migración `2026_11_18_000058_create_pruebas_impresion_table.php` registra la
 - La pantalla muestra las diez pruebas más recientes. También se registra el resultado en auditoría, sin volcar errores internos al usuario.
 
 Se verificaron los bytes ESC/POS contra un receptor TCP local y el flujo de navegador. La compatibilidad física, corte y avance de la POS80 se deben comprobar en el equipo del restaurante. Las comandas, precuentas y comprobantes operativos se conectarán a estas asignaciones al implementar sus módulos.
+
+## Inventario: Insumos y Productos para la venta
+
+Accesos desde **Inventario** en el sidebar, con búsqueda, filtros, paginación y confirmaciones SweetAlert2. Los formularios se abren en su propia pantalla para facilitar las presentaciones, fotos y componentes.
+
+### Insumos
+
+`/inventario/insumos` consulta únicamente materia prima. Requiere `inventario.ver`; registrar requiere además `insumos.crear`, y editar/activar/desactivar requiere `insumos.editar`.
+
+Campos: código, nombre, unidad de inventario, existencia mínima, estado y presentaciones opcionales. Ejemplo: arroz en gramos, mínimo 5000 g y un saco que contiene 50000 g. El código y la unidad se conservan después de crear; el nombre, mínimo y presentaciones se pueden actualizar.
+
+El listado muestra disponible (actual menos reservado), unidad y mínimo. El filtro de nivel bajo incluye cantidades disponibles menores o iguales al mínimo, siempre que el mínimo sea mayor que cero. Los preparados y productos de reventa se administran desde Productos para la venta.
+
+### Productos
+
+`/inventario/productos` requiere `productos.ver`; los formularios requieren además `productos.crear` o `productos.editar`.
+
+- Tipos: plato, bebida, reventa, menú fijo, adicional y combo. Código, nombre, categoría, descripción opcional, precio final en soles, fotografía, estado y visibilidad en POS.
+- Platos y menús generan existencias mediante preparación diaria; reventa se compra lista. Bebidas y adicionales permiten elegir el origen.
+- Cada producto que no sea combo obtiene automáticamente su propio artículo de inventario. No se solicita crear ese artículo por separado. El código interno usa `PV-` seguido del código del producto; por ello los códigos nuevos admiten hasta 37 caracteres.
+- Código, tipo, origen y unidad de venta se conservan después de crear para mantener la identidad y los saldos. Actualizar nombre, precio, imagen o visibilidad no reinicia existencias, reservas ni costo promedio.
+- La unidad de venta es una unidad o porción. El destino puede ser un área activa o **Entrega directa**, para productos que no requieren comanda.
+- Las fotos admiten JPG/PNG/WebP de hasta 2 MB. Se almacenan en el disco público; reemplazar o quitar una foto retira el archivo anterior. Un error de validación no deja archivos ni artículos parciales.
+- Los combos no tienen artículo ni existencias propias. Se configuran por productos no combo y cantidades positivas, sin duplicados ni anidación. Un combo activo requiere al menos un componente habilitado.
+- Disponible normal = existencia actual menos reservada si está habilitado. Disponible del combo = menor cantidad entera que permiten sus componentes, respetando sus reservas y destinos activos.
+
+### Presentaciones y protección de operaciones
+
+El editor de presentaciones se reutiliza en Insumos y reventa: nombre, equivalencia en la unidad del artículo y estado. Admite hasta veinte presentaciones; no borra las utilizadas. Una presentación ya incluida en compras conserva su factor y debe reemplazarse por otra si cambia el contenido del paquete. Nunca puede asignarse una presentación de otro artículo.
+
+Se bloquea desactivar artículos con reservas o utilizados por recetas activas, y productos incluidos en combos activos o pedidos en curso. Los estados se vuelven a comprobar al confirmar/guardar. Los cambios quedan auditados.
+
+**Este módulo configura el catálogo y consulta cantidades. No permite escribir saldos manualmente ni inventa ingresos.** Compras, recetas y preparación diaria tendrán sus servicios de confirmación en las siguientes entregas. Los menús son productos fijos, sin elección dinámica de entrada y segundo.
+
+### Actualización de una instalación existente
+
+~~~console
+php artisan optimize:clear
+php artisan migrate
+php artisan storage:link
+npm run build
+~~~
+
+`storage:link` se necesita una sola vez para servir las fotografías. La migración `000059` agrega `insumos.crear` e `insumos.editar`: en instalaciones existentes los concede una vez a los roles/usuarios que ya tenían `inventario.ajustar`. Los lectores no reciben gestión. Después pueden ajustarse desde Roles; repetir seeders no restablece permisos revocados. Las instalaciones nuevas reciben los 62 permisos del catálogo para el administrador inicial.
 
 ## Alertas reutilizables
 

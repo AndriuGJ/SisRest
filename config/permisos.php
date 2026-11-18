@@ -36,6 +36,8 @@ return [
         'productos.ver' => 'Consultar productos',
         'productos.crear' => 'Registrar productos',
         'productos.editar' => 'Editar productos',
+        'insumos.crear' => 'Registrar insumos',
+        'insumos.editar' => 'Editar insumos y presentaciones',
         'inventario.ver' => 'Consultar existencias',
         'inventario.ajustar' => 'Ajustar existencias',
         'inventario.registrar_merma' => 'Registrar mermas',

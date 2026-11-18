@@ -25,6 +25,18 @@ No modificar saldos desde Livewire sin el correspondiente movimiento.
 - Anular libera lo reutilizable o registra merma; no devuelve automáticamente ingredientes consumidos.
 - Cambiar recetas, combos o precios no reescribe operaciones históricas.
 
+## Catálogos de inventario implementados
+
+`GestionInsumos`, `GestionProductos` y `Presentaciones` administran metadatos; no generan movimientos, preparaciones, compras ni reservas. Los saldos y costos no se reciben de propiedades Livewire. El catálogo usa transacciones y el orden de bloqueo **áreas por ID → artículos por ID → productos por ID**, compatible con la configuración de destinos. Los futuros servicios de recetas/producción/compra deben conservar ese orden al combinar recursos.
+
+- Consulta de insumos: `inventario.ver`. Gestión: `insumos.crear` / `insumos.editar`, agregados por migración sin dar gestión a lectores. Productos conserva `productos.ver`, `productos.crear` y `productos.editar`.
+- La identidad del insumo conserva código y unidad; la del producto conserva además tipo y origen del artículo. Cada producto no combo obtiene un artículo propio y único. No se crean artículos para combos.
+- Presentaciones pertenecen a su artículo. Se validan IDs, nombres y factores decimales positivos; las omitidas se desactivan. Si una compra ya referencia una presentación, su equivalencia no puede cambiar. Las compras conservan también su factor instantáneo.
+- Los combos se editan por componentes no combo, sin repetidos ni ciclos. Sus operaciones históricas conservarán las líneas y reservas de cada pedido; editar la configuración no reescribe pedidos.
+- Desactivar se bloquea por reservas, recetas activas, combos activos o pedidos en curso según el recurso. Los cambios de precio, visibilidad, nombre y fotografía conservan saldos y costo promedio.
+- Disponible se calcula con BCMath desde saldos menos reservas, y en combos toma el mínimo entero de sus componentes. Esta consulta no sustituye la validación y reserva transaccional del futuro POS.
+- Las fotografías se validan, guardan con nombres generados en el disco público y se limpian si falla la transacción; el archivo anterior se elimina después de guardar correctamente.
+
 ## Configuración de salones y mesas
 
 Las pantallas de Salones y Mesas usan `configuracion.restaurante` y el servicio `GestionRestaurante`. No eliminan registros; los cambios conservan responsable y valores en auditoría.
@@ -101,4 +113,4 @@ Las pantallas de Salones y Mesas usan `configuracion.restaurante` y el servicio 
 
 ## Siguiente alcance
 
-Usuarios y permisos, Salones y Mesas, Destinos de preparación e Impresoras ya tienen pantallas, servicios transaccionales y autorización de acciones. Para los módulos operativos siguen pendientes servicios, validaciones, pantallas Livewire, gráficos, exportaciones, pruebas de concurrencia, impresión con POS80 y facturación de pruebas. Esta entrega permite enviar tickets de prueba por TCP. La impresión operativa de comandas, precuentas y comprobantes y el envío a SUNAT siguen pendientes.
+Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos y Productos para la venta ya tienen pantallas, servicios transaccionales y autorización de acciones. Para los módulos operativos siguen pendientes servicios, validaciones, pantallas Livewire, gráficos, exportaciones, pruebas de concurrencia, impresión con POS80 y facturación de pruebas. Esta entrega permite enviar tickets de prueba por TCP. La impresión operativa de comandas, precuentas y comprobantes y el envío a SUNAT siguen pendientes.
