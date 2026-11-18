@@ -111,4 +111,4 @@ La plantilla mantiene users, sesiones, recuperación, cache, colas, passkeys y d
 
 ## Límites de esta entrega
 
-No hay todavía formularios de módulos ni servicios completos de operación. El esquema no sustituye la autorización en servidor, el bloqueo de filas, la validación de totales, el control de operaciones ya confirmadas ni los procedimientos tributarios.
+Usuarios y permisos dispone de formularios Livewire y servicios de administración de accesos. Los módulos operativos del restaurante siguen pendientes. El esquema no sustituye la autorización en servidor, el bloqueo de filas, la validación de totales, el control de operaciones ya confirmadas ni los procedimientos tributarios.

@@ -77,4 +77,4 @@ No modificar saldos desde Livewire sin el correspondiente movimiento.
 
 ## Siguiente alcance
 
-Servicios, validaciones, autorización de acciones, pantallas Livewire, gráficos, exportaciones, pruebas de concurrencia, impresión con POS80 y facturación de pruebas. Esta entrega no envía documentos a SUNAT ni trabajos a impresoras.
+Usuarios y permisos ya tiene sus pantallas, servicio transaccional y autorización de acciones. Para los módulos operativos siguen pendientes servicios, validaciones, pantallas Livewire, gráficos, exportaciones, pruebas de concurrencia, impresión con POS80 y facturación de pruebas. Esta entrega no envía documentos a SUNAT ni trabajos a impresoras.

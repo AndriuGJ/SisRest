@@ -4,9 +4,28 @@ Base de un sistema de restaurante para un local, con dos cajas, atención en mes
 
 ## Estado
 
-Esta entrega prepara migraciones, modelos, relaciones, enums, seeders, autenticación por usuario y dependencias. Conserva la plantilla Laravel + Livewire + Flux. Los módulos operativos y sus pantallas se implementarán en las siguientes entregas.
+Incluye la base de datos, dependencias y el módulo de **Usuarios y permisos** implementado con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. Los módulos operativos del restaurante se implementarán en las siguientes entregas.
 
 Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. La presencia de estas tablas no significa que ya existan los servicios de confirmación de compras, producción, cobros o emisión fiscal.
+
+## Usuarios y permisos
+
+- `/usuarios`: búsqueda por nombre, usuario o correo; filtros por rol y estado; paginación.
+- Creación y edición mediante formularios; un rol por usuario desde esta pantalla.
+- Correo opcional, usuario normalizado en minúsculas y contraseña inicial de al menos 12 caracteres.
+- Activación y desactivación con confirmación, conservando el historial.
+- Restablecimiento de contraseña con confirmación y cierre de sesiones anteriores. Si se restablece la propia contraseña, se regresa al login.
+- `/roles`: consulta de usuarios asignados y cantidad de permisos.
+- Creación de roles y edición de sus permisos agrupados por módulo, con búsqueda y selección por grupo.
+- El catálogo con etiquetas legibles está en `config/permisos.php` y alimenta el seeder.
+- Nombres de los cuatro roles del sistema conservados; sus permisos son configurables.
+- Autorización en rutas, acciones Livewire y servicios. No es suficiente mostrar u ocultar botones.
+- La administración completa requiere ambos permisos de gestión de usuarios y roles, y puede configurar todos los permisos disponibles. Las cuentas con acceso delegado no pueden otorgar ni modificar permisos superiores a los propios.
+- Se bloquea la desactivación o cambio de rol de la propia cuenta desde Usuarios.
+- Se conserva al menos un usuario activo que pueda administrar usuarios y roles.
+- Cambios de acceso serializados en transacciones y registrados en auditoría; las contraseñas no se incluyen en los registros.
+
+Los accesos aparecen en el sidebar según `usuarios.gestionar` y `roles.gestionar`. No se eliminan usuarios desde estas pantallas.
 
 ## Requisitos
 
@@ -95,7 +114,7 @@ Solo en local/testing. Crea arroz, pollo, huevo, chaufa, gaseosa, un combo y un 
 - Usuarios administrados desde el módulo autorizado. Se bloqueó la eliminación de la propia cuenta desde el perfil.
 - Una cuenta desactivada no inicia sesión y pierde acceso desde sesiones existentes.
 - Se conservan doble factor y passkeys de la plantilla sin imponerlos al personal.
-- Recuperación por correo para cuentas con correo y envío configurado. La gestión de contraseñas desde Usuarios corresponde a la siguiente implementación del módulo.
+- Recuperación por correo para cuentas con correo y envío configurado; también se pueden restablecer contraseñas desde Usuarios con autorización.
 
 ## Dependencias añadidas
 

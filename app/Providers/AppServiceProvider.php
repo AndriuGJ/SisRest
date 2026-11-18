@@ -7,6 +7,10 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Livewire\Livewire;
+use Spatie\Permission\Middleware\PermissionMiddleware;
+use Spatie\Permission\Middleware\RoleMiddleware;
+use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -24,6 +28,11 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        Livewire::addPersistentMiddleware([
+            PermissionMiddleware::class,
+            RoleMiddleware::class,
+            RoleOrPermissionMiddleware::class,
+        ]);
     }
 
     /**

@@ -1,0 +1,88 @@
+<?php
+
+return [
+    'dashboard' => ['titulo' => 'Dashboard', 'acciones' => [
+        'dashboard.ver' => 'Consultar el resumen',
+    ]],
+    'atencion' => ['titulo' => 'POS y pedidos', 'acciones' => [
+        'pos.ver' => 'Acceder al POS',
+        'pedidos.ver_propios' => 'Consultar pedidos propios',
+        'pedidos.ver_todos' => 'Consultar todos los pedidos',
+        'pedidos.crear' => 'Registrar pedidos',
+        'pedidos.editar' => 'Editar pedidos',
+        'pedidos.enviar' => 'Enviar a preparación',
+        'pedidos.anular_enviados' => 'Anular productos enviados',
+        'mesas.liberar' => 'Cerrar y liberar mesas',
+    ]],
+    'cocina' => ['titulo' => 'Cocina y entregas', 'acciones' => [
+        'cocina.ver' => 'Acceder a cocina',
+        'cocina.preparar' => 'Iniciar preparación',
+        'cocina.marcar_listo' => 'Marcar productos listos',
+        'entregas.confirmar' => 'Confirmar entregas',
+        'delivery.gestionar' => 'Gestionar delivery',
+    ]],
+    'cobros' => ['titulo' => 'Cobros y beneficios', 'acciones' => [
+        'cobros.crear' => 'Realizar cobros',
+        'descuentos.aplicar' => 'Aplicar descuentos',
+        'cortesias.aplicar' => 'Autorizar cortesías',
+        'devoluciones.crear' => 'Registrar devoluciones',
+    ]],
+    'clientes' => ['titulo' => 'Clientes', 'acciones' => [
+        'clientes.ver' => 'Consultar clientes',
+        'clientes.crear' => 'Registrar clientes',
+        'clientes.editar' => 'Editar clientes',
+    ]],
+    'inventario' => ['titulo' => 'Productos e inventario', 'acciones' => [
+        'productos.ver' => 'Consultar productos',
+        'productos.crear' => 'Registrar productos',
+        'productos.editar' => 'Editar productos',
+        'inventario.ver' => 'Consultar existencias',
+        'inventario.ajustar' => 'Ajustar existencias',
+        'inventario.registrar_merma' => 'Registrar mermas',
+        'inventario.registrar_consumo_interno' => 'Registrar consumo interno',
+        'costos.ver' => 'Consultar costos',
+    ]],
+    'preparacion' => ['titulo' => 'Recetas y preparación diaria', 'acciones' => [
+        'recetas.gestionar' => 'Gestionar recetas',
+        'preparaciones.ver' => 'Consultar preparaciones',
+        'preparaciones.crear' => 'Registrar preparaciones',
+        'preparaciones.confirmar' => 'Confirmar producción',
+        'preparaciones.ajustar_consumos' => 'Ajustar ingredientes utilizados',
+    ]],
+    'compras' => ['titulo' => 'Compras y proveedores', 'acciones' => [
+        'compras.ver' => 'Consultar compras',
+        'compras.crear' => 'Registrar compras',
+        'compras.confirmar' => 'Confirmar compras',
+        'proveedores.gestionar' => 'Gestionar proveedores',
+        'pagos_proveedor.registrar' => 'Registrar pagos a proveedores',
+    ]],
+    'cajas' => ['titulo' => 'Cajas y arqueos', 'acciones' => [
+        'cajas.ver_propias' => 'Consultar cajas propias',
+        'cajas.ver_todas' => 'Consultar todas las cajas',
+        'cajas.abrir' => 'Abrir cajas',
+        'cajas.cerrar' => 'Cerrar cajas',
+        'cajas.arquear' => 'Realizar arqueos',
+        'cajas.registrar_ingreso' => 'Registrar ingresos',
+        'cajas.registrar_egreso' => 'Registrar egresos',
+        'cajas.retirar' => 'Registrar retiros de efectivo',
+    ]],
+    'facturacion' => ['titulo' => 'Comprobantes', 'acciones' => [
+        'comprobantes.ver' => 'Consultar comprobantes',
+        'comprobantes.emitir' => 'Emitir comprobantes',
+        'comprobantes.reenviar' => 'Gestionar reenvíos',
+        'comprobantes.notas_credito' => 'Emitir notas de crédito',
+    ]],
+    'reportes' => ['titulo' => 'Reportes', 'acciones' => [
+        'reportes.ver_propios' => 'Consultar reportes propios',
+        'reportes.ver_todos' => 'Consultar reportes generales',
+        'reportes.exportar' => 'Exportar reportes',
+    ]],
+    'administracion' => ['titulo' => 'Usuarios y configuración', 'acciones' => [
+        'usuarios.gestionar' => 'Administrar usuarios y contraseñas',
+        'roles.gestionar' => 'Administrar roles y permisos',
+        'configuracion.sistema' => 'Configurar el sistema',
+        'configuracion.restaurante' => 'Configurar el restaurante',
+        'impresoras.gestionar' => 'Configurar impresoras',
+        'auditoria.ver' => 'Consultar la auditoría',
+    ]],
+];

@@ -11,24 +11,24 @@
             </flux:sidebar.header>
 
             <flux:sidebar.nav>
-                <flux:sidebar.group :heading="__('Platform')" class="grid">
+                <flux:sidebar.group heading="Restaurante" class="grid">
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
                 </flux:sidebar.group>
+                @canany(['usuarios.gestionar', 'roles.gestionar'])
+                    <flux:sidebar.group heading="Administración" class="mt-5 grid">
+                        @can('usuarios.gestionar')
+                            <flux:sidebar.item icon="users" :href="route('usuarios.index')" :current="request()->routeIs('usuarios.*')" wire:navigate>Usuarios</flux:sidebar.item>
+                        @endcan
+                        @can('roles.gestionar')
+                            <flux:sidebar.item icon="shield-check" :href="route('roles.index')" :current="request()->routeIs('roles.*')" wire:navigate>Roles y permisos</flux:sidebar.item>
+                        @endcan
+                    </flux:sidebar.group>
+                @endcanany
             </flux:sidebar.nav>
 
             <flux:spacer />
-
-            <flux:sidebar.nav>
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                    {{ __('Repository') }}
-                </flux:sidebar.item>
-
-                <flux:sidebar.item icon="book-open-text" href="https://laravel.com/docs/starter-kits#livewire" target="_blank">
-                    {{ __('Documentation') }}
-                </flux:sidebar.item>
-            </flux:sidebar.nav>
 
             <x-desktop-user-menu class="hidden lg:block" :name="auth()->user()->name" />
         </flux:sidebar>
@@ -56,7 +56,7 @@
 
                                 <div class="grid flex-1 text-start text-sm leading-tight">
                                     <flux:heading class="truncate">{{ auth()->user()->name }}</flux:heading>
-                                    <flux:text class="truncate">{{ auth()->user()->email }}</flux:text>
+                                    <flux:text class="truncate">{{ auth()->user()->username }}</flux:text>
                                 </div>
                             </div>
                         </div>
@@ -66,7 +66,7 @@
 
                     <flux:menu.radio.group>
                         <flux:menu.item :href="route('profile.edit')" icon="cog" wire:navigate>
-                            {{ __('Settings') }}
+                            Mi cuenta
                         </flux:menu.item>
                     </flux:menu.radio.group>
 
@@ -81,7 +81,7 @@
                             class="w-full cursor-pointer"
                             data-test="logout-button"
                         >
-                            {{ __('Log out') }}
+                            Cerrar sesión
                         </flux:menu.item>
                     </form>
                 </flux:menu>

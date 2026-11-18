@@ -13,28 +13,15 @@ class RolesPermisosSeeder extends Seeder
     {
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        $permisos = [
-            'dashboard.ver',
-            'pos.ver', 'pedidos.ver_propios', 'pedidos.ver_todos', 'pedidos.crear',
-            'pedidos.editar', 'pedidos.enviar', 'pedidos.anular_enviados', 'mesas.liberar',
-            'cocina.ver', 'cocina.preparar', 'cocina.marcar_listo', 'entregas.confirmar',
-            'delivery.gestionar', 'cobros.crear', 'descuentos.aplicar', 'cortesias.aplicar',
-            'devoluciones.crear', 'clientes.ver', 'clientes.crear', 'clientes.editar',
-            'productos.ver', 'productos.crear', 'productos.editar',
-            'inventario.ver', 'inventario.ajustar', 'inventario.registrar_merma',
-            'inventario.registrar_consumo_interno', 'costos.ver',
-            'recetas.gestionar', 'preparaciones.ver', 'preparaciones.crear',
-            'preparaciones.confirmar', 'preparaciones.ajustar_consumos',
-            'compras.ver', 'compras.crear', 'compras.confirmar', 'proveedores.gestionar',
-            'pagos_proveedor.registrar', 'cajas.ver_propias', 'cajas.ver_todas',
-            'cajas.abrir', 'cajas.cerrar', 'cajas.arquear', 'cajas.registrar_ingreso',
-            'cajas.registrar_egreso', 'cajas.retirar',
-            'comprobantes.ver', 'comprobantes.emitir', 'comprobantes.reenviar',
-            'comprobantes.notas_credito', 'reportes.ver_propios', 'reportes.ver_todos',
-            'reportes.exportar', 'usuarios.gestionar', 'roles.gestionar',
-            'configuracion.sistema', 'configuracion.restaurante', 'impresoras.gestionar',
-            'auditoria.ver',
-        ];
+        $permisos = [];
+        foreach (config('permisos') as $grupo) {
+            foreach (array_keys($grupo['acciones']) as $permiso) {
+                if (! is_string($permiso)) {
+                    throw new \LogicException('Los permisos del catálogo deben tener un nombre de texto.');
+                }
+                $permisos[] = $permiso;
+            }
+        }
 
         foreach ($permisos as $permiso) {
             Permission::findOrCreate($permiso, 'web');
