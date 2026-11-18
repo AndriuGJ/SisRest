@@ -83,6 +83,7 @@ Las migraciones son la fuente de verdad del esquema. Esta guía explica su organ
 | comprobante_detalles | ComprobanteDetalle | comprobante → Comprobante, detalleCobro → CobroDetalle |
 | comprobante_envios | ComprobanteEnvio | comprobante → Comprobante |
 | trabajos_impresion | TrabajoImpresion | impresora → Impresora, reimpresionDe → TrabajoImpresion |
+| pruebas_impresion | PruebaImpresion | impresora → Impresora; usuario_id identifica al responsable |
 
 ## Restricciones principales
 
@@ -111,4 +112,4 @@ La plantilla mantiene users, sesiones, recuperación, cache, colas, passkeys y d
 
 ## Límites de esta entrega
 
-Usuarios y permisos dispone de formularios Livewire y servicios de administración de accesos. Los módulos operativos del restaurante siguen pendientes. El esquema no sustituye la autorización en servidor, el bloqueo de filas, la validación de totales, el control de operaciones ya confirmadas ni los procedimientos tributarios.
+Usuarios y permisos, Salones y Mesas, Destinos de preparación e Impresoras disponen de pantallas Livewire y servicios. Las pruebas ESC/POS se registran por UUID con una instantánea de conexión y estados que distinguen envío, error y resultado incierto. Los módulos operativos del restaurante siguen pendientes. El esquema no sustituye la autorización en servidor, el bloqueo de filas, la validación de totales, el control de operaciones ya confirmadas ni los procedimientos tributarios.

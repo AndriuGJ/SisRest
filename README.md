@@ -4,7 +4,7 @@ Base de un sistema de restaurante para un local, con dos cajas, atención en mes
 
 ## Estado
 
-Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos** y **Salones y Mesas** implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. Los módulos operativos del restaurante se implementarán en las siguientes entregas.
+Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación** e **Impresoras** implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. Los módulos operativos del restaurante se implementarán en las siguientes entregas.
 
 Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. La presencia de estas tablas no significa que ya existan los servicios de confirmación de compras, producción, cobros o emisión fiscal.
 
@@ -43,7 +43,36 @@ Accesos desde el sidebar, en **Configuración del restaurante**, con el permiso 
 
 Estas pantallas configuran el catálogo. Abrir, atender, cerrar y liberar mesas corresponde al futuro POS. El contrato de bloqueo para ese módulo está en `docs/contratos-operativos.md`.
 
-No se necesitan migraciones nuevas para esta entrega: utiliza las tablas ya existentes.
+Salones y Mesas utilizan las tablas iniciales, sin migraciones adicionales para esas pantallas.
+
+## Destinos de preparación e Impresoras
+
+Accesos desde **Config. restaurante** en el sidebar, sin navegación repetida en las cabeceras.
+
+- `/configuracion/restaurante/destinos`: requiere `configuracion.restaurante`. Permite buscar, crear, renombrar y activar/desactivar Cocina, Barra y otros destinos. El código es único, en minúsculas y se conserva después de crear.
+- No se desactiva un destino con productos activos asignados, cantidades pendientes de preparación/entrega o una impresión pendiente/en curso. Al desactivarlo se conserva la configuración de sus impresoras.
+- `/configuracion/restaurante/impresoras`: requiere **`impresoras.gestionar`**, independiente del permiso anterior. Permite buscar, filtrar, crear y configurar impresoras ESC/POS por red.
+- Campos: código estable, nombre, IPv4 literal, puerto (9100 por defecto), papel de 80 o 58 mm, uso y estado. Se permite guardar una impresora inactiva sin IP; activarla requiere configuración válida.
+- Uso **Caja**: seleccionar una caja. Guardar sustituye su asignación anterior y retira la impresora de su caja previa; no comparte la misma impresora entre dos cajas. La asignación anterior se informa en el selector y se registra en auditoría.
+- Uso **Preparación**: seleccionar un destino; se admite una impresora activa por destino. Uso **General**: sin asignación fija, disponible para selección manual futura.
+- No se duplican impresoras activas en la misma IP y puerto. Un destino inactivo no permite activar su impresora ni enviarle una prueba.
+- Activación/desactivación y pruebas requieren confirmación SweetAlert2. Guardar la configuración no imprime.
+
+### Prueba de impresión
+
+El botón de impresora envía un ticket ESC/POS sin valor comercial, con nombre, conexión, ancho, fecha, avance y corte. Sale **desde el servidor PHP**, no desde la tablet. El servidor debe tener acceso a la red de la impresora. La versión alojada en hosting requerirá un servicio local de impresión, todavía pendiente; no se incluye un puente al hosting en esta entrega.
+
+La migración `2026_11_18_000058_create_pruebas_impresion_table.php` registra las pruebas separadas de los trabajos operativos: responsable, UUID único, configuración utilizada, estado y mensaje. **Ejecutar `php artisan migrate` al actualizar.** No se modifican migraciones anteriores ni se generan ventas/comprobantes al probar.
+
+- Cada confirmación se procesa una sola vez por UUID, incluso si se repite la petición. Una nueva prueba explícita crea otro UUID.
+- La configuración se comprueba otra vez al aceptar; si cambió desde la confirmación, debe solicitarse una nueva prueba.
+- La conexión TCP y escritura tienen límites de tiempo. Se gestionan escrituras parciales sin reenviar el contenido ya escrito. No hay reintentos automáticos.
+- `enviado`: se enviaron los bytes, **no certifica que salió papel**. `error`: no se pudo generar/conectar. `resultado_incierto`: el envío pudo llegar parcialmente; comprobar papel antes de repetir.
+- Una prueba interrumpida queda registrada y se considera sin confirmar al pasar un minuto; la siguiente operación de configuración actualiza ese estado sin volver a imprimir.
+- Mientras haya una prueba o trabajo operativo pendiente/en curso, no se permite modificar la impresora. La red se utiliza después de registrar y cerrar la transacción de la prueba.
+- La pantalla muestra las diez pruebas más recientes. También se registra el resultado en auditoría, sin volcar errores internos al usuario.
+
+Se verificaron los bytes ESC/POS contra un receptor TCP local y el flujo de navegador. La compatibilidad física, corte y avance de la POS80 se deben comprobar en el equipo del restaurante. Las comandas, precuentas y comprobantes operativos se conectarán a estas asignaciones al implementar sus módulos.
 
 ## Alertas reutilizables
 

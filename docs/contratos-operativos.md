@@ -74,6 +74,19 @@ Las pantallas de Salones y Mesas usan `configuracion.restaurante` y el servicio 
 - Devolver dinero no devuelve stock ni modifica por sí mismo un comprobante.
 - No superar lo cobrado, considerando devoluciones previas.
 
+## Configuración de destinos e impresoras
+
+`GestionDestinos`, `GestionImpresoras` y `ProbarImpresora` comparten el orden de bloqueo: áreas de preparación por ID, impresoras por ID, cajas por ID. Se comprueba el usuario activo y el permiso correspondiente dentro de la transacción. Las futuras operaciones que asignen productos, creen envíos o seleccionen impresora deben mantener ese orden antes de modificar filas relacionadas.
+
+- Configurar destinos requiere `configuracion.restaurante`; configurar/asignar/probar impresoras requiere `impresoras.gestionar`. Ambos se autorizan en rutas, componentes y servicios.
+- Los códigos se mantienen estables después de crear, incluidos Cocina, Barra y las impresoras iniciales, para conservar referencias y seeders repetibles.
+- No se desactiva un destino con productos activos ni cantidades enviadas que aún no se entregaron/anularon. Desactivarlo conserva el estado individual de sus impresoras; la impresión efectiva requiere ambos estados activos.
+- Una impresora tiene uso general, caja o preparación. Cambiar el uso elimina su asignación anterior. Sustituir la impresora de una caja es explícito en el selector y queda auditado. Se admite una impresora activa por destino y no se duplican conexiones activas IP/puerto.
+- Las pruebas se almacenan en `pruebas_impresion`, sin crear pedidos, comprobantes ni trabajos de tipo comanda. UUID único y configuración confirmada evitan reenvíos por repetición de peticiones o cambios concurrentes.
+- Se registra `procesando` antes de abrir el socket, y la comunicación se realiza fuera de esa transacción. `enviado` significa bytes enviados, no salida de papel. La desconexión tras iniciar escritura es incierta. No hay reintentos automáticos; las pruebas interrumpidas de más de un minuto pasan a resultado incierto sin envío nuevo.
+- Los trabajos operativos pendientes/procesando y las pruebas en curso bloquean cambios de configuración. Al implementar el consumidor operativo, deberá tomar el mismo bloqueo y conservar la instantánea antes de comunicarse con el equipo.
+- El transporte actual es TCP directo desde PHP a una IPv4 y puerto. La impresión desde hosting hacia una LAN requiere un puente local futuro. Se validó con receptor TCP simulado, no con una POS80 física.
+
 ## Facturación e impresión
 
 - Correlativos con bloqueo de serie compartida; no usar MAX()+1 sin bloqueo.
@@ -88,4 +101,4 @@ Las pantallas de Salones y Mesas usan `configuracion.restaurante` y el servicio 
 
 ## Siguiente alcance
 
-Usuarios y permisos, Salones y Mesas ya tienen pantallas, servicios transaccionales y autorización de acciones. Para los módulos operativos siguen pendientes servicios, validaciones, pantallas Livewire, gráficos, exportaciones, pruebas de concurrencia, impresión con POS80 y facturación de pruebas. Esta entrega no envía documentos a SUNAT ni trabajos a impresoras.
+Usuarios y permisos, Salones y Mesas, Destinos de preparación e Impresoras ya tienen pantallas, servicios transaccionales y autorización de acciones. Para los módulos operativos siguen pendientes servicios, validaciones, pantallas Livewire, gráficos, exportaciones, pruebas de concurrencia, impresión con POS80 y facturación de pruebas. Esta entrega permite enviar tickets de prueba por TCP. La impresión operativa de comandas, precuentas y comprobantes y el envío a SUNAT siguen pendientes.

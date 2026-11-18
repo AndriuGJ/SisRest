@@ -26,12 +26,18 @@
                         @endcan
                     </flux:sidebar.group>
                 @endcanany
-                @can('configuracion.restaurante')
+                @canany(['configuracion.restaurante', 'impresoras.gestionar'])
                     <flux:sidebar.group heading="Config. restaurante" class="mt-5 grid">
-                        <flux:sidebar.item icon="building-storefront" :href="route('configuracion.salones')" :current="request()->routeIs('configuracion.salones')" wire:navigate>Salones</flux:sidebar.item>
-                        <flux:sidebar.item icon="squares-2x2" :href="route('configuracion.mesas')" :current="request()->routeIs('configuracion.mesas')" wire:navigate>Mesas</flux:sidebar.item>
+                        @can('configuracion.restaurante')
+                            <flux:sidebar.item icon="building-storefront" :href="route('configuracion.salones')" :current="request()->routeIs('configuracion.salones')" wire:navigate>Salones</flux:sidebar.item>
+                            <flux:sidebar.item icon="squares-2x2" :href="route('configuracion.mesas')" :current="request()->routeIs('configuracion.mesas')" wire:navigate>Mesas</flux:sidebar.item>
+                            <flux:sidebar.item icon="fire" :href="route('configuracion.destinos')" :current="request()->routeIs('configuracion.destinos')" wire:navigate>Destinos de preparación</flux:sidebar.item>
+                        @endcan
+                        @can('impresoras.gestionar')
+                            <flux:sidebar.item icon="printer" :href="route('configuracion.impresoras')" :current="request()->routeIs('configuracion.impresoras')" wire:navigate>Impresoras</flux:sidebar.item>
+                        @endcan
                     </flux:sidebar.group>
-                @endcan
+                @endcanany
             </flux:sidebar.nav>
 
             <flux:spacer />
