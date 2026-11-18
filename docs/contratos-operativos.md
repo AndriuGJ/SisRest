@@ -1,6 +1,6 @@
 # Contratos para implementar los módulos
 
-Esta entrega prepara persistencia y acceso. Los futuros servicios de negocio deben cumplir estas reglas.
+Los módulos implementados y los futuros servicios de negocio deben cumplir estas reglas. Los apartados de cada entrega distinguen las operaciones disponibles de las pendientes.
 
 ## Transacciones e idempotencia
 
@@ -60,8 +60,8 @@ Las pantallas de Salones y Mesas usan `configuracion.restaurante` y el servicio 
 - El número/nombre de mesa es único dentro de cada salón; el código de salón es globalmente único.
 - Una ocupación en `ocupaciones_mesa` bloquea cambios a la mesa aunque su pedido ya esté cerrado. También bloquea cualquier pedido no cerrado ni anulado, aunque falte la ocupación.
 - Antes de editar, mover o cambiar el estado de una mesa, se comprueba que esté libre. Antes de desactivar un salón se comprueba lo mismo para todas sus mesas. Guardar un formulario no permite saltarse estas comprobaciones.
-- La configuración bloquea los salones en orden por ID y después la mesa afectada. **El futuro servicio POS debe adquirir primero el bloqueo del salón y luego el de la mesa**, comprobar ambos estados y crear la ocupación dentro de la misma transacción. De esta forma no podrá abrir una atención mientras otra transacción desactiva o mueve la mesa.
-- Las operaciones que afecten varias mesas/salones deben mantener ese mismo orden de bloqueo. Las pruebas actuales comprueban que una nueva ocupación/pedido entre abrir y guardar el formulario impide la modificación; las carreras reales con el POS deberán probarse al implementar ese servicio.
+- La configuración bloquea los salones en orden por ID y después la mesa afectada. **POS toma primero los salones y luego las mesas**, comprueba ambos estados y crea la ocupación dentro de la misma transacción. Vuelve a leer el salón bajo bloqueo actual para no utilizar una instantánea anterior de MySQL después de esperar.
+- Las operaciones que afecten varias mesas/salones deben mantener ese mismo orden de bloqueo. Las pruebas comprueban los cambios de ocupación durante la edición de configuración; CI incluye dos procesos compitiendo por abrir la misma mesa desde POS.
 
 ## Pedidos y cocina
 
@@ -157,16 +157,31 @@ Las pantallas de Salones y Mesas usan `configuracion.restaurante` y el servicio 
 - Consultar, crear y editar son permisos distintos; todo acceso exige usuario activo y `clientes.ver`. La activación/desactivación requiere editar. Cambiar el rol después de abrir un formulario o alerta se comprueba de nuevo al escribir.
 - Persona con documento opcional; empresa con RUC/razón social/dirección. RUC también puede pertenecer a persona natural. Validación local de formato/longitud, sin consulta de identidad ni condición fiscal externa.
 - Documento único por tipo/número incluso inactivo; conservar ceros iniciales y normalizar a mayúsculas. Sin documento se permiten personas diferentes con el mismo nombre, pero repetir el UUID de una misma alta no crea otro cliente.
-- Transacción: tipos de documento por ID → cliente → comprobación de vínculos de pedidos/cobros. Lecturas actuales bajo bloqueo al escribir. El futuro POS debe registrar/editar al cliente antes de su transacción de atención, y bloquear el cliente antes de asignarlo para comprobar estado; no llamar este servicio desde un pedido/cobro ya bloqueado.
+- Transacción: tipos de documento por ID → cliente → comprobación de vínculos de pedidos/cobros. Lecturas actuales bajo bloqueo al escribir. Registrar/editar al cliente fuera de la transacción de atención; POS bloquea el cliente antes del pedido al asignarlo para comprobar estado. No llamar este servicio desde un pedido/cobro ya bloqueado.
 - UUID y creador para altas idempotentes; versión de campos guardados para edición/estado. Un UUID ajeno no puede usarse para consultar o actualizar otra alta. Registros antiguos mantienen metadatos nulos.
 - Si hay pedidos o cobros, no cambiar tipo ni un documento ya registrado. Se puede completar un documento pendiente y actualizar nombre/contacto. Los comprobantes deben conservar su propia instantánea del receptor cuando se implemente emisión; editar el catálogo no reescribe otros modelos.
-- Desactivar no elimina información ni altera vínculos. El POS futuro omitirá inactivos en nuevas selecciones; el historial debe conservar sus referencias. No hay borrado físico desde estas pantallas.
+- Desactivar no elimina información ni altera vínculos. POS omite inactivos en nuevas selecciones y conserva la referencia ya asignada. No hay borrado físico desde estas pantallas.
 - Auditoría explícita de creación/edición/estado, con actor y campos antes/después. Alertas globales para confirmar estado y notificar guardado. Sin enlaces de módulo repetidos en cabeceras.
 
 ## Fotografías de productos
 
-La foto guardada se sirve por una ruta autenticada con `productos.ver`, relativa al origen actual y sin depender de `APP_URL` ni del enlace `public/storage`. El controlador solo acepta nombres simples bajo `productos/`, extensiones JPG/PNG/WebP y MIME real de imagen; rutas ajenas, archivos ausentes o contenido inválido devuelven 404. La URL versiona el nombre del archivo para actualizar la caché al reemplazarlo. No es un servidor genérico de archivos ni recibe rutas del navegador.
+La foto guardada se sirve por una ruta autenticada con `productos.ver` o `pos.ver`, relativa al origen actual y sin depender de `APP_URL` ni del enlace `public/storage`. Consultar imágenes desde POS no habilita administrar productos. El controlador solo acepta nombres simples bajo `productos/`, extensiones JPG/PNG/WebP y MIME real de imagen; rutas ajenas, archivos ausentes o contenido inválido devuelven 404. La URL versiona el nombre del archivo para actualizar la caché al reemplazarlo. No es un servidor genérico de archivos ni recibe rutas del navegador.
+
+## POS: borradores implementados
+
+- `GestionPedidos` reautoriza usuario activo, `pos.ver`, alcance y permiso de acción dentro de la transacción. Propio significa responsable o creador; alcance general permite asignar otro responsable habilitado. No se expone información del pedido ajeno en la tarjeta de mesa.
+- Orden: áreas → artículos → productos → salones → mesas → cajas, cada grupo por ID; luego turno y, al guardar, tipos de documento → cliente → pedido → detalles. La relectura de caja tras el turno se hace sobre una fila ya bloqueada, sin invertir la adquisición de recursos. Clientes no debe adquirir recursos de inventario/caja. Mantener estos contratos con Configuración, Inventario, Clientes y Cajas.
+- Abrir y guardar exigen turno abierto y caja activa. El turno de apertura es histórico; operar más tarde con otra caja abierta no lo cambia. No se dan permisos financieros al mozo por seleccionar un turno.
+- Apertura idempotente por UUID y creador; ocupación y comprobación de pedidos activos dentro de la misma transacción. Las mesas/salones inactivos o las ocupaciones previas impiden abrir. Repetir una apertura devuelve su pedido original, sin crear otro.
+- Cantidades de productos raíz enteras positivas hasta 9999; máximo 50 líneas de borrador. Precios, nombres y destinos proceden del servidor, no de propiedades editables. Las líneas ya guardadas conservan sus instantáneas. La versión incluye pedido y todos sus detalles; otra edición o confirmación invalida el formulario.
+- El combo conserva componentes hijos, cantidades, factor y destino; su precio se cobra en la raíz y los hijos tienen precio cero. Al editar cantidad se usa el factor guardado, sin sustituirlo por la composición vigente. La futura confirmación debe reservar esas instantáneas.
+- Validar activo/visible/categoría de la raíz; un componente no necesita ser visible individualmente, pero sí estar activo y tener artículo/unidad y destino habilitados cuando corresponda. Disponibilidad del carrito agregada por artículo, incluyendo combos e individuales. **El borrador no reserva ni mueve inventario**: validar al guardar no garantiza disponibilidad futura.
+- Solo se editan/eliminan líneas en borrador sin cantidades cobradas, entregadas, anuladas ni referencias a reservas, envíos o cobros. Las confirmadas permanecen intactas al guardar nuevos borradores.
+- Cambiar cliente requiere `clientes.ver` antes de consultar el ID; se autoriza también el pedido antes de esa consulta. Una nueva asignación requiere cliente activo; se conserva el cliente histórico inactivo. Alta/edición de cliente se hace desde su módulo, fuera de la transacción de atención.
+- Descartar exige motivo, versión y edición; en mesa también `mesas.liberar`. Solo pedidos sin confirmados/cobros y sin referencias operativas. Guarda usuario/fecha/motivo y cantidades anuladas, conserva detalles y libera únicamente su ocupación. No necesita caja abierta ni mueve stock/dinero. Repetir no duplica efectos.
+- Delivery guarda contacto y costo de envío manuales al abrir; no hay despacho ni asignación de repartidor/taxi en esta etapa. El total mostrado es referencial, sin cobro, impuesto desglosado ni comprobante.
+- CI MySQL prueba aperturas concurrentes de mesa, UUID repetido, descarte repetido y rechazo de una edición con versión anterior. Confirmación/reservas, Cocina, cobros, división de cuenta, descuentos, impresión y emisión se integrarán después.
 
 ## Siguiente alcance
 
-Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas, Preparación diaria, Compras, Proveedores, Cajas, Arqueos y Clientes ya tienen pantallas, servicios transaccionales y autorización de acciones. Siguen pendientes atención POS/Cocina y cobros de ventas, movimientos de ajuste/merma, gráficos, reportes, impresión operativa con POS80 y facturación de pruebas. Esta entrega permite enviar tickets de prueba por TCP. La impresión operativa de comandas, precuentas y comprobantes y el envío a SUNAT siguen pendientes.
+Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas, Preparación diaria, Compras, Proveedores, Cajas, Arqueos, Clientes y borradores POS ya tienen pantallas, servicios transaccionales y autorización de acciones. Sigue confirmar pedidos y reservar existencias para Cocina; después cobros de ventas, ajustes/mermas, gráficos, reportes, impresión operativa con POS80 y facturación de pruebas. Esta entrega permite enviar tickets de prueba por TCP. La impresión operativa de comandas, precuentas y comprobantes y el envío a SUNAT siguen pendientes.

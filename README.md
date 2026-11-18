@@ -4,7 +4,7 @@ Base de un sistema de restaurante para un local, con dos cajas, atención en mes
 
 ## Estado
 
-Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores**, **Cajas y Arqueos**, **Clientes** implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. La atención, cobros y demás módulos operativos se implementarán en las siguientes entregas.
+Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores**, **Cajas y Arqueos**, **Clientes** y la **primera etapa del POS: pedidos en borrador**, implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. La confirmación de pedidos, Cocina, cobros y demás operaciones se implementarán en las siguientes entregas.
 
 Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. La presencia de estas tablas no significa que ya existan los servicios de cobros de ventas o emisión fiscal. La confirmación de compras y preparación diaria ya está implementada.
 
@@ -41,7 +41,7 @@ Accesos desde el sidebar, en **Configuración del restaurante**, con el permiso 
 - Las comprobaciones se repiten al guardar dentro de transacciones, con auditoría del responsable y valores anteriores/posteriores.
 - El seeder crea Principal solo cuando no existen salones; no vuelve a crearlo si fue renombrado.
 
-Estas pantallas configuran el catálogo. Abrir, atender, cerrar y liberar mesas corresponde al futuro POS. El contrato de bloqueo para ese módulo está en `docs/contratos-operativos.md`.
+Estas pantallas configuran el catálogo. Desde POS ya se pueden abrir pedidos y descartar borradores, liberando su mesa; el cierre de una atención confirmada se implementará con las siguientes operaciones. El contrato de bloqueo está en `docs/contratos-operativos.md`.
 
 Salones y Mesas utilizan las tablas iniciales, sin migraciones adicionales para esas pantallas.
 
@@ -218,7 +218,7 @@ Ingresos (`cajas.registrar_ingreso`), egresos (`cajas.registrar_egreso`) y retir
 
 Los pagos de proveedores hechos con efectivo desde ese turno aparecen como egresos automáticos, identificados en el filtro de origen. No se registran una segunda vez de forma manual. Pagos digitales de empresa y dinero externo del dueño no se asocian a caja ni alteran su efectivo.
 
-El resumen de cobros por medio utiliza pagos de ventas **confirmadas**, antes de devoluciones. Monto aplicado y vuelto se distinguen: solo el importe aplicado en efectivo corresponde al movimiento de ingreso. Ese resumen no incluye fondos ni aportes manuales y no se suma de nuevo al efectivo esperado. Si todavía no existen ventas, indica que no hay cobros; POS y su servicio de cobro siguen pendientes.
+El resumen de cobros por medio utiliza pagos de ventas **confirmadas**, antes de devoluciones. Monto aplicado y vuelto se distinguen: solo el importe aplicado en efectivo corresponde al movimiento de ingreso. Ese resumen no incluye fondos ni aportes manuales y no se suma de nuevo al efectivo esperado. Si todavía no existen ventas, indica que no hay cobros; el servicio de cobro de ventas sigue pendiente.
 
 ### Arqueos y cierre
 
@@ -248,11 +248,31 @@ CI ejecuta `tests/Support/cash-concurrency.php` en MySQL: apertura doble de una 
 
 `clientes.crear` habilita altas y `clientes.editar` habilita edición y cambios de estado, además del permiso de consulta. Editar no requiere permiso de crear. Se vuelven a comprobar usuario activo y permisos en el servicio transaccional; ID, versión y UUID permanecen bloqueados en Livewire.
 
-**Guardar** notifica con SweetAlert2 tras redirigir. **Activar/Desactivar** pide confirmación con la alerta global. No se borran clientes ni se alteran sus pedidos, cobros o comprobantes. Los cambios de información y estado se auditan con responsable y valores anteriores/nuevos. La integración de selección/alta desde la venta se realizará con el POS.
+**Guardar** notifica con SweetAlert2 tras redirigir. **Activar/Desactivar** pide confirmación con la alerta global. No se borran clientes ni se alteran sus pedidos, cobros o comprobantes. Los cambios de información y estado se auditan con responsable y valores anteriores/nuevos. El POS permite seleccionar clientes existentes con permiso de consulta; el alta se realiza desde Clientes.
 
 Las ediciones comprueban una versión para no sobrescribir cambios de otra sesión. Si ya existen pedidos/cobros, se conserva el tipo de cliente y el documento previamente registrado; se permite completar un documento que faltaba, sin cambiar el tipo, y actualizar nombre/contacto. El formulario indica y bloquea los campos protegidos; el servidor comprueba la misma regla.
 
 La migración `000063` agrega UUID de registro y usuario creador para impedir altas repetidas, incluso sin documento. Los clientes anteriores conservan sus datos y no reciben una autoría ficticia. No se crean clientes de ejemplo ni se modifican permisos existentes. Actualizar con `php artisan migrate` y `npm run build`.
+
+## POS: pedidos en borrador
+
+`/pos` requiere `pos.ver` y acceso a pedidos propios o a todos. Incluye selector de salón, mesas libres/ocupadas, pedidos activos con filtros por modalidad y acceso al detalle `/pos/pedidos/{pedido}`. La navegación de módulos permanece en el sidebar.
+
+1. **Abrir caja** desde Cajas y Arqueos. Abrir o guardar un pedido requiere seleccionar un turno abierto de una caja activa; los mozos solo consultan su nombre y número de turno, sin acceso a sus importes.
+2. Seleccionar una mesa habilitada, **Para llevar** o **Delivery**. La apertura guarda responsable, caja/turno de origen y nombres de salón/mesa. Delivery requiere destinatario, teléfono y dirección; referencia y costo de envío son opcionales. La asignación de repartidor/taxi y el despacho se implementarán después.
+3. Buscar productos por nombre/código y filtrar por categoría. Agregar cantidades enteras, notas por producto, observación general, comensales y cliente opcional. Solo se ofrece el catálogo activo y visible; los productos con entrega directa no necesitan destino de cocina.
+4. **Guardar borrador** conserva precios del servidor, nombres, destinos y componentes del combo. Los componentes tienen precio cero para no cobrar dos veces. Cambiar después el precio o composición del catálogo no reescribe lo ya guardado. Se comprueba la disponibilidad del carrito completo, incluyendo componentes compartidos entre combos y productos individuales.
+5. Reabrir el pedido permite editar sus borradores. Se rechaza sobrescribir cambios de otra sesión. Las líneas confirmadas son de solo lectura, y pueden convivir con nuevas líneas en borrador sin reiniciar su preparación.
+
+**Guardar no reserva ni descuenta existencias, no envía a Cocina, no cobra ni imprime.** Distintos borradores pueden depender de las mismas existencias; la próxima etapa deberá comprobar y reservar al confirmar. El total es referencial, incluye el envío en delivery y todavía no constituye una venta ni un comprobante.
+
+`pedidos.crear` autoriza apertura; `pedidos.editar`, guardar o descartar. `pedidos.ver_propios` limita al responsable/creador; `pedidos.ver_todos` amplía el alcance y permite asignar otro responsable habilitado. El pedido ajeno no se abre con un ID directo. Seleccionar/cambiar cliente exige `clientes.ver`; un mozo sin ese permiso no recibe el directorio. Los inactivos no se ofrecen para nuevas asignaciones y una referencia anterior se conserva.
+
+**Descartar borrador** exige motivo y confirmación SweetAlert2. Solo se admite si no tiene líneas confirmadas, reservas, envíos ni cobros. Conserva el pedido anulado y sus detalles; libera únicamente su propia ocupación. En mesa requiere además `mesas.liberar`. Puede descartarse aunque se haya cerrado la caja, pues no registra venta ni dinero. Cerrar caja nunca descarta pedidos: pueden continuar usando otro turno abierto, conservando el turno de apertura original.
+
+La migración `000064` agrega UUID, turno de apertura, nombres históricos y responsable/motivo de anulación al pedido, y factor del componente a sus detalles. Los campos nuevos son opcionales para registros anteriores. No hay permisos ni dependencias nuevas; actualizar con `php artisan migrate` y `npm run build`. La ruta autenticada de fotos admite `productos.ver` **o** `pos.ver`, sin conceder al mozo la gestión del catálogo.
+
+CI ejecuta `tests/Support/pos-concurrency.php` en MySQL: dos aperturas de una mesa, repetición del UUID de apertura, descarte repetido y ediciones concurrentes del mismo borrador. Se restringe al entorno testing y base desechable `sisrest_test`, y limpia sus propias filas.
 
 ## Alertas reutilizables
 

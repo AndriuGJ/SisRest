@@ -15,6 +15,13 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
+ * @property string|null $clave_registro
+ * @property int|null $turno_apertura_id
+ * @property string|null $salon_nombre
+ * @property string|null $mesa_codigo
+ * @property string|null $mozo_nombre
+ * @property string|null $motivo_anulacion
+ * @property int|null $anulado_por
  * @property string $codigo
  * @property ModalidadPedido $modalidad
  * @property int|null $mesa_id
@@ -32,6 +39,7 @@ class Pedido extends Model
     protected $table = 'pedidos';
 
     protected $fillable = [
+        'clave_registro', 'turno_apertura_id', 'salon_nombre', 'mesa_codigo', 'mozo_nombre', 'motivo_anulacion', 'anulado_por',
         'codigo',
         'modalidad',
         'mesa_id',

@@ -25,6 +25,8 @@ use App\Livewire\Inventario\PreparacionFormulario;
 use App\Livewire\Inventario\ProductoFormulario;
 use App\Livewire\Inventario\Productos;
 use App\Livewire\Inventario\RecetaFormulario;
+use App\Livewire\Pos\PedidoPantalla;
+use App\Livewire\Pos\Pos;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
@@ -37,10 +39,10 @@ Route::middleware(['auth'])->group(function () {
         Route::get('nuevo', InsumoFormulario::class)->middleware('permission:insumos.crear')->name('crear');
         Route::get('{insumo}/editar', InsumoFormulario::class)->middleware('permission:insumos.editar')->name('editar');
     });
+    Route::get('inventario/productos/{producto}/imagen', ImagenProductoController::class)->middleware('permission:productos.ver|pos.ver')->name('productos.imagen');
     Route::middleware('permission:productos.ver')->prefix('inventario/productos')->name('productos.')->group(function () {
         Route::get('/', Productos::class)->name('index');
         Route::get('nuevo', ProductoFormulario::class)->middleware('permission:productos.crear')->name('crear');
-        Route::get('{producto}/imagen', ImagenProductoController::class)->name('imagen');
         Route::get('{producto}/receta', RecetaFormulario::class)->middleware('permission:recetas.gestionar')->name('receta');
         Route::get('{producto}/editar', ProductoFormulario::class)->middleware('permission:productos.editar')->name('editar');
     });
@@ -73,6 +75,11 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', Clientes::class)->name('index');
         Route::get('nuevo', ClienteFormulario::class)->middleware('permission:clientes.crear')->name('crear');
         Route::get('{cliente}/editar', ClienteFormulario::class)->middleware('permission:clientes.editar')->name('editar');
+    });
+
+    Route::middleware('permission:pos.ver')->prefix('pos')->name('pos.')->group(function () {
+        Route::get('/', Pos::class)->name('index');
+        Route::get('pedidos/{pedido}', PedidoPantalla::class)->name('pedido');
     });
 
     Route::get('usuarios', Usuarios::class)

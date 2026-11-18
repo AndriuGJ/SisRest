@@ -15,6 +15,9 @@
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
+                    @can('pos.ver')
+                        <flux:sidebar.item icon="squares-2x2" :href="route('pos.index')" :current="request()->routeIs('pos.*')" wire:navigate>POS</flux:sidebar.item>
+                    @endcan
                     @can('clientes.ver')
                         <flux:sidebar.item icon="user-group" :href="route('clientes.index')" :current="request()->routeIs('clientes.*')" wire:navigate>Clientes</flux:sidebar.item>
                     @endcan

@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property TipoLineaPedidoDetalle $tipo_linea
  * @property string $descripcion
  * @property int|null $area_preparacion_id
+ * @property numeric-string|null $factor_componente
  * @property numeric-string $cantidad
  * @property numeric-string $cantidad_anulada
  * @property numeric-string $cantidad_entregada
@@ -40,6 +41,7 @@ class PedidoDetalle extends Model
     protected $table = 'pedido_detalles';
 
     protected $fillable = [
+        'factor_componente',
         'pedido_id',
         'producto_id',
         'detalle_padre_id',
@@ -67,6 +69,7 @@ class PedidoDetalle extends Model
     {
         return [
             'tipo_linea' => TipoLineaPedidoDetalle::class,
+            'factor_componente' => 'decimal:4',
             'cantidad' => 'decimal:4',
             'cantidad_anulada' => 'decimal:4',
             'cantidad_entregada' => 'decimal:4',
