@@ -1,8 +1,14 @@
 <?php
 
+use App\Http\Controllers\Inventario\ImagenProductoController;
 use App\Livewire\Administracion\Roles;
 use App\Livewire\Administracion\RolFormulario;
 use App\Livewire\Administracion\Usuarios;
+use App\Livewire\Compras\CompraDetalle;
+use App\Livewire\Compras\CompraFormulario;
+use App\Livewire\Compras\Compras;
+use App\Livewire\Compras\Proveedores;
+use App\Livewire\Compras\ProveedorFormulario;
 use App\Livewire\Configuracion\Destinos;
 use App\Livewire\Configuracion\Impresoras;
 use App\Livewire\Configuracion\Mesas;
@@ -30,6 +36,7 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware('permission:productos.ver')->prefix('inventario/productos')->name('productos.')->group(function () {
         Route::get('/', Productos::class)->name('index');
         Route::get('nuevo', ProductoFormulario::class)->middleware('permission:productos.crear')->name('crear');
+        Route::get('{producto}/imagen', ImagenProductoController::class)->name('imagen');
         Route::get('{producto}/receta', RecetaFormulario::class)->middleware('permission:recetas.gestionar')->name('receta');
         Route::get('{producto}/editar', ProductoFormulario::class)->middleware('permission:productos.editar')->name('editar');
     });
@@ -39,6 +46,18 @@ Route::middleware(['auth'])->group(function () {
         Route::get('nueva', PreparacionFormulario::class)->middleware('permission:preparaciones.crear')->name('crear');
         Route::get('{preparacion}/editar', PreparacionFormulario::class)->middleware('permission:preparaciones.crear')->name('editar');
         Route::get('{preparacion}', PreparacionDetalle::class)->name('ver');
+    });
+
+    Route::middleware('permission:proveedores.gestionar')->prefix('compras/proveedores')->name('proveedores.')->group(function () {
+        Route::get('/', Proveedores::class)->name('index');
+        Route::get('nuevo', ProveedorFormulario::class)->name('crear');
+        Route::get('{proveedor}/editar', ProveedorFormulario::class)->name('editar');
+    });
+    Route::middleware('permission:compras.ver')->prefix('compras')->name('compras.')->group(function () {
+        Route::get('/', Compras::class)->name('index');
+        Route::get('nueva', CompraFormulario::class)->middleware('permission:compras.crear')->name('crear');
+        Route::get('{compra}/editar', CompraFormulario::class)->middleware('permission:compras.crear')->name('editar');
+        Route::get('{compra}', CompraDetalle::class)->name('ver');
     });
 
     Route::get('usuarios', Usuarios::class)

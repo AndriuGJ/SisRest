@@ -16,6 +16,14 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
+ * @property string|null $clave_registro
+ * @property string|null $proveedor_nombre
+ * @property string|null $proveedor_documento
+ * @property string|null $documento_nombre
+ * @property int|null $confirmada_por
+ * @property int|null $anulada_por
+ * @property CarbonImmutable|null $anulada_at
+ * @property string|null $motivo_anulacion
  * @property string $codigo
  * @property int $proveedor_id
  * @property int $usuario_id
@@ -41,6 +49,7 @@ class Compra extends Model
     protected $table = 'compras';
 
     protected $fillable = [
+        'clave_registro', 'proveedor_nombre', 'proveedor_documento', 'documento_nombre', 'confirmada_por', 'anulada_por', 'anulada_at', 'motivo_anulacion',
         'codigo',
         'proveedor_id',
         'usuario_id',
@@ -64,6 +73,7 @@ class Compra extends Model
     protected function casts(): array
     {
         return [
+            'anulada_at' => 'immutable_datetime',
             'fecha' => 'immutable_date',
             'fecha_vencimiento' => 'immutable_date',
             'condicion_pago' => CondicionPagoCompra::class,
@@ -98,6 +108,17 @@ class Compra extends Model
     public function pagos(): HasMany
     {
         return $this->hasMany(PagoCompra::class, 'compra_id');
+    }
+
+    /** @return numeric-string */
+    public function saldoPendiente(): string
+    {
+        $pagado = '0.00';
+        foreach (($this->relationLoaded('pagos') ? $this->pagos : $this->pagos()->get()) as $pago) {
+            $pagado = bcadd($pagado, $pago->monto, 2);
+        }
+
+        return bcsub($this->total, $pagado, 2);
     }
 
     public function getActivitylogOptions(): LogOptions

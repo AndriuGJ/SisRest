@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
  * @property int $compra_id
+ * @property string|null $medio_pago_nombre
  * @property int $medio_pago_id
  * @property int|null $turno_caja_id
  * @property int $usuario_id
@@ -29,6 +30,7 @@ class PagoCompra extends Model
 
     protected $fillable = [
         'compra_id',
+        'medio_pago_nombre',
         'medio_pago_id',
         'turno_caja_id',
         'usuario_id',

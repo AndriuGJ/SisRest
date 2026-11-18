@@ -34,7 +34,7 @@
                 @if($foto && $foto->isPreviewable())
                     <img src="{{ $foto->temporaryUrl() }}" alt="Vista previa del producto" class="aspect-square w-full rounded-md object-cover" />
                 @elseif($imagenActual && ! $quitarFoto)
-                    <img src="{{ Storage::disk('public')->url($imagenActual) }}" alt="Fotografía del producto" class="aspect-square w-full rounded-md object-cover" />
+                    <img src="{{ route('productos.imagen', ['producto' => $productoId, 'v' => substr(hash('sha256', $imagenActual), 0, 16)], false) }}" alt="Fotografía del producto" class="aspect-square w-full rounded-md object-cover" />
                 @else
                     <div class="flex aspect-square items-center justify-center rounded-md bg-zinc-100 text-zinc-400 dark:bg-zinc-800"><flux:icon.photo class="size-12" /></div>
                 @endif

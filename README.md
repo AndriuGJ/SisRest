@@ -4,9 +4,9 @@ Base de un sistema de restaurante para un local, con dos cajas, atención en mes
 
 ## Estado
 
-Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas** y **Preparación diaria** implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. Las compras, atención, cobros y demás módulos operativos se implementarán en las siguientes entregas.
+Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores** implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. La atención, cobros y demás módulos operativos se implementarán en las siguientes entregas.
 
-Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. La presencia de estas tablas no significa que ya existan los servicios de confirmación de compras, cobros o emisión fiscal. La confirmación de preparación diaria ya está implementada.
+Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. La presencia de estas tablas no significa que ya existan los servicios de cobros de ventas o emisión fiscal. La confirmación de compras y preparación diaria ya está implementada.
 
 ## Usuarios y permisos
 
@@ -95,7 +95,7 @@ El listado muestra disponible (actual menos reservado), unidad y mínimo. El fil
 - Cada producto que no sea combo obtiene automáticamente su propio artículo de inventario. No se solicita crear ese artículo por separado. El código interno usa `PV-` seguido del código del producto; por ello los códigos nuevos admiten hasta 37 caracteres.
 - Código, tipo, origen y unidad de venta se conservan después de crear para mantener la identidad y los saldos. Actualizar nombre, precio, imagen o visibilidad no reinicia existencias, reservas ni costo promedio.
 - La unidad de venta es una unidad o porción. El destino puede ser un área activa o **Entrega directa**, para productos que no requieren comanda.
-- Las fotos admiten JPG/PNG/WebP de hasta 2 MB. Se almacenan en el disco público; reemplazar o quitar una foto retira el archivo anterior. Un error de validación no deja archivos ni artículos parciales.
+- Las fotos admiten JPG/PNG/WebP de hasta 2 MB. Se almacenan en el disco público; reemplazar o quitar una foto retira el archivo anterior. Un error de validación no deja archivos ni artículos parciales. Listado y edición utilizan `/inventario/productos/{producto}/imagen`, con permiso de consulta, MIME verificado y una URL relativa que funciona al acceder por IP local aunque `APP_URL` tenga otro host. No se necesita volver a subir los archivos existentes si siguen en `storage/app/public/productos`. La URL cambia al reemplazar la foto.
 - Los combos no tienen artículo ni existencias propias. Se configuran por productos no combo y cantidades positivas, sin duplicados ni anidación. Un combo activo requiere al menos un componente habilitado.
 - Disponible normal = existencia actual menos reservada si está habilitado. Disponible del combo = menor cantidad entera que permiten sus componentes, respetando sus reservas y destinos activos.
 
@@ -105,18 +105,17 @@ El editor de presentaciones se reutiliza en Insumos y reventa: nombre, equivalen
 
 Se bloquea desactivar artículos con reservas o utilizados por recetas activas, y productos incluidos en combos activos o pedidos en curso. Los estados se vuelven a comprobar al confirmar/guardar. Los cambios quedan auditados.
 
-**Este módulo configura el catálogo y consulta cantidades. No permite escribir saldos manualmente ni inventa ingresos.** Las recetas y preparación diaria ya tienen sus pantallas y servicios descritos abajo; el ingreso de insumos mediante Compras sigue pendiente. Los menús son productos fijos, sin elección dinámica de entrada y segundo.
+**Este módulo configura el catálogo y consulta cantidades. No permite escribir saldos manualmente ni inventa ingresos.** Las recetas y preparación diaria ya tienen sus pantallas y servicios descritos abajo; el ingreso de insumos se realiza desde Compras. Los menús son productos fijos, sin elección dinámica de entrada y segundo.
 
 ### Actualización de una instalación existente
 
 ~~~console
 php artisan optimize:clear
 php artisan migrate
-php artisan storage:link
 npm run build
 ~~~
 
-`storage:link` se necesita una sola vez para servir las fotografías. La migración `000059` agrega `insumos.crear` e `insumos.editar`: en instalaciones existentes los concede una vez a los roles/usuarios que ya tenían `inventario.ajustar`. Los lectores no reciben gestión. Después pueden ajustarse desde Roles; repetir seeders no restablece permisos revocados. Las instalaciones nuevas reciben los 62 permisos del catálogo para el administrador inicial.
+Las fotografías de productos se sirven desde una ruta autenticada del mismo origen; no requieren `storage:link`. El enlace puede conservarse para futuros archivos públicos. La migración `000059` agrega `insumos.crear` e `insumos.editar`: en instalaciones existentes los concede una vez a los roles/usuarios que ya tenían `inventario.ajustar`. Los lectores no reciben gestión. Después pueden ajustarse desde Roles; repetir seeders no restablece permisos revocados. Las instalaciones nuevas reciben los 62 permisos del catálogo para el administrador inicial.
 
 ## Recetas y Preparación diaria
 
@@ -161,7 +160,45 @@ Estos permisos ya estaban en el catálogo inicial. La nueva migración `000060` 
 
 Las claves de movimientos y el estado bloqueado impiden duplicar consumos al repetir una confirmación. Además de Pest en SQLite/MySQL, CI ejecuta `tests/Support/production-concurrency.php` con procesos simultáneos: dos lotes compitiendo por las últimas existencias y dos confirmaciones del mismo borrador. Ese script solo funciona con `APP_ENV=testing`, controlador mysql y base desechable `sisrest_test`.
 
-**Para confirmar debe haber insumos disponibles.** Los seeders normales no inventan existencias. Las pruebas utilizan bases y existencias desechables; el módulo Compras será el siguiente ingreso operativo de materia prima.
+**Para confirmar debe haber insumos disponibles.** Los seeders normales no inventan existencias. Las pruebas utilizan bases y existencias desechables; el módulo Compras ya permite ingresar la materia prima recibida.
+
+## Compras y Proveedores
+
+### Proveedores
+
+`/compras/proveedores` requiere `proveedores.gestionar`. Incluye búsqueda, filtros, paginación, registro, edición y activación/desactivación con SweetAlert2. Nombre o razón social obligatorio; documento y contacto opcionales. Si se registra documento, deben seleccionarse tipo y número; se comprueban longitud, formato y duplicados. Los cambios se auditan y las ediciones concurrentes no se sobrescriben.
+
+Desactivar impide nuevas compras y confirmar borradores; no elimina historial ni impide pagar deudas existentes. Desde el proveedor se puede consultar su listado de compras y saldos si se tiene `compras.ver`.
+
+### Recepción de compras
+
+`/compras` requiere `compras.ver`; permite buscar por código/proveedor/número y filtrar proveedor, estado, fechas y saldo pendiente/pagada. Importes en soles. Solo se registran compras **ya recibidas**, sin recepciones parciales.
+
+1. **Nueva compra** con proveedor activo, documento recibido, fecha y condición contado/crédito. Factura y boleta requieren serie y número; otro documento admite ambos vacíos. No se repite el mismo documento del proveedor. Crédito exige vencimiento no anterior a la compra.
+2. Seleccionar hasta 50 insumos o artículos de reventa, sin repetir; los preparados se obtienen mediante producción. Elegir unidad base o presentación propia activa y cantidad positiva.
+3. Registrar el precio final por presentación (hasta seis decimales). Cantidad × equivalencia genera la cantidad base con hasta cuatro decimales exactos. No se redondea una fracción para inventar existencias.
+4. Opcionalmente indicar descuento por línea y el importe del impuesto **ya incluido**. Se resta el descuento; el impuesto se desglosa sin volver a sumarlo. No se aplica una tasa tributaria supuesta. Los totales se calculan y redondean a céntimos en el servidor; el detalle guardado permite revisarlos.
+5. **Guardar borrador** no modifica existencias ni registra pagos. El creador o un confirmador con permiso de creación puede editarlo/anularlo con motivo. Se comprueba la versión antes de guardar o confirmar.
+6. **Confirmar compra** ingresa cantidades y actualiza el costo promedio ponderado de cada artículo en una transacción, conservando sus reservas. La valorización operativa usa el total final de adquisición de cada línea, incluidos sus impuestos; no calcula recuperación tributaria ni contabilidad fiscal. Nombres, unidades, presentaciones, factores, costos y responsables quedan conservados como instantánea.
+7. Contado confirma recepción y pago total juntos: si el pago falla, tampoco ingresa inventario. Crédito ingresa existencias con saldo pendiente y admite pagos posteriores parciales o completos.
+
+Confirmar otra vez no duplica ingresos. Las compras confirmadas y sus pagos son de solo lectura; devoluciones al proveedor y correcciones de recepción se definirán con sus movimientos correspondientes. Esta entrega solo anula borradores. No se modifican compras reales mediante `migrate:fresh` ni se inventan saldos en seeders.
+
+### Pagos y origen del dinero
+
+`pagos_proveedor.registrar` autoriza pagos; `compras.confirmar` autoriza la recepción. Para contado se necesitan ambos permisos. Los pagos se registran con fecha/hora real, usuario, medio, referencia opcional y UUID; nunca superan el saldo confirmado.
+
+- **Medios digitales de la empresa**: Yape, Plin, tarjeta o transferencia; sin turno de caja ni movimiento de efectivo.
+- **Dinero del dueño**: efectivo o digital externo; no modifica el efectivo del restaurante ni crea un ingreso ficticio en caja.
+- **Efectivo de caja abierta**: exige `cajas.registrar_egreso`, turno abierto propio (o `cajas.ver_todas`), medio que afecte efectivo y saldo esperado suficiente. Genera un único egreso enlazado al pago. No permite asociar un pago digital a una salida física de caja.
+
+El detalle muestra pagos y saldo; pagar no vuelve a ingresar existencias. El usuario revisa el pago y lo confirma con SweetAlert2; los valores revisados quedan bloqueados durante la confirmación. La apertura/cierre de cajas todavía no tiene pantalla: solo aparecen turnos abiertos existentes y autorizados, sin crear uno automáticamente. Puede trabajarse con pagos digitales o del dueño hasta implementar Cajas y Arqueos.
+
+### Actualización y concurrencia
+
+Los permisos ya estaban en el catálogo. La migración `000061` agrega UUID, instantáneas y responsables a compras/detalles, y el nombre del medio en pagos. Ejecutar `php artisan migrate` y recompilar recursos.
+
+CI añade `tests/Support/purchase-concurrency.php` en MySQL: recepciones simultáneas del mismo artículo conservan cantidades y costo promedio; repetir una recepción no duplica movimientos; dos pagos no pueden superar la misma deuda; repetir un pago con su UUID no lo duplica. El script solo opera en `APP_ENV=testing` y base MySQL desechable `sisrest_test`, y limpia sus propias filas.
 
 ## Alertas reutilizables
 

@@ -29,6 +29,16 @@
                         @endcan
                     </flux:sidebar.group>
                 @endcanany
+                @canany(['compras.ver', 'proveedores.gestionar'])
+                    <flux:sidebar.group heading="Compras" class="mt-5 grid">
+                        @can('compras.ver')
+                            <flux:sidebar.item icon="shopping-cart" :href="route('compras.index')" :current="request()->routeIs('compras.*')" wire:navigate>Compras</flux:sidebar.item>
+                        @endcan
+                        @can('proveedores.gestionar')
+                            <flux:sidebar.item icon="truck" :href="route('proveedores.index')" :current="request()->routeIs('proveedores.*')" wire:navigate>Proveedores</flux:sidebar.item>
+                        @endcan
+                    </flux:sidebar.group>
+                @endcanany
                 @canany(['usuarios.gestionar', 'roles.gestionar'])
                     <flux:sidebar.group heading="Administración" class="mt-5 grid">
                         @can('usuarios.gestionar')

@@ -13,6 +13,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $compra_id
  * @property int $articulo_id
  * @property int|null $presentacion_articulo_id
+ * @property string|null $unidad_codigo
+ * @property string|null $presentacion_nombre
  * @property string $descripcion
  * @property numeric-string $cantidad
  * @property numeric-string $factor_conversion
@@ -30,6 +32,7 @@ class CompraDetalle extends Model
         'compra_id',
         'articulo_id',
         'presentacion_articulo_id',
+        'unidad_codigo', 'presentacion_nombre',
         'descripcion',
         'cantidad',
         'factor_conversion',

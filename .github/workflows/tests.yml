@@ -71,3 +71,7 @@ jobs:
       - name: Verify concurrent production
         if: matrix.database == 'mysql'
         run: php tests/Support/production-concurrency.php
+
+      - name: Verify concurrent purchases and payments
+        if: matrix.database == 'mysql'
+        run: php tests/Support/purchase-concurrency.php

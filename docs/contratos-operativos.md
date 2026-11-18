@@ -27,7 +27,7 @@ No modificar saldos desde Livewire sin el correspondiente movimiento.
 
 ## Catálogos de inventario implementados
 
-`GestionInsumos`, `GestionProductos` y `Presentaciones` administran metadatos; no generan movimientos, preparaciones, compras ni reservas. Los saldos y costos no se reciben de propiedades Livewire. El catálogo usa transacciones y el orden de bloqueo **áreas por ID → artículos por ID → productos por ID**, compatible con la configuración de destinos. Los servicios de recetas y producción mantienen ese orden. El futuro servicio de compra deberá conservarlo al combinar recursos.
+`GestionInsumos`, `GestionProductos` y `Presentaciones` administran metadatos; no generan movimientos, preparaciones, compras ni reservas. Los saldos y costos no se reciben de propiedades Livewire. El catálogo usa transacciones y el orden de bloqueo **áreas por ID → artículos por ID → productos por ID**, compatible con la configuración de destinos. Los servicios de recetas y producción mantienen ese orden. Compras conserva ese orden y luego bloquea proveedores por ID, la compra, el turno de caja si aplica y el medio de pago. Las futuras operaciones de caja deben respetar ese orden cuando combinen recursos.
 
 - Consulta de insumos: `inventario.ver`. Gestión: `insumos.crear` / `insumos.editar`, agregados por migración sin dar gestión a lectores. Productos conserva `productos.ver`, `productos.crear` y `productos.editar`.
 - La identidad del insumo conserva código y unidad; la del producto conserva además tipo y origen del artículo. Cada producto no combo obtiene un artículo propio y único. No se crean artículos para combos.
@@ -126,6 +126,23 @@ Las pantallas de Salones y Mesas usan `configuracion.restaurante` y el servicio 
 - Enviado a impresora no garantiza papel impreso; contemplar resultados inciertos.
 - Reimpresión referencia al trabajo original, sin duplicar pedido o cobro.
 
+## Compras y pagos implementados
+
+- `GestionCompras` y `GestionProveedores` reautorizan al usuario activo dentro de la transacción. Orden compartido: áreas → artículos → productos → proveedores (todos por ID), después compra → turno de caja → medio de pago. No introducir bloqueos inversos al conectar cierre de turnos u otros egresos.
+- Solo insumos/reventa activos, unidades activas y presentaciones propias. El factor y la cantidad base se conservan; se rechaza pérdida de precisión en la conversión. Sin duplicados por artículo, máximo 50 líneas.
+- Precio final por presentación con seis decimales, total de línea redondeado a dos menos descuento. El impuesto incluido se desglosa, no se suma otra vez ni se deduce del valor operativo ingresado. No se supone una tasa ni un tratamiento de crédito fiscal.
+- Borrador sin movimientos. UUID para alta idempotente; versión de cabecera/detalles para edición/confirmación. Documento único por proveedor/tipo/serie/número.
+- Confirmación atómica de ingreso y costo promedio ponderado, con reservas intactas y una clave de movimiento por compra/artículo. Recepción al contado incluye pago completo dentro de la misma transacción; crédito permite pagos posteriores.
+- Pago con permiso específico, saldo comprobado bajo bloqueo de compra y UUID único. Cambiar el importe editable después de revisar no altera el pago confirmado. No se paga un borrador ni se excede la deuda; no se vuelve a recibir inventario al pagar.
+- Caja: turno abierto autorizado, efectivo y fondo suficiente; egreso único enlazado al pago. Digital de empresa y dinero externo del dueño no afectan efectivo físico ni se vinculan a un turno. No se inventa una apertura si no existen turnos.
+- Proveedor inactivo bloquea nuevas compras/confirmaciones pero permite cancelar deuda. Solo se anulan borradores con motivo; recepción confirmada/pagos no se editan ni se revierten automáticamente.
+- Instantáneas de proveedor/documento, descripción/unidad/presentación/factor/precio y nombre del medio de pago. Las compras tienen su propio permiso de consulta de importes; no exponen el costo promedio de inventario en propiedades públicas Livewire.
+- CI MySQL añade recepciones simultáneas con valorización, repetición de recepción, pagos compitiendo por la deuda y pago repetido concurrente. Entorno/base desechable obligatorios y limpieza limitada a sus fixtures.
+
+## Fotografías de productos
+
+La foto guardada se sirve por una ruta autenticada con `productos.ver`, relativa al origen actual y sin depender de `APP_URL` ni del enlace `public/storage`. El controlador solo acepta nombres simples bajo `productos/`, extensiones JPG/PNG/WebP y MIME real de imagen; rutas ajenas, archivos ausentes o contenido inválido devuelven 404. La URL versiona el nombre del archivo para actualizar la caché al reemplazarlo. No es un servidor genérico de archivos ni recibe rutas del navegador.
+
 ## Siguiente alcance
 
-Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas y Preparación diaria ya tienen pantallas, servicios transaccionales y autorización de acciones. Siguen pendientes Compras/Proveedores, atención POS/Cocina, cajas/cobros, movimientos de ajuste/merma, gráficos, reportes, impresión operativa con POS80 y facturación de pruebas. Esta entrega permite enviar tickets de prueba por TCP. La impresión operativa de comandas, precuentas y comprobantes y el envío a SUNAT siguen pendientes.
+Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas, Preparación diaria, Compras y Proveedores ya tienen pantallas, servicios transaccionales y autorización de acciones. Siguen pendientes atención POS/Cocina, cajas/cobros, movimientos de ajuste/merma, gráficos, reportes, impresión operativa con POS80 y facturación de pruebas. Esta entrega permite enviar tickets de prueba por TCP. La impresión operativa de comandas, precuentas y comprobantes y el envío a SUNAT siguen pendientes.

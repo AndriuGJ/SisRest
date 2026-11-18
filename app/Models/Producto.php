@@ -23,6 +23,7 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property int|null $articulo_id
  * @property int|null $area_preparacion_id
  * @property numeric-string $precio_venta
+ * @property string|null $imagen_url
  * @property string|null $imagen_ruta
  * @property bool $visible_pos
  * @property bool $activo
@@ -56,6 +57,11 @@ class Producto extends Model
             'visible_pos' => 'boolean',
             'activo' => 'boolean',
         ];
+    }
+
+    public function getImagenUrlAttribute(): ?string
+    {
+        return $this->imagen_ruta ? route('productos.imagen', ['producto' => $this->id, 'v' => substr(hash('sha256', $this->imagen_ruta), 0, 16)], false) : null;
     }
 
     /** @return BelongsTo<Articulo, $this> */

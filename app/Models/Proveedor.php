@@ -5,6 +5,8 @@ namespace App\Models;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\Support\LogOptions;
 
 /**
  * @property int $id
@@ -20,6 +22,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class Proveedor extends Model
 {
+    use LogsActivity;
+
     protected $table = 'proveedores';
 
     protected $fillable = [
@@ -38,6 +42,11 @@ class Proveedor extends Model
         return [
             'activo' => 'boolean',
         ];
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()->logOnly(['nombre', 'tipo_documento_identidad_id', 'numero_documento', 'direccion', 'telefono', 'correo', 'activo'])->logOnlyDirty()->dontLogEmptyChanges();
     }
 
     /** @return BelongsTo<TipoDocumentoIdentidad, $this> */
