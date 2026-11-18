@@ -1,8 +1,8 @@
 <?php
 
+use App\Concerns\ConAlertas;
 use App\Concerns\ProfileValidationRules;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Flux\Flux;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
@@ -11,6 +11,7 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 new #[Title('Profile settings')] class extends Component {
+    use ConAlertas;
     use ProfileValidationRules;
 
     public string $name = '';
@@ -47,7 +48,7 @@ new #[Title('Profile settings')] class extends Component {
 
         $user->save();
 
-        Flux::toast(variant: 'success', text: __('Profile updated.'));
+        $this->notificar('Perfil actualizado.');
     }
 
     /**

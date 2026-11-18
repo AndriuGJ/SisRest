@@ -9,10 +9,6 @@
         <flux:button href="{{ route('roles.crear') }}" wire:navigate variant="primary" icon="plus">Nuevo rol</flux:button>
     </header>
 
-    @if(session('success'))
-        <div role="status" class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">{{ session('success') }}</div>
-    @endif
-
     <section class="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
         <div class="border-b border-zinc-200 p-4 dark:border-zinc-700">
             <flux:input wire:model.live.debounce.300ms="search" label="Buscar rol" type="search" icon="magnifying-glass" placeholder="Nombre del rol" maxlength="100" class="max-w-md" />

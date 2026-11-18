@@ -27,6 +27,37 @@ Las tablas soportan preparación real, reservas de existencias, combos por compo
 
 Los accesos aparecen en el sidebar según `usuarios.gestionar` y `roles.gestionar`. No se eliminan usuarios desde estas pantallas.
 
+## Alertas reutilizables
+
+SweetAlert2 se compila con Vite, sin depender de un CDN. `resources/js/alerts.js` concentra comportamiento, textos y tiempos; `resources/css/app.css` define su apariencia clara/oscura. Los layouts incluyen un único componente `<x-alertas />` para mensajes después de una redirección.
+
+En cualquier componente Livewire, incluir `use App\Concerns\ConAlertas;` y usar el trait `ConAlertas`:
+
+~~~php
+$this->notificar('Registro guardado.'); // Aviso breve de éxito.
+$this->notificar('No se puede continuar.', 'error', toast: false); // Requiere aceptar.
+$this->confirmar('Desactivar registro', '¿Deseas continuar?', 'confirmarDesactivacion', 'Desactivar', peligro: true);
+~~~
+
+La confirmación llama al método indicado **del mismo componente** solo al aceptar. Ese método debe autorizar y validar la operación en el servidor; los identificadores seleccionados deben mantenerse bloqueados. La confirmación visual no sustituye esas reglas. Usuarios ya aplica este flujo al activar/desactivar.
+
+Para notificar después de redirigir, desde Livewire o un controlador:
+
+~~~php
+\App\Support\Alertas::flash('Registro guardado.');
+return redirect()->route('dashboard');
+~~~
+
+Desde JavaScript o Alpine:
+
+~~~js
+window.Alertas.notificar({ text: 'Registro guardado.', type: 'success' });
+const resultado = await window.Alertas.confirmar({ title: '¿Continuar?', text: 'Revisa los datos.' });
+if (resultado.isConfirmed) { /* Acción autorizada por el servidor. */ }
+~~~
+
+Tipos: `success`, `error`, `warning`, `info` y `question`. Los textos se muestran literalmente; no se admite HTML de usuarios. Los avisos breves duran 4,5 segundos, pueden cerrarse y pausan su tiempo al pasar el puntero o recibir foco. Los errores que requieran lectura usan `toast: false`. Las validaciones de formularios continúan junto a sus campos. Los mensajes flash se consumen una sola vez y los listeners se registran una vez durante la navegación Livewire.
+
 ## Requisitos
 
 - PHP **8.4.1 o superior**, compatible con las versiones fijadas.
@@ -127,6 +158,7 @@ Solo en local/testing. Crea arroz, pollo, huevo, chaufa, gaseosa, un combo y un 
 | maatwebsite/excel | Exportación Excel |
 | barryvdh/laravel-dompdf | Reportes PDF |
 | chart.js | Gráficos |
+| sweetalert2 | Alertas y confirmaciones reutilizables |
 
 Greenter Lite evita exigir wkhtmltopdf. Los PDF de reportes se generarán con DomPDF; los tickets tendrán su integración ESC/POS.
 

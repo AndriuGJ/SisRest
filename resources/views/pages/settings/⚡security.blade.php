@@ -1,7 +1,7 @@
 <?php
 
+use App\Concerns\ConAlertas;
 use App\Concerns\PasswordValidationRules;
-use Flux\Flux;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Actions\DisableTwoFactorAuthentication;
@@ -14,6 +14,7 @@ use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 
 new #[Title('Security settings')] class extends Component {
+    use ConAlertas;
     use PasswordValidationRules;
 
     public string $current_password = '';
@@ -85,7 +86,7 @@ new #[Title('Security settings')] class extends Component {
 
         $this->reset('current_password', 'password', 'password_confirmation');
 
-        Flux::toast(variant: 'success', text: __('Password updated.'));
+        $this->notificar('Contraseña actualizada.');
     }
 
     /**

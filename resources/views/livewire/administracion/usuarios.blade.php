@@ -160,25 +160,4 @@
         </form>
     </flux:modal>
 
-    <flux:modal wire:model.self="showState" name="usuario-estado" class="w-full md:min-w-[26rem]" :dismissible="false">
-        <form wire:submit="confirmState" class="space-y-5">
-            <div class="pr-6">
-                <flux:heading size="lg">{{ $nextState ? 'Activar usuario' : 'Desactivar usuario' }}</flux:heading>
-                <flux:text class="mt-2">
-                    @if($nextState)
-                        {{ $targetName }} podrá volver a ingresar con su usuario y contraseña.
-                    @else
-                        {{ $targetName }} dejará de tener acceso. Sus pedidos y movimientos se conservarán.
-                    @endif
-                </flux:text>
-            </div>
-            <flux:error name="seguridad" />
-            <div class="flex justify-end gap-2">
-                <flux:button type="button" wire:click="$set('showState', false)">Cancelar</flux:button>
-                <flux:button type="submit" :variant="$nextState ? 'primary' : 'danger'" wire:loading.attr="disabled" wire:target="confirmState">
-                    {{ $nextState ? 'Activar usuario' : 'Desactivar usuario' }}
-                </flux:button>
-            </div>
-        </form>
-    </flux:modal>
 </div>

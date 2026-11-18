@@ -5,6 +5,7 @@ use App\Livewire\Administracion\RolFormulario;
 use App\Livewire\Administracion\Usuarios;
 use App\Models\User;
 use App\Services\Administracion\GestionAccesos;
+use App\Support\Alertas;
 use Database\Seeders\RolesPermisosSeeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -53,7 +54,8 @@ test('administrator creates an active user with one role normalized login and op
         ->set('name', 'Ana Atención')->set('username', '  MOZO01  ')
         ->set('email', '')->set('roleId', (string) $rol->id)
         ->set('password', 'Una-clave-nueva-123')->set('password_confirmation', 'Una-clave-nueva-123')
-        ->call('save')->assertHasNoErrors()->assertSet('showForm', false)->assertSet('password', '');
+        ->call('save')->assertHasNoErrors()->assertSet('showForm', false)->assertSet('password', '')
+        ->assertDispatched('app:alert', text: 'Usuario registrado.', type: 'success', toast: true);
 
     $usuario = User::query()->where('username', 'mozo01')->firstOrFail();
     expect($usuario->email)->toBeNull()
@@ -149,7 +151,8 @@ test('searching from a later page returns to the first page of filtered users', 
 test('administrator cannot deactivate their own account or change their own role', function () {
     $this->actingAs($this->administrador);
     Livewire::test(Usuarios::class)->call('requestStateChange', $this->administrador->id)
-        ->call('confirmState')->assertHasErrors('seguridad');
+        ->call('confirmState')->assertHasErrors('seguridad')
+        ->assertDispatched('app:alert', fn ($event, $params) => $params['type'] === 'error' && $params['toast'] === false);
     Livewire::test(Usuarios::class)->call('editUser', $this->administrador->id)
         ->set('roleId', (string) Role::findByName('mozo')->id)
         ->call('save')->assertHasErrors('roleId');
@@ -275,4 +278,33 @@ test('complete administrator can restore a noncritical permission removed from t
         ->call('selectAll')->call('save')->assertHasNoErrors();
 
     expect($this->administrador->fresh()->can('pos.ver'))->toBeTrue();
+});
+
+test('requesting confirmation does not mutate users until the confirmed action runs', function () {
+    $usuario = User::factory()->create(['name' => '<b>Nombre literal</b>']);
+    $usuario->assignRole('mozo');
+    $this->actingAs($this->administrador);
+
+    $componente = Livewire::test(Usuarios::class)->call('requestStateChange', $usuario->id)
+        ->assertDispatched('app:confirm', fn ($event, $params) => $params['title'] === 'Desactivar usuario'
+            && $params['action'] === 'confirmState'
+            && is_string($params['componentId'])
+            && str_contains($params['text'], '<b>Nombre literal</b>')
+            && $params['danger'] === true)
+        ->assertNotDispatched('app:alert');
+
+    expect($usuario->fresh()->activo)->toBeTrue();
+    $componente->call('confirmState')->assertHasNoErrors()->assertSet('stateUserId', null)
+        ->assertDispatched('app:alert', text: 'Usuario desactivado.', type: 'success', toast: true);
+    expect($usuario->fresh()->activo)->toBeFalse();
+    $componente->call('confirmState')->assertStatus(404);
+});
+
+test('redirect alerts are escaped in the layout and consumed once', function () {
+    $this->actingAs($this->administrador);
+    Alertas::flash('<img src=x onerror=alert(1)>', 'warning', toast: false);
+
+    $this->get(route('dashboard'))->assertOk()->assertSee('data-app-alert', false)
+        ->assertDontSee('<img src=x onerror=alert(1)>', false);
+    $this->get(route('dashboard'))->assertOk()->assertDontSee('data-app-alert', false);
 });

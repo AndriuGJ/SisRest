@@ -4,6 +4,7 @@ namespace App\Livewire\Administracion;
 
 use App\Models\User;
 use App\Services\Administracion\GestionAccesos;
+use App\Support\Alertas;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
@@ -83,7 +84,7 @@ class RolFormulario extends Component
         $actor = Auth::user();
         abort_unless($actor instanceof User, 403);
         $gestion->guardarRol($actor, $this->roleId, $this->name, array_values($this->permissions));
-        session()->flash('success', $this->roleId ? 'Permisos del rol actualizados.' : 'Rol registrado.');
+        Alertas::flash($this->roleId ? 'Permisos del rol actualizados.' : 'Rol registrado.');
         $actor->refresh()->unsetRelations();
         $this->redirectRoute($actor->can('roles.gestionar') ? 'roles.index' : 'dashboard', navigate: true);
     }

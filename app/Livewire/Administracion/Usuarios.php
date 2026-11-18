@@ -2,13 +2,14 @@
 
 namespace App\Livewire\Administracion;
 
+use App\Concerns\ConAlertas;
 use App\Models\User;
 use App\Services\Administracion\GestionAccesos;
-use Flux\Flux;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
@@ -21,6 +22,7 @@ use Spatie\Permission\Models\Role;
 #[Title('Usuarios')]
 class Usuarios extends Component
 {
+    use ConAlertas;
     use WithPagination;
 
     #[Url(as: 'buscar', except: '')]
@@ -68,8 +70,6 @@ class Usuarios extends Component
 
     #[Locked]
     public string $targetName = '';
-
-    public bool $showState = false;
 
     public function mount(): void
     {
@@ -129,7 +129,7 @@ class Usuarios extends Component
         ]);
         $this->reset('password', 'password_confirmation');
         $this->showForm = false;
-        Flux::toast(text: $this->userId ? 'Usuario actualizado.' : 'Usuario registrado.', variant: 'success');
+        $this->notificar($this->userId ? 'Usuario actualizado.' : 'Usuario registrado.');
     }
 
     public function requestStateChange(int $id): void
@@ -140,15 +140,30 @@ class Usuarios extends Component
         $this->stateUserId = $usuario->id;
         $this->nextState = ! $usuario->activo;
         $this->targetName = $usuario->name;
-        $this->showState = true;
+        $this->confirmar(
+            $this->nextState ? 'Activar usuario' : 'Desactivar usuario',
+            $this->targetName.($this->nextState
+                ? ' podrá volver a ingresar con su usuario y contraseña.'
+                : ' dejará de tener acceso. Sus pedidos y movimientos se conservarán.'),
+            'confirmState',
+            $this->nextState ? 'Activar usuario' : 'Desactivar usuario',
+            peligro: ! $this->nextState,
+        );
     }
 
     public function confirmState(GestionAccesos $gestion): void
     {
         abort_if($this->stateUserId === null, 404);
-        $gestion->cambiarEstado($this->actor(), $this->stateUserId, $this->nextState);
-        $this->showState = false;
-        Flux::toast(text: $this->nextState ? 'Usuario activado.' : 'Usuario desactivado.', variant: 'success');
+        try {
+            $gestion->cambiarEstado($this->actor(), $this->stateUserId, $this->nextState);
+        } catch (ValidationException $exception) {
+            $this->setErrorBag($exception->validator->errors());
+            $this->notificar($exception->validator->errors()->first(), 'error', toast: false);
+
+            return;
+        }
+        $this->notificar($this->nextState ? 'Usuario activado.' : 'Usuario desactivado.');
+        $this->reset('stateUserId');
     }
 
     public function requestPasswordReset(int $id): void
@@ -178,7 +193,7 @@ class Usuarios extends Component
 
             return;
         }
-        Flux::toast(text: 'Contraseña actualizada. Las sesiones anteriores se cerraron.', variant: 'success');
+        $this->notificar('Contraseña actualizada. Las sesiones anteriores se cerraron.');
     }
 
     public function updatedShowForm(bool $abierto): void

@@ -64,3 +64,33 @@ select:focus[data-flux-control] {
 /* \[:where(&)\]:size-4 {
     @apply size-4;
 } */
+
+/* Una apariencia para las notificaciones y confirmaciones de todos los módulos. */
+.app-alert {
+    --swal2-background: #fff;
+    --swal2-color: #27272a;
+    --swal2-border-radius: .5rem;
+    --swal2-title-font-size: 1.25rem;
+    font-family: var(--font-sans);
+    font-size: .9375rem;
+}
+.dark .app-alert {
+    --swal2-background: #18181b;
+    --swal2-color: #f4f4f5;
+}
+.app-alert-actions { gap: .5rem; }
+.app-alert-confirm, .app-alert-cancel {
+    border-radius: .375rem;
+    padding: .625rem 1rem;
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+}
+.app-alert-confirm { background: #2478a0; color: #fff; }
+.app-alert-danger { background: #b45d61; }
+.app-alert-cancel { background: #e4e4e7; color: #27272a; }
+.dark .app-alert-cancel { background: #3f3f46; color: #f4f4f5; }
+.app-alert-confirm:focus-visible, .app-alert-cancel:focus-visible {
+    outline: 2px solid #2478a0;
+    outline-offset: 3px;
+}
