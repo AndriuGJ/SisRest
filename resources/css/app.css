@@ -97,8 +97,11 @@ select:focus[data-flux-control] {
 
 /* Plano del restaurante: salones, mesas y apertura sin formularios superpuestos. */
 .pos-workspace { display: grid; min-height: min(72rem, calc(100svh - 12rem)); }
-.pos-mesas { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 14px; align-content: start; }
-.pos-mesa { min-width: 0; transition: box-shadow .12s ease; }
+.pos-mesas { display:grid;grid-template-columns:repeat(auto-fill,minmax(144px,156px));gap:12px;align-content:start;align-items:start; }
+.pos-mesa { min-width:0;width:100%;aspect-ratio:1/1;min-height:144px;padding:8px;gap:3px;transition:box-shadow .12s ease; }
+.pos-mesa > span { margin-top:0;max-width:100%;font-size:11px;line-height:14px; }
+.pos-mesa > .pos-mesa-nombre { font-size:12px;line-height:16px; }
+.pos-mesa-icono { width:40px;height:30px;flex-shrink:0;margin-bottom:1px; }
 .pos-mesa:hover { box-shadow: 0 2px 8px rgb(0 0 0 / .08); }
 .pos-mesa:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 .pos-mesa:disabled { cursor: wait; }
