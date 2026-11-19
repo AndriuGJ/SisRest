@@ -23,7 +23,7 @@
                             <td class="px-4 py-3"><p class="font-medium text-zinc-900 dark:text-white">{{ $destino->nombre }}</p><p class="mt-0.5 text-xs text-zinc-500">{{ $destino->codigo }}</p></td>
                             <td class="px-4 py-3 text-zinc-500">{{ $destino->productos_count }}</td>
                             <td class="px-4 py-3 text-zinc-500">{{ $destino->impresoras_count }}</td>
-                            <td class="px-4 py-3"><flux:badge size="sm" :color="$destino->activo ? 'green' : 'zinc'">{{ $destino->activo ? 'Activo' : 'Inactivo' }}</flux:badge></td>
+                            <td class="px-4 py-3"><x-estado :estado="$destino->activo ? 'activo' : 'inactivo'" size="sm">{{ $destino->activo ? 'Activo' : 'Inactivo' }}</x-estado></td>
                             <td class="whitespace-nowrap px-4 py-3 text-right">
                                 <flux:button size="sm" variant="ghost" icon="pencil-square" wire:click="editRecord({{ $destino->id }})" aria-label="Editar destino {{ $destino->nombre }}" title="Editar" />
                                 <flux:button size="sm" variant="ghost" :icon="$destino->activo ? 'no-symbol' : 'check-circle'" wire:click="requestStateChange({{ $destino->id }})" aria-label="{{ $destino->activo ? 'Desactivar' : 'Activar' }} destino {{ $destino->nombre }}" :title="$destino->activo ? 'Desactivar' : 'Activar'" />

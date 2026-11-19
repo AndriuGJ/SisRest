@@ -10,7 +10,7 @@
         @endif
     </div></div>
     <div class="grid gap-5 rounded-lg border border-zinc-200 p-5 sm:grid-cols-2 lg:grid-cols-4 dark:border-zinc-700">
-        <div><p class="mb-2 text-xs text-zinc-500">Estado</p><flux:badge :color="['borrador'=>'amber','confirmada'=>'green','anulada'=>'zinc'][$compra->estado->value]">{{ ucfirst($compra->estado->value) }}</flux:badge></div>
+        <div><p class="mb-2 text-xs text-zinc-500">Estado</p><x-estado :estado="$compra->estado->value">{{ ucfirst($compra->estado->value) }}</x-estado></div>
         <div><p class="mb-2 text-xs text-zinc-500">Documento recibido</p><p class="text-sm font-medium">{{ $compra->documento_nombre ?? '—' }} {{ $compra->serie }}{{ $compra->numero ? '-'.$compra->numero : '' }}</p></div>
         <div><p class="mb-2 text-xs text-zinc-500">Condición</p><p class="text-sm font-medium">{{ $compra->condicion_pago->value === 'credito' ? 'Crédito' : 'Contado' }}</p>@if($compra->fecha_vencimiento)<p class="mt-1 text-xs text-zinc-500">Vence {{ $compra->fecha_vencimiento->format('d/m/Y') }}</p>@endif</div>
         <div><p class="mb-2 text-xs text-zinc-500">Saldo pendiente</p><p class="text-lg font-semibold">{{ $compra->estado->value === 'confirmada' ? 'S/ '.$compra->saldoPendiente() : '—' }}</p></div>

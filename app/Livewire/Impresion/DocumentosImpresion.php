@@ -70,6 +70,9 @@ class DocumentosImpresion extends Component
     public string $texto = '';
 
     #[Locked]
+    public ?string $logoVista = null;
+
+    #[Locked]
     public string $nombreImpresora = '';
 
     #[Locked]
@@ -154,6 +157,7 @@ class DocumentosImpresion extends Component
         $this->huella = $plan['huella'];
         $this->ancho = $plan['configuracion']['ancho_mm'];
         $this->nombreImpresora = $plan['configuracion']['nombre'];
+        $this->logoVista = $plan['contenido']['logo'] ?? null;
         $this->texto = app(TicketOperativo::class)->texto($plan['contenido'], $this->ancho, $copiaId > 0);
         $this->trabajoVisto = null;
         $this->motivoCopia = $this->motivoRevisado = $this->clave = '';
@@ -173,6 +177,7 @@ class DocumentosImpresion extends Component
     public function viewJob(int $id): void
     {
         $trabajo = $this->trabajo($id);
+        $this->logoVista = $trabajo->contenido['logo'] ?? null;
         $this->texto = app(ImpresionOperativa::class)->texto($trabajo);
         $this->ancho = $trabajo->configuracion['ancho_mm'] ?? 80;
         $this->nombreImpresora = $trabajo->configuracion['nombre'] ?? '';

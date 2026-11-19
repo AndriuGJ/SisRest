@@ -82,7 +82,7 @@ class ImpresionOperativa
         // Persistido antes de tocar la red. No reejecutar el envío dentro de una transacción o reintento.
         $iniciado = false;
         try {
-            $bytes = $this->ticket->generar($this->texto($trabajo), $trabajo->contenido['qr'] ?? null);
+            $bytes = $this->ticket->generar($this->texto($trabajo), $trabajo->contenido['qr'] ?? null, $trabajo->contenido['logo'] ?? null, $trabajo->contenido['tipografia'] ?? null, $trabajo->configuracion['ancho_mm'] ?? 80);
             $iniciado = true;
             if (! $trabajo->configuracion) {
                 throw new \LogicException('Falta la conexión histórica de la impresión.');

@@ -10,6 +10,7 @@ use App\Models\Empresa;
 use App\Models\Pedido;
 use App\Models\SerieComprobante;
 use App\Models\User;
+use App\Services\Configuracion\IdentidadVisual;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -68,14 +69,14 @@ class EmitirComprobante
             $letras = (new NumberFormatter('es_PE', NumberFormatter::SPELLOUT))->format((int) explode('.', $cobro->total)[0]);
             ReglasFiscales::exigir(is_string($letras), 'No se pudo expresar el importe en letras.');
             $snapshot = ['tipo' => $tipo, 'serie' => $serie->serie, 'entorno' => $config->entorno->value, 'tasa' => $config->tasa_impuesto,
-                'fecha_hora' => $fecha->toIso8601String(), 'leyenda' => 'SON '.mb_strtoupper($letras).' CON '.explode('.', $cobro->total)[1].'/100 SOLES'];
+                'tipografia' => app(IdentidadVisual::class)->tipografia(), 'fecha_hora' => $fecha->toIso8601String(), 'leyenda' => 'SON '.mb_strtoupper($letras).' CON '.explode('.', $cobro->total)[1].'/100 SOLES'];
             foreach (['gravadas', 'exoneradas', 'inafectas', 'igv_gratuitas'] as $campo) {
                 $snapshot[$campo] = $calculo[$campo];
             }
             $c = Comprobante::create([
                 'entorno' => $config->entorno->value, 'serie_comprobante_id' => $serie->id, 'correlativo' => $serie->ultimo_correlativo + 1, 'cobro_id' => $cobroId,
                 'usuario_id' => $actor->id, 'fecha_emision' => $fecha->toDateString(), 'moneda' => 'PEN', 'estado' => 'emitido', 'estado_sunat' => 'pendiente',
-                'emisor' => $empresa->only(['ruc', 'razon_social', 'nombre_comercial', 'direccion', 'ubigeo', 'departamento', 'provincia', 'distrito']),
+                'emisor' => $empresa->only(['ruc', 'razon_social', 'nombre_comercial', 'direccion', 'ubigeo', 'departamento', 'provincia', 'distrito', 'logo_ruta']),
                 'receptor' => ['tipo' => $receptor['tipo'], 'numero' => $receptor['tipo'] === '0' ? '-' : $receptor['numero'], 'nombre' => trim($receptor['nombre']), 'direccion' => trim($receptor['direccion'])],
                 'configuracion_tributaria' => $snapshot, 'valor_venta' => $calculo['valor_venta'], 'impuestos' => $calculo['impuestos'],
                 'operaciones_gratuitas' => $calculo['gratuitas'], 'descuento' => $calculo['descuento'], 'total' => $cobro->total, 'clave_idempotencia' => $clave,

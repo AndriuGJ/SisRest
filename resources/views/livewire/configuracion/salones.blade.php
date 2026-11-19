@@ -30,7 +30,7 @@
                             <td class="px-4 py-3"><p class="font-medium text-zinc-900 dark:text-white">{{ $salon->nombre }}</p><p class="mt-0.5 text-xs text-zinc-500">{{ $salon->codigo }}</p></td>
                             <td class="px-4 py-3"><span>{{ $salon->mesas_count }} en total</span><p class="mt-0.5 text-xs text-zinc-500">{{ $salon->mesas_activas_count }} {{ $salon->mesas_activas_count === 1 ? 'activa' : 'activas' }}</p></td>
                             <td class="px-4 py-3 text-zinc-500">{{ $salon->orden }}</td>
-                            <td class="px-4 py-3"><flux:badge size="sm" :color="$salon->activo ? 'green' : 'zinc'">{{ $salon->activo ? 'Activo' : 'Inactivo' }}</flux:badge></td>
+                            <td class="px-4 py-3"><x-estado :estado="$salon->activo ? 'activo' : 'inactivo'" size="sm">{{ $salon->activo ? 'Activo' : 'Inactivo' }}</x-estado></td>
                             <td class="whitespace-nowrap px-4 py-3 text-right">
                                 <flux:button size="sm" variant="ghost" icon="squares-2x2" href="{{ route('configuracion.mesas', ['salon' => $salon->id]) }}" wire:navigate aria-label="Ver mesas de {{ $salon->nombre }}" title="Ver mesas" />
                                 <flux:button size="sm" variant="ghost" icon="pencil-square" wire:click="editRecord({{ $salon->id }})" aria-label="Editar salón {{ $salon->nombre }}" title="Editar" />

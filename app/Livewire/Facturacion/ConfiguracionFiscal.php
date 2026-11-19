@@ -18,7 +18,7 @@ use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
 
 #[Layout('layouts.app')]
-#[Title('Empresa y facturación')]
+#[Title('Facturación')]
 class ConfiguracionFiscal extends Component
 {
     use ConAlertas;

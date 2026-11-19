@@ -14,6 +14,7 @@ use App\Models\ResolucionDevolucion;
 use App\Models\User;
 use App\Services\Cobros\CalculoBeneficios;
 use App\Services\Cobros\EstadoCuenta;
+use App\Services\Configuracion\IdentidadVisual;
 use App\Services\Facturacion\AccesoFacturacion;
 use App\Services\Facturacion\RepresentacionFiscal;
 use App\Support\Cantidad;
@@ -21,7 +22,7 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * @phpstan-type Linea array{descripcion:string,cantidad:string,nota:string,extra:list<string>,precio?:numeric-string,descuento?:numeric-string,total?:numeric-string}
- * @phpstan-type Contenido array{version:int,titulo:string,empresa:list<string>,referencia:string,fecha:string,datos:list<string>,lineas:list<Linea>,totales:list<array{nombre:string,monto:numeric-string}>,pagos:list<array{nombre:string,monto:numeric-string,extra:list<string>}>,avisos:list<string>,qr?:string}
+ * @phpstan-type Contenido array{version:int,titulo:string,empresa:list<string>,referencia:string,fecha:string,datos:list<string>,lineas:list<Linea>,totales:list<array{nombre:string,monto:numeric-string}>,pagos:list<array{nombre:string,monto:numeric-string,extra:list<string>}>,avisos:list<string>,qr?:string,logo?:string|null,tipografia?:array{fuente:string,tamano:int,grafica:bool}}
  * @phpstan-type Identidad array{pedido:Pedido,modelo:class-string,id:int,tipo:string,area:int}
  */
 class FuenteImpresion
@@ -91,6 +92,7 @@ class FuenteImpresion
         if ($empresa?->telefono) {
             $encabezado[] = 'Tel: '.$empresa->telefono;
         }
+        $tipografia = app(IdentidadVisual::class)->tipografia();
         $datos = [$this->atencion($pedido)];
         if ($pedido->mozo_nombre) {
             $datos[] = 'Mozo: '.$pedido->mozo_nombre;
@@ -98,7 +100,7 @@ class FuenteImpresion
         if ($pedido->comensales) {
             $datos[] = 'Comensales: '.$pedido->comensales;
         }
-        $base = ['version' => 1, 'titulo' => '', 'empresa' => $encabezado, 'referencia' => $pedido->codigo, 'fecha' => $pedido->abierto_at->timezone('America/Lima')->format('d/m/Y H:i'), 'datos' => $datos, 'lineas' => [], 'totales' => [], 'pagos' => [], 'avisos' => []];
+        $base = ['logo' => $empresa?->logo_ruta, 'tipografia' => ['fuente' => $tipografia['fuente'], 'tamano' => $tipografia['tickets'], 'grafica' => $tipografia['grafica']], 'version' => 1, 'titulo' => '', 'empresa' => $encabezado, 'referencia' => $pedido->codigo, 'fecha' => $pedido->abierto_at->timezone('America/Lima')->format('d/m/Y H:i'), 'datos' => $datos, 'lineas' => [], 'totales' => [], 'pagos' => [], 'avisos' => []];
 
         return match ($fuente['tipo']) {
             'comanda' => $this->comanda($base, $fuente['id']),

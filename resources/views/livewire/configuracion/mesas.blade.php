@@ -35,7 +35,7 @@
                             <td class="px-4 py-3"><p class="font-medium text-zinc-900 dark:text-white">{{ $mesa->codigo }}</p>@if($enUso)<p class="mt-0.5 text-xs text-amber-700 dark:text-amber-400">En uso</p>@endif</td>
                             <td class="px-4 py-3">{{ $mesa->salon->nombre }}@unless($mesa->salon->activo)<p class="mt-0.5 text-xs text-zinc-500">Salón inactivo</p>@endunless</td>
                             <td class="px-4 py-3 text-zinc-500">{{ $mesa->capacidad ? $mesa->capacidad.($mesa->capacidad === 1 ? ' persona' : ' personas') : 'Sin definir' }}</td>
-                            <td class="px-4 py-3"><flux:badge size="sm" :color="$mesa->activo ? 'green' : 'zinc'">{{ $mesa->activo ? 'Activa' : 'Inactiva' }}</flux:badge></td>
+                            <td class="px-4 py-3"><x-estado :estado="$mesa->activo ? 'activo' : 'inactivo'" size="sm">{{ $mesa->activo ? 'Activa' : 'Inactiva' }}</x-estado></td>
                             <td class="whitespace-nowrap px-4 py-3 text-right">
                                 <flux:button size="sm" variant="ghost" icon="pencil-square" wire:click="editRecord({{ $mesa->id }})" aria-label="Editar mesa {{ $mesa->codigo }} de {{ $mesa->salon->nombre }}" :disabled="$enUso" :title="$enUso ? 'Libera la mesa desde el POS antes de editarla' : 'Editar'" />
                                 <flux:button size="sm" variant="ghost" :icon="$mesa->activo ? 'no-symbol' : 'check-circle'" wire:click="requestStateChange({{ $mesa->id }})" aria-label="{{ $mesa->activo ? 'Desactivar' : 'Activar' }} mesa {{ $mesa->codigo }} de {{ $mesa->salon->nombre }}" :title="$mesa->activo ? 'Desactivar' : 'Activar'" />

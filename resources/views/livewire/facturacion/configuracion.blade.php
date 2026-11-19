@@ -1,15 +1,8 @@
 <div class="mx-auto max-w-6xl space-y-5">
-    <header><flux:heading level="1" size="xl">Empresa y facturación</flux:heading><flux:text class="mt-1">Datos del emisor, conexión con SUNAT y numeración de boletas y facturas.</flux:text></header>
+    <header><flux:heading level="1" size="xl">Facturación</flux:heading><flux:text class="mt-1">Conexión con SUNAT, certificado, impuestos y numeración de boletas y facturas. Los datos del emisor se administran en Empresa.</flux:text></header>
     <form wire:submit="guardar" class="space-y-5">
         <flux:error name="facturacion" /><flux:error name="certificado" />
         @if($errors->any())<div role="alert" class="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
-        <section class="space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700"><flux:heading level="2">Empresa</flux:heading>
-            <div class="grid gap-4 sm:grid-cols-3"><flux:input wire:model="empresaDatos.ruc" label="RUC" maxlength="11" required /><flux:input wire:model="empresaDatos.razon_social" label="Razón social" maxlength="200" required /><flux:input wire:model="empresaDatos.nombre_comercial" label="Nombre comercial" maxlength="150" /></div>
-            <div class="grid gap-4 sm:grid-cols-[1fr_10rem]"><flux:input wire:model="empresaDatos.direccion" label="Dirección fiscal" maxlength="250" required /><flux:input wire:model="empresaDatos.ubigeo" label="Ubigeo" maxlength="6" required /></div>
-            <div class="grid gap-4 sm:grid-cols-3"><flux:input wire:model="empresaDatos.departamento" label="Departamento" maxlength="100" required /><flux:input wire:model="empresaDatos.provincia" label="Provincia" maxlength="100" required /><flux:input wire:model="empresaDatos.distrito" label="Distrito" maxlength="100" required /></div>
-            <div class="grid gap-4 sm:grid-cols-2"><flux:input wire:model="empresaDatos.telefono" label="Teléfono" maxlength="30" /><flux:input wire:model="empresaDatos.correo" label="Correo" type="email" maxlength="150" /></div>
-            <p class="text-xs text-zinc-500">Moneda: soles · Zona horaria: Lima · Los precios al cliente incluyen impuestos.</p>
-        </section>
         <section class="space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700"><div class="flex flex-wrap justify-between gap-3"><flux:heading level="2">Emisión electrónica</flux:heading><flux:badge :color="$configuracion->entorno->value === 'beta' ? 'amber' : 'green'">{{ $configuracion->entorno->value === 'beta' ? 'PRUEBAS · sin validez tributaria' : 'PRODUCCIÓN' }}</flux:badge></div>
             <flux:checkbox wire:model="facturacion.habilitada" label="Habilitar emisión y envío" />
             <div class="grid gap-4 sm:grid-cols-4"><flux:select wire:model.live="facturacion.entorno" label="Entorno"><option value="beta">Beta / pruebas</option><option value="produccion">Producción / emisión real</option></flux:select><flux:input wire:model="facturacion.tasa_impuesto" label="Tasa total de IGV e IPM (%)" type="number" min="0.0001" max="100" step="0.0001" /><flux:input wire:model="facturacion.vigente_desde" label="Vigente desde" type="date" /><flux:input wire:model="facturacion.vigente_hasta" label="Vigente hasta (opcional)" type="date" /></div>

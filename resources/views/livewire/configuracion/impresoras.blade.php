@@ -33,7 +33,7 @@
                                     <span class="text-zinc-500">General</span>
                                 @endif
                             </td>
-                            <td class="px-4 py-3"><flux:badge size="sm" :color="$impresora->activo ? 'green' : 'zinc'">{{ $impresora->activo ? 'Activa' : 'Inactiva' }}</flux:badge></td>
+                            <td class="px-4 py-3"><x-estado :estado="$impresora->activo ? 'activo' : 'inactivo'" size="sm">{{ $impresora->activo ? 'Activa' : 'Inactiva' }}</x-estado></td>
                             <td class="whitespace-nowrap px-4 py-3 text-right">
                                 <flux:button size="sm" variant="ghost" icon="printer" wire:click="requestTest({{ $impresora->id }})" :disabled="! $impresora->activo || ! $impresora->host || ($impresora->areaPreparacion && ! $impresora->areaPreparacion->activo)" wire:loading.attr="disabled" wire:target="confirmTest" aria-label="Probar impresora {{ $impresora->nombre }}" title="Imprimir ticket de prueba" />
                                 <flux:button size="sm" variant="ghost" icon="pencil-square" wire:click="editRecord({{ $impresora->id }})" aria-label="Editar impresora {{ $impresora->nombre }}" title="Editar" />

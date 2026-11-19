@@ -26,10 +26,10 @@
                     @endcan
                 </flux:sidebar.group>
                 @can('comprobantes.ver')
-                    <flux:sidebar.group heading="Ventas" expandable :expanded="request()->routeIs('comprobantes.*')" class="mt-1"><flux:sidebar.item icon="document-text" :href="route('comprobantes.index')" :current="request()->routeIs('comprobantes.*')" wire:navigate>Comprobantes</flux:sidebar.item></flux:sidebar.group>
+                    <flux:sidebar.group heading="Ventas" icon="receipt-percent" expandable :expanded="request()->routeIs('comprobantes.*')" class="mt-1"><flux:sidebar.item icon="document-text" :href="route('comprobantes.index')" :current="request()->routeIs('comprobantes.*')" wire:navigate>Comprobantes</flux:sidebar.item></flux:sidebar.group>
                 @endcan
                 @canany(['productos.ver', 'inventario.ver', 'preparaciones.ver'])
-                    <flux:sidebar.group heading="Inventario" expandable :expanded="request()->routeIs('productos.*', 'insumos.*', 'preparaciones.*')" class="mt-1">
+                    <flux:sidebar.group heading="Inventario" icon="archive-box" expandable :expanded="request()->routeIs('productos.*', 'insumos.*', 'preparaciones.*')" class="mt-1">
                         @can('productos.ver')
                             <flux:sidebar.item icon="cube" :href="route('productos.index')" :current="request()->routeIs('productos.*')" wire:navigate>Productos para la venta</flux:sidebar.item>
                         @endcan
@@ -42,7 +42,7 @@
                     </flux:sidebar.group>
                 @endcanany
                 @canany(['compras.ver', 'proveedores.gestionar'])
-                    <flux:sidebar.group heading="Compras" expandable :expanded="request()->routeIs('compras.*', 'proveedores.*')" class="mt-1">
+                    <flux:sidebar.group heading="Compras" icon="shopping-cart" expandable :expanded="request()->routeIs('compras.*', 'proveedores.*')" class="mt-1">
                         @can('compras.ver')
                             <flux:sidebar.item icon="shopping-cart" :href="route('compras.index')" :current="request()->routeIs('compras.*')" wire:navigate>Compras</flux:sidebar.item>
                         @endcan
@@ -52,12 +52,12 @@
                     </flux:sidebar.group>
                 @endcanany
                 @canany(['cajas.ver_propias', 'cajas.ver_todas'])
-                    <flux:sidebar.group heading="Caja" expandable :expanded="request()->routeIs('cajas.*')" class="mt-1">
+                    <flux:sidebar.group heading="Caja" icon="banknotes" expandable :expanded="request()->routeIs('cajas.*')" class="mt-1">
                         <flux:sidebar.item icon="banknotes" :href="route('cajas.index')" :current="request()->routeIs('cajas.*')" wire:navigate>Cajas y arqueos</flux:sidebar.item>
                     </flux:sidebar.group>
                 @endcanany
                 @canany(['usuarios.gestionar', 'roles.gestionar'])
-                    <flux:sidebar.group heading="Usuarios y permisos" expandable :expanded="request()->routeIs('usuarios.*', 'roles.*')" class="mt-1">
+                    <flux:sidebar.group heading="Usuarios y permisos" icon="users" expandable :expanded="request()->routeIs('usuarios.*', 'roles.*')" class="mt-1">
                         @can('usuarios.gestionar')
                             <flux:sidebar.item icon="users" :href="route('usuarios.index')" :current="request()->routeIs('usuarios.*')" wire:navigate>Usuarios</flux:sidebar.item>
                         @endcan
@@ -67,10 +67,13 @@
                     </flux:sidebar.group>
                 @endcanany
                 @can('configuracion.sistema')
-                    <flux:sidebar.group heading="Config. sistema" expandable :expanded="request()->routeIs('configuracion.facturacion')" class="mt-1"><flux:sidebar.item icon="building-office" :href="route('configuracion.facturacion')" :current="request()->routeIs('configuracion.facturacion')" wire:navigate>Empresa y facturación</flux:sidebar.item></flux:sidebar.group>
+                    <flux:sidebar.group heading="Configuración" icon="cog-6-tooth" expandable :expanded="request()->routeIs('configuracion.facturacion', 'configuracion.empresa', 'configuracion.tipografia', 'configuracion.colores')" class="mt-1"><flux:sidebar.item icon="building-office" :href="route('configuracion.empresa')" :current="request()->routeIs('configuracion.empresa')" wire:navigate>Empresa</flux:sidebar.item>
+                        <flux:sidebar.item icon="document-text" :href="route('configuracion.facturacion')" :current="request()->routeIs('configuracion.facturacion')" wire:navigate>Facturación</flux:sidebar.item>
+                        <flux:sidebar.item icon="language" :href="route('configuracion.tipografia')" :current="request()->routeIs('configuracion.tipografia')" wire:navigate>Tipografía</flux:sidebar.item>
+                        <flux:sidebar.item icon="swatch" :href="route('configuracion.colores')" :current="request()->routeIs('configuracion.colores')" wire:navigate>Colores de estado</flux:sidebar.item></flux:sidebar.group>
                 @endcan
                 @canany(['configuracion.restaurante', 'impresoras.gestionar'])
-                    <flux:sidebar.group heading="Config. restaurante" expandable :expanded="request()->routeIs('configuracion.salones', 'configuracion.mesas', 'configuracion.destinos', 'configuracion.impresoras')" class="mt-1">
+                    <flux:sidebar.group heading="Config. restaurante" icon="building-storefront" expandable :expanded="request()->routeIs('configuracion.salones', 'configuracion.mesas', 'configuracion.destinos', 'configuracion.impresoras')" class="mt-1">
                         @can('configuracion.restaurante')
                             <flux:sidebar.item icon="building-storefront" :href="route('configuracion.salones')" :current="request()->routeIs('configuracion.salones')" wire:navigate>Salones</flux:sidebar.item>
                             <flux:sidebar.item icon="squares-2x2" :href="route('configuracion.mesas')" :current="request()->routeIs('configuracion.mesas')" wire:navigate>Mesas</flux:sidebar.item>

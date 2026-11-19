@@ -11,7 +11,7 @@
         </div>
     </header>
     <section class="flex flex-wrap items-center gap-x-8 gap-y-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
-        <div><p class="text-xs text-zinc-500">Estado</p><flux:badge class="mt-1" :color="['borrador' => 'zinc', 'confirmada' => 'green', 'anulada' => 'red'][$preparacion->estado->value]">{{ ucfirst($preparacion->estado->value) }}</flux:badge></div>
+        <div><p class="text-xs text-zinc-500">Estado</p><x-estado :estado="$preparacion->estado->value" class="mt-1">{{ ucfirst($preparacion->estado->value) }}</x-estado></div>
         <div><p class="text-xs text-zinc-500">Cantidad producida</p><p class="mt-1 font-semibold">{{ \App\Support\Cantidad::mostrar($preparacion->cantidad_producida) }} {{ $preparacion->unidad_codigo }}</p></div>
         @if($preparacion->confirmada_at)<div><p class="text-xs text-zinc-500">Confirmación</p><p class="mt-1 text-sm">{{ $preparacion->confirmada_at->format('d/m/Y H:i') }} · {{ $preparacion->confirmadaPor?->name }}</p></div>@endif
         @can('costos.ver')@if($preparacion->estado->value === 'confirmada')<div><p class="text-xs text-zinc-500">Costo total de producción</p><p class="mt-1 font-semibold">S/ {{ $preparacion->costo_total }}</p></div>@endif@endcan

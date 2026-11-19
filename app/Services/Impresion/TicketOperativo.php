@@ -3,6 +3,7 @@
 namespace App\Services\Impresion;
 
 use Illuminate\Support\Str;
+use Mike42\Escpos\EscposImage;
 use Mike42\Escpos\PrintConnectors\MemoryPrintConnector;
 use Mike42\Escpos\Printer;
 
@@ -102,13 +103,34 @@ class TicketOperativo
         return implode("\n", $lineas)."\n";
     }
 
-    public function generar(string $texto, ?string $qr = null): string
+    /** @param array{fuente:string,tamano:int,grafica:bool}|null $tipografia */
+    public function generar(string $texto, ?string $qr = null, ?string $logo = null, ?array $tipografia = null, int $ancho = 80): string
     {
         $conector = new MemoryPrintConnector;
         $impresora = new Printer($conector);
         try {
             $impresora->setFont(Printer::FONT_A);
-            $impresora->text($texto);
+            $raster = app(TicketRaster::class);
+            if ($logo !== null && ($imagenLogo = $raster->logo($logo, $ancho)) !== null) {
+                try {
+                    $impresora->setJustification(Printer::JUSTIFY_CENTER);
+                    $impresora->bitImage(EscposImage::load($imagenLogo, false, ['gd']));
+                    $impresora->feed();
+                } finally {
+                    @unlink($imagenLogo);
+                }
+                $impresora->setJustification(Printer::JUSTIFY_LEFT);
+            }
+            if ($tipografia !== null && $tipografia['grafica']) {
+                $imagenTexto = $raster->texto($texto, $tipografia, $ancho);
+                try {
+                    $impresora->bitImage(EscposImage::load($imagenTexto, false, ['gd']));
+                } finally {
+                    @unlink($imagenTexto);
+                }
+            } else {
+                $impresora->text($texto);
+            }
             if ($qr !== null) {
                 $impresora->setJustification(Printer::JUSTIFY_CENTER);
                 $impresora->qrCode($qr, Printer::QR_ECLEVEL_M, 4);

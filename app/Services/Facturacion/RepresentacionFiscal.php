@@ -37,7 +37,13 @@ class RepresentacionFiscal
             array_unshift($avisos, 'BETA - PRUEBA SIN VALIDEZ TRIBUTARIA');
         }
 
-        return ['version' => 1, 'titulo' => XmlFiscal::dato($c, 'tipo') === '01' ? 'FACTURA ELECTRONICA' : 'BOLETA DE VENTA ELECTRONICA', 'empresa' => $empresa, 'referencia' => XmlFiscal::numero($c), 'fecha' => $c->fecha_emision->format('d/m/Y'),
+        $tipo = $c->configuracion_tributaria['tipografia'] ?? null;
+        $marca = ['logo' => is_string($c->emisor['logo_ruta'] ?? null) ? $c->emisor['logo_ruta'] : null];
+        if (is_array($tipo) && is_string($tipo['fuente'] ?? null) && is_int($tipo['tickets'] ?? null) && is_bool($tipo['grafica'] ?? null)) {
+            $marca['tipografia'] = ['fuente' => $tipo['fuente'], 'tamano' => $tipo['tickets'], 'grafica' => $tipo['grafica']];
+        }
+
+        return [...$marca, 'version' => 1, 'titulo' => XmlFiscal::dato($c, 'tipo') === '01' ? 'FACTURA ELECTRONICA' : 'BOLETA DE VENTA ELECTRONICA', 'empresa' => $empresa, 'referencia' => XmlFiscal::numero($c), 'fecha' => $c->fecha_emision->format('d/m/Y'),
             'datos' => [(string) $c->receptor['nombre'], 'Documento: '.(string) $c->receptor['numero'], (string) $c->receptor['direccion']], 'lineas' => $lineas,
             'totales' => [['nombre' => 'Valor venta', 'monto' => $c->valor_venta], ['nombre' => 'IGV / IPM', 'monto' => $c->impuestos], ['nombre' => 'Op. gratuitas (referencial)', 'monto' => $c->operaciones_gratuitas], ['nombre' => 'TOTAL', 'monto' => $c->total]], 'pagos' => [], 'avisos' => $avisos, 'qr' => $this->qr($c)];
     }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Configuracion\LogoEmpresaController;
 use App\Http\Controllers\Facturacion\ArchivoComprobanteController;
 use App\Http\Controllers\Inventario\ImagenProductoController;
 use App\Livewire\Administracion\Roles;
@@ -18,7 +19,9 @@ use App\Livewire\Compras\CompraFormulario;
 use App\Livewire\Compras\Compras;
 use App\Livewire\Compras\Proveedores;
 use App\Livewire\Compras\ProveedorFormulario;
+use App\Livewire\Configuracion\AparienciaPantalla;
 use App\Livewire\Configuracion\Destinos;
+use App\Livewire\Configuracion\EmpresaPantalla;
 use App\Livewire\Configuracion\Impresoras;
 use App\Livewire\Configuracion\Mesas;
 use App\Livewire\Configuracion\Salones;
@@ -40,6 +43,8 @@ use App\Livewire\Inventario\RecetaFormulario;
 use App\Livewire\Pos\PedidoPantalla;
 use App\Livewire\Pos\Pos;
 use Illuminate\Support\Facades\Route;
+
+Route::get('marca/logo/{archivo}', LogoEmpresaController::class)->name('marca.logo');
 
 Route::view('/', 'welcome')->name('home');
 
@@ -103,6 +108,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('cobros/{cobro}', CobroDetallePantalla::class)->middleware('permission:cobros.crear')->name('cobro');
     });
 
+    Route::get('configuracion/sistema/empresa', EmpresaPantalla::class)->middleware('permission:configuracion.sistema')->name('configuracion.empresa');
+    Route::get('configuracion/sistema/tipografia', AparienciaPantalla::class)->defaults('seccion', 'tipografia')->middleware('permission:configuracion.sistema')->name('configuracion.tipografia');
+    Route::get('configuracion/sistema/colores', AparienciaPantalla::class)->defaults('seccion', 'colores')->middleware('permission:configuracion.sistema')->name('configuracion.colores');
     Route::get('configuracion/sistema/facturacion', ConfiguracionFiscal::class)->middleware('permission:configuracion.sistema')->name('configuracion.facturacion');
     Route::middleware('permission:comprobantes.ver')->prefix('comprobantes')->name('comprobantes.')->group(function () {
         Route::get('/', Comprobantes::class)->name('index');
