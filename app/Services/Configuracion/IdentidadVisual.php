@@ -31,8 +31,8 @@ class IdentidadVisual
         'desconocido' => ['Resultado incierto', '#92400e', '#fef3c7', '#fcd34d'],
         'parcial' => ['Parcial', '#854d0e', '#fef9c3', '#fde047'],
         'agotado' => ['Agotado', '#991b1b', '#fee2e2', '#fca5a5'],
-        'mesa_libre' => ['Mesa libre', '#166534', '#f0fdf4', '#86efac'],
-        'mesa_ocupada' => ['Mesa ocupada', '#92400e', '#fffbeb', '#fcd34d'],
+        'mesa_libre' => ['Mesa libre', '#ffffff', '#75d99f', '#65c98e'],
+        'mesa_ocupada' => ['Mesa ocupada', '#842f3c', '#f8c4cb', '#eea6b0'],
     ];
 
     private bool $cargada = false;
