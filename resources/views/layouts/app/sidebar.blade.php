@@ -16,7 +16,10 @@
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
                     @can('pos.ver')
-                        <flux:sidebar.item icon="squares-2x2" :href="route('pos.index')" :current="request()->routeIs('pos.*')" wire:navigate>POS</flux:sidebar.item>
+                        <flux:sidebar.group heading="POS" icon="squares-2x2" expandable :expanded="request()->routeIs('pos.*')">
+                            <flux:sidebar.item icon="squares-2x2" :href="route('pos.index')" :current="request()->routeIs('pos.*') && !request()->routeIs('pos.atenciones')" wire:navigate>Mesas</flux:sidebar.item>
+                            <flux:sidebar.item icon="clipboard-document-list" :href="route('pos.atenciones')" :current="request()->routeIs('pos.atenciones')" wire:navigate>Pedidos en atención</flux:sidebar.item>
+                        </flux:sidebar.group>
                     @endcan
                     @can('cocina.ver')
                         <flux:sidebar.item icon="fire" :href="route('cocina.index')" :current="request()->routeIs('cocina.*')" wire:navigate>Cocina</flux:sidebar.item>

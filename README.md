@@ -682,3 +682,9 @@ El sidebar muestra iconos en los módulos desplegables. **Configuración** conti
 - Las tres pantallas nuevas requieren `configuracion.sistema`, revalidan el usuario activo y detectan cambios simultáneos. No modifican credenciales SOL desde Empresa o Apariencia. Guardar usa las alertas SweetAlert2 compartidas.
 
 Actualizar con `composer install`, `php artisan migrate`, `npm ci`, `npm run build` y `php artisan optimize:clear`. La migración **000071** añade `empresa.apariencia`, sin reseedear ni sustituir datos existentes. PHP necesita GD con FreeType; el logo y las configuraciones guardadas deben incluirse junto con `storage/app/private` y la base de datos en las copias de seguridad. No se ejecutó la suite de pruebas para esta entrega, por solicitud del usuario.
+
+## POS: plano de mesas y apertura práctica
+
+La portada `/pos` muestra salones, mesas y un panel lateral de atención; la lista de pedidos abiertos pasa a `/pos/atenciones`, con filtros por modalidad y los mismos permisos de consulta. Se mantienen Para llevar y Delivery en el encabezado.
+
+Las tarjetas incluyen icono de mesa, nombre, disponibilidad y, para atenciones accesibles al usuario, comensales, tiempo transcurrido y mozo. El plano se actualiza cada 30 segundos. Los colores utilizan la configuración de mesas libres/ocupadas. Una mesa libre se selecciona sin abrir formularios flotantes; el panel inicia con una persona, botones de cantidad y responsable obtenido del usuario autenticado, también revalidado en servidor. Una sola caja se elige automáticamente y varias permiten seleccionar la caja de operación. Continuar abre el pedido existente o crea la atención con el control transaccional previo. En pantallas pequeñas el panel queda debajo del plano y la selección desplaza la vista hacia él. No se modifica la pantalla de productos en esta entrega.

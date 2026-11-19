@@ -94,3 +94,18 @@ select:focus[data-flux-control] {
     outline: 2px solid #2478a0;
     outline-offset: 3px;
 }
+
+/* Plano del restaurante: salones, mesas y apertura sin formularios superpuestos. */
+.pos-workspace { display: grid; min-height: min(72rem, calc(100svh - 12rem)); }
+.pos-mesas { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 14px; align-content: start; }
+.pos-mesa { min-width: 0; transition: box-shadow .12s ease; }
+.pos-mesa:hover { box-shadow: 0 2px 8px rgb(0 0 0 / .08); }
+.pos-mesa:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.pos-mesa:disabled { cursor: wait; }
+@media (min-width: 1024px) {
+    .pos-workspace { grid-template-columns: 8.5rem minmax(0, 1fr) 19rem; }
+    .pos-salones { border-bottom: 0; border-right: 1px solid var(--color-zinc-200); }
+    .pos-seleccion { border-top: 0; border-left: 1px solid var(--color-zinc-200); }
+    .dark .pos-salones, .dark .pos-seleccion { border-color: var(--color-zinc-700); }
+}
+@media (max-width: 639px) { .pos-mesas { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; } }

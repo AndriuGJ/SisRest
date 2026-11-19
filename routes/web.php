@@ -41,6 +41,7 @@ use App\Livewire\Inventario\ProductoFormulario;
 use App\Livewire\Inventario\Productos;
 use App\Livewire\Inventario\RecetaFormulario;
 use App\Livewire\Pos\PedidoPantalla;
+use App\Livewire\Pos\PedidosAtencion;
 use App\Livewire\Pos\Pos;
 use Illuminate\Support\Facades\Route;
 
@@ -98,6 +99,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::middleware('permission:pos.ver')->prefix('pos')->name('pos.')->group(function () {
         Route::get('/', Pos::class)->name('index');
+        Route::get('atenciones', PedidosAtencion::class)->name('atenciones');
         Route::get('pedidos/{pedido}', PedidoPantalla::class)->name('pedido');
         Route::get('pedidos/{pedido}/impresion', DocumentosImpresion::class)->middleware('permission:impresion.comandas|impresion.precuentas')->name('imprimir-pedido');
         Route::get('cobros/{cobro}/impresion', DocumentosImpresion::class)->middleware('permission:impresion.tickets')->name('imprimir-cobro');
