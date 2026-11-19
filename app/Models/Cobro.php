@@ -11,6 +11,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
+ * @property string|null $grupo_pagador
+ * @property string|null $cliente_nombre
+ * @property string|null $cliente_tipo_documento
+ * @property string|null $cliente_numero_documento
+ * @property string|null $cliente_direccion
+ * @property string|null $caja_nombre
+ * @property string|null $cajero_nombre
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -39,6 +46,7 @@ class Cobro extends Model
     protected $table = 'cobros';
 
     protected $fillable = [
+        'grupo_pagador', 'cliente_nombre', 'cliente_tipo_documento', 'cliente_numero_documento', 'cliente_direccion', 'caja_nombre', 'cajero_nombre',
         'codigo',
         'pedido_id',
         'cliente_id',
@@ -92,6 +100,12 @@ class Cobro extends Model
     public function turnoCaja(): BelongsTo
     {
         return $this->belongsTo(TurnoCaja::class, 'turno_caja_id');
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function usuario(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'usuario_id');
     }
 
     /** @return HasMany<CobroDetalle, $this> */

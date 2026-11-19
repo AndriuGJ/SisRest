@@ -4,9 +4,9 @@ Base de un sistema de restaurante para un local, con dos cajas, atención en mes
 
 ## Estado
 
-Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores**, **Cajas y Arqueos**, **Clientes**, **POS** y **Cocina/Barra**, implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. POS ya confirma y reserva productos, Cocina registra el avance y la entrega descuenta existencias. Los cobros y demás operaciones se implementarán en las siguientes entregas.
+Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores**, **Cajas y Arqueos**, **Clientes**, **POS**, **Cocina/Barra** y **Cobros**, implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. POS ya confirma y reserva productos, Cocina registra el avance y la entrega descuenta existencias. Cobros permite dividir por productos y combinar medios de pago. La emisión fiscal y las demás operaciones pendientes se integrarán en las siguientes entregas.
 
-Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. La presencia de estas tablas no significa que ya existan los servicios de cobros de ventas o emisión fiscal. La confirmación de compras y preparación diaria ya está implementada.
+Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. Los cobros internos ya están implementados; la presencia de las tablas tributarias no significa que ya exista emisión fiscal. La confirmación de compras y preparación diaria ya está implementada.
 
 ## Usuarios y permisos
 
@@ -41,7 +41,7 @@ Accesos desde el sidebar, en **Configuración del restaurante**, con el permiso 
 - Las comprobaciones se repiten al guardar dentro de transacciones, con auditoría del responsable y valores anteriores/posteriores.
 - El seeder crea Principal solo cuando no existen salones; no vuelve a crearlo si fue renombrado.
 
-Estas pantallas configuran el catálogo. Desde POS ya se pueden abrir pedidos y descartar borradores, liberando su mesa; el cierre de una atención confirmada se implementará con las siguientes operaciones. El contrato de bloqueo está en `docs/contratos-operativos.md`.
+Estas pantallas configuran el catálogo. Desde POS ya se pueden abrir pedidos y descartar borradores, liberando su mesa; el cierre manual de una atención confirmada exige productos pagados y entregados. El contrato de bloqueo está en `docs/contratos-operativos.md`.
 
 Salones y Mesas utilizan las tablas iniciales, sin migraciones adicionales para esas pantallas.
 
@@ -218,7 +218,7 @@ Ingresos (`cajas.registrar_ingreso`), egresos (`cajas.registrar_egreso`) y retir
 
 Los pagos de proveedores hechos con efectivo desde ese turno aparecen como egresos automáticos, identificados en el filtro de origen. No se registran una segunda vez de forma manual. Pagos digitales de empresa y dinero externo del dueño no se asocian a caja ni alteran su efectivo.
 
-El resumen de cobros por medio utiliza pagos de ventas **confirmadas**, antes de devoluciones. Monto aplicado y vuelto se distinguen: solo el importe aplicado en efectivo corresponde al movimiento de ingreso. Ese resumen no incluye fondos ni aportes manuales y no se suma de nuevo al efectivo esperado. Si todavía no existen ventas, indica que no hay cobros; el servicio de cobro de ventas sigue pendiente.
+El resumen de cobros por medio utiliza pagos de ventas **confirmadas**, antes de devoluciones. Monto aplicado y vuelto se distinguen: solo el importe aplicado en efectivo corresponde al movimiento de ingreso. Ese resumen no incluye fondos ni aportes manuales y no se suma de nuevo al efectivo esperado. Si todavía no existen ventas, indica que no hay cobros; los cobros del POS alimentan este resumen y sus ingresos de efectivo.
 
 ### Arqueos y cierre
 
@@ -301,13 +301,46 @@ Los confirmados muestran cantidades listas y entregadas, con actualización cada
 
 Solo se entrega lo confirmado: productos con destino necesitan cantidad lista en Cocina; entrega directa no necesita esa preparación. En una transacción consume la reserva, reduce existencia actual y reservada y registra un movimiento de salida `entrega` con cantidad/costo/responsable. No modifica el costo promedio ni genera dinero, venta, pago o comprobante. Una petición con la versión anterior no puede descontar nuevamente. El stock reservado para otros productos/pedidos permanece protegido.
 
-Los combos se entregan por componentes; la raíz muestra las unidades completas entregadas según sus factores históricos, sin otro movimiento de inventario. El pedido pasa a **Listo** cuando todo lo confirmado está listo y a **Entregado** cuando todo se entrega. Una nueva confirmación vuelve a reflejar lo que aún falta preparar. Entregar no cierra automáticamente la atención ni libera la mesa: falta liquidar su cuenta.
+Los combos se entregan por componentes; la raíz muestra las unidades completas entregadas según sus factores históricos, sin otro movimiento de inventario. El pedido pasa a **Listo** cuando todo lo confirmado está listo y a **Entregado** cuando todo se entrega. Una nueva confirmación vuelve a reflejar lo que aún falta preparar. Entregar no cierra automáticamente la atención ni libera la mesa: se cierra manualmente cuando todo esté pagado y entregado.
 
-La caja puede estar cerrada al terminar preparación/entrega de productos ya confirmados. Para agregar/guardar/confirmar nuevos productos se necesita un turno abierto. El seguimiento del reparto, asignación de repartidor/taxi, cobros/división de cuenta, descuentos, anulación de confirmados y movimientos de merma, impresión operativa y emisión fiscal se integrarán después. Los envíos de esta etapa son registros digitales para la pantalla de Cocina; **no imprimen comandas automáticamente**.
+La caja puede estar cerrada al terminar preparación/entrega de productos ya confirmados. Para agregar/guardar/confirmar nuevos productos se necesita un turno abierto. El seguimiento del reparto, asignación de repartidor/taxi, descuentos, anulación de confirmados y movimientos de merma, impresión operativa y emisión fiscal se integrarán después. Los envíos de esta etapa son registros digitales para la pantalla de Cocina; **no imprimen comandas automáticamente**.
 
 La migración `2026_11_19_000065_create_confirmaciones_pedido.php` agrega los lotes, su vínculo con detalles/envíos y el nombre histórico del destino; conserva opcionales los vínculos de registros anteriores. Actualizar con `php artisan migrate` y `npm run build`. No hay permisos ni dependencias nuevas y no se cambian roles existentes.
 
 CI añade `tests/Support/kitchen-concurrency.php` en MySQL: confirmaciones que compiten por el stock, UUID de lote repetido, avance simultáneo de Cocina y entrega repetida. Usa procesos y barreras en entorno testing y base desechable `sisrest_test`. Comprueba también los movimientos y limpia solo sus datos.
+
+## Cobros, división de cuenta y pagos combinados
+
+Desde el pedido, **Cobrar / dividir cuenta** abre `/pos/pedidos/{pedido}/cobrar`. Requiere `cobros.crear`, acceso POS al pedido y consulta de cajas propia/general. Cada nuevo cobro utiliza una caja activa con turno abierto del cajero; `cajas.ver_todas` permite seleccionar otro turno autorizado. No se usa obligatoriamente la caja de apertura del pedido y no se abre un turno automáticamente.
+
+1. Elegir las cantidades de los productos confirmados que pagará el grupo. **Seleccionar pendientes** prepara el resto; **Limpiar selección** permite escoger solo algunos. Las cantidades son unidades enteras, como en POS. Los combos se cobran en su raíz con el precio guardado, sin sumar otra vez sus componentes.
+2. Opcionalmente indicar grupo/pagador y cliente de ese cobro. Una familia puede tener un cliente distinto al de otra, sin cambiar el cliente general del pedido. Seleccionar otro cliente exige `clientes.ver` y que esté activo; se permite conservar la referencia previa del pedido si ese cliente fue desactivado.
+3. En delivery, elegir si se incluye el **envío pendiente completo**. Se cobra una sola vez entre todos los grupos. Puede cobrarse también por separado, después de los productos. No se edita su precio desde la pantalla de cobro.
+4. Agregar uno o varios medios activos, sin repetir el mismo medio. Indicar importe aplicado; referencia obligatoria cuando el medio lo exige. La suma debe coincidir exactamente con productos seleccionados más envío. No admite abonos de un importe arbitrario ni cantidades ya liquidadas.
+5. Efectivo admite recibido mayor al importe aplicado y calcula el vuelto; recibido vacío significa pago exacto. Un medio digital no admite vuelto. El resumen muestra lo aplicado, faltante, ingreso de efectivo y vuelto.
+6. **Revisar y cobrar** valida en servidor y abre SweetAlert2 con los importes. Aceptar registra únicamente los datos revisados, aunque se cambien inputs después de abrir la alerta. Si cambió el pedido, cliente o configuración del medio, se exige revisar nuevamente.
+
+Ejemplo: total S/ 80, efectivo aplicado S/ 50 con billete de S/ 100, más Yape S/ 30. Se registran S/ 50 de vuelto, un ingreso físico de S/ 50 y cobros por medios de S/ 80. El efectivo esperado de caja no suma Yape ni el billete completo antes del vuelto.
+
+El cobro, sus productos, pagos, cantidades cobradas y movimientos de caja se confirman en una transacción. No vuelve a reservar/descontar productos ni consume ingredientes. Solo los medios que afectan efectivo generan ingreso automático, enlazado a su pago: no se registra además un ingreso manual. Se valida el rango del efectivo esperado antes de escribir. Los productos del catálogo con precio cero pueden liquidarse sin líneas de pago ni movimientos ficticios; aplicar descuentos/cortesías requiere su futura integración de autorización.
+
+El resto de cantidades queda pendiente para los siguientes grupos, incluso desde otra caja autorizada. Cada cobro tiene UUID: repetir la misma petición devuelve su registro original y no duplica pagos ni movimientos, aunque el turno se haya cerrado después. Dos revisiones competidoras no pueden cobrar las mismas unidades; deben volver a consultar el pendiente.
+
+### Consulta y cierre de atención
+
+`/pos/cobros/{cobro}` muestra el detalle interno de solo lectura: productos, grupo/cliente, caja, responsable, pagos, referencias, recibido y vuelto. Conserva nombres y datos del cliente/medio/caja/cajero al registrar. El historial del pedido y los accesos directos a cobros respetan también el alcance de cajas del usuario. Los mozos sin `cobros.crear` no acceden al cobro ni a su historial financiero.
+
+Cajas distingue el origen **Cobro de venta** en sus movimientos, y conserva el resumen por medios separado del efectivo esperado. Los medios digitales no generan movimiento físico; las denominaciones guardadas se utilizan al consultar el historial.
+
+**Cuenta pagada** se calcula desde cantidades liquidadas y envío; no equivale a productos entregados. Tras completar ambos, **Cerrar atención** pide confirmación y vuelve a comprobar borradores, cobros, entregas, reservas y envíos pendientes. Requiere `pedidos.editar` y, si hay mesa, `mesas.liberar`. Guarda fecha/estado de cierre y libera solamente su ocupación. Puede cerrarse con caja cerrada, pues no mueve dinero. Pagar no cierra automáticamente ni libera una mesa con productos pendientes.
+
+Esta etapa registra **cobros internos**: no emite boleta/factura, no calcula un desglose tributario supuesto ni comunica con SUNAT. Pago y emisión seguirán separados. Los cobros/pagos confirmados no se editan ni eliminan; devoluciones/anulaciones con sus movimientos y documentos se implementarán después.
+
+### Actualización y pruebas
+
+La migración `2026_11_19_000066_add_cobro_payment_snapshots.php` añade instantáneas opcionales del grupo/cliente/caja/cajero al cobro y nombre/clasificación de efectivo al pago. Conserva intactos los registros previos, sin inventar nombres históricos, permisos ni saldos. Actualizar con `php artisan migrate` y `npm run build`; no hay dependencias nuevas.
+
+CI MySQL añade `tests/Support/cobros-concurrency.php`: dos grupos compitiendo por las mismas unidades, UUID repetido, cargo de delivery cobrado una sola vez y cobro frente a cierre de caja. Comprueba que el cobro no modifica inventario. Se restringe a testing y base desechable `sisrest_test`, y limpia solo sus datos.
 
 ## Alertas reutilizables
 

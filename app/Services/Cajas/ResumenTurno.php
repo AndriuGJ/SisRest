@@ -38,7 +38,7 @@ class ResumenTurno
         $medios = [];
         foreach ($pagos as $pago) {
             $id = $pago->medio_pago_id;
-            $medios[$id] ??= ['nombre' => $pago->medioPago->nombre, 'monto' => '0.00'];
+            $medios[$id] ??= ['nombre' => $pago->medio_pago_nombre ?? $pago->medioPago->nombre, 'monto' => '0.00'];
             $medios[$id]['monto'] = bcadd($medios[$id]['monto'], $pago->monto, 2);
             $cobrado = bcadd($cobrado, $pago->monto, 2);
         }

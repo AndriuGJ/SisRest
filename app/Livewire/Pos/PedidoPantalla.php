@@ -10,6 +10,8 @@ use App\Models\Pedido;
 use App\Models\PedidoDetalle;
 use App\Models\TurnoCaja;
 use App\Models\User;
+use App\Services\Cobros\CerrarAtencion;
+use App\Services\Cobros\EstadoCuenta;
 use App\Services\Inventario\CalculoProduccion;
 use App\Services\Pos\AccesoPos;
 use App\Services\Pos\CatalogoPos;
@@ -71,6 +73,9 @@ class PedidoPantalla extends Component
 
     /** @var array<int,string> */
     public array $cantidadesEntrega = [];
+
+    #[Locked]
+    public string $versionCierre = '';
 
     public string $turnoId = '';
 
@@ -247,6 +252,31 @@ class PedidoPantalla extends Component
         $this->redirectRoute('pos.pedido', $this->pedidoId, navigate: true);
     }
 
+    public function requestClose(): void
+    {
+        Gate::forUser($this->actor())->authorize('pedidos.editar');
+        $this->exigirGuardado();
+        $pedido = $this->pedido();
+        if ($pedido->mesa_id) {
+            Gate::forUser($this->actor())->authorize('mesas.liberar');
+        }
+        $this->versionCierre = EstadoCuenta::huella($pedido);
+        $this->confirmar('Cerrar atención', 'Se comprobará que todos los productos estén pagados y entregados. Se cerrará la atención y se liberará únicamente su mesa.', 'confirmClose', 'Cerrar atención');
+    }
+
+    public function confirmClose(CerrarAtencion $gestion): void
+    {
+        try {
+            $gestion->cerrar($this->actor(), $this->pedidoId, $this->versionCierre);
+        } catch (ValidationException $error) {
+            $this->notificar($error->validator->errors()->first(), 'error', toast: false);
+
+            return;
+        }
+        Alertas::flash('Atención cerrada y mesa liberada.');
+        $this->redirectRoute('pos.index', navigate: true);
+    }
+
     public function requestDiscard(): void
     {
         Gate::forUser($this->actor())->authorize('pedidos.editar');
@@ -348,6 +378,6 @@ class PedidoPantalla extends Component
 
         return view('livewire.pos.pedido-pantalla', ['pedido' => $pedido, 'productos' => $catalogo->paginate(18), 'seleccionados' => $seleccionados,
             'filasVista' => $filasVista, 'categorias' => CategoriaProducto::where('activo', true)->orderBy('orden')->get(), 'clientes' => $clientes, 'total' => $total,
-            'progreso' => $progreso, 'turnos' => TurnoCaja::with('caja')->where('estado', 'abierta')->whereHas('caja', fn ($q) => $q->where('activo', true))->get()]);
+            'cuentaPagada' => EstadoCuenta::liquidada($pedido), 'progreso' => $progreso, 'turnos' => TurnoCaja::with('caja')->where('estado', 'abierta')->whereHas('caja', fn ($q) => $q->where('activo', true))->get()]);
     }
 }

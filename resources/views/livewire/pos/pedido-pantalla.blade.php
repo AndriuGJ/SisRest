@@ -21,6 +21,11 @@
             @if(!in_array($pedido->estado->value, ['cerrado','anulado'], true) && $pedido->detalles->where('estado.value', 'borrador')->isNotEmpty())
                 @can('pedidos.enviar')<flux:button class="w-full" variant="primary" icon="paper-airplane" wire:click="requestSend" wire:loading.attr="disabled">Confirmar y enviar</flux:button>@endcan
             @endif
+            @if(!in_array($pedido->estado->value, ['cerrado','anulado'], true))
+                @can('cobros.crear')<flux:button class="w-full" icon="banknotes" href="{{ route('pos.cobrar', $pedido) }}" wire:navigate>Cobrar / dividir cuenta</flux:button>@endcan
+                <p class="text-sm {{ $cuentaPagada ? 'text-green-700 dark:text-green-400' : 'text-zinc-500' }}">{{ $cuentaPagada ? 'Cuenta pagada.' : 'Cuenta pendiente de cobro.' }}</p>
+                @if($cuentaPagada && $pedido->estado->value === 'entregado')@can('pedidos.editar')@if(!$pedido->mesa_id || auth()->user()->can('mesas.liberar'))<flux:button class="w-full" variant="primary" wire:click="requestClose">Cerrar atención</flux:button>@endif @endcan @endif
+            @endif
             <p class="text-xs text-zinc-500">Estado: {{ str_replace('_', ' ', ucfirst($pedido->estado->value)) }}. Preparación, entrega y pago se controlan por separado.</p>
         </div></div>
     </div>

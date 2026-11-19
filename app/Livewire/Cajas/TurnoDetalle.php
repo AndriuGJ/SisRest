@@ -4,6 +4,7 @@ namespace App\Livewire\Cajas;
 
 use App\Concerns\ConAlertas;
 use App\Models\MovimientoCaja;
+use App\Models\Pago;
 use App\Models\PagoCompra;
 use App\Models\TurnoCaja;
 use App\Models\User;
@@ -205,8 +206,10 @@ class TurnoDetalle extends Component
             $query->whereNull('origen_type');
         } elseif ($this->origenFilter === 'proveedor') {
             $query->where('origen_type', PagoCompra::class);
+        } elseif ($this->origenFilter === 'venta') {
+            $query->where('origen_type', Pago::class);
         } elseif ($this->origenFilter === 'otros') {
-            $query->whereNotNull('origen_type')->where('origen_type', '<>', PagoCompra::class);
+            $query->whereNotNull('origen_type')->whereNotIn('origen_type', [PagoCompra::class, Pago::class]);
         }
 
         return view('livewire.cajas.turno-detalle', ['turno' => $turno, 'resumen' => $resumen, 'cierre' => $cierre,

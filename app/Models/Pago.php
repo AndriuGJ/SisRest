@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
+ * @property string|null $medio_pago_nombre
+ * @property bool|null $afecta_efectivo
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -25,6 +27,7 @@ class Pago extends Model
     protected $table = 'pagos';
 
     protected $fillable = [
+        'medio_pago_nombre', 'afecta_efectivo',
         'cobro_id',
         'medio_pago_id',
         'monto',
@@ -39,6 +42,7 @@ class Pago extends Model
     protected function casts(): array
     {
         return [
+            'afecta_efectivo' => 'boolean',
             'monto' => 'decimal:2',
             'monto_entregado' => 'decimal:2',
             'vuelto' => 'decimal:2',
