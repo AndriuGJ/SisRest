@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 
 /**
+ * @property int $pedido_detalle_id
  * @property int $id
  * @property string $descripcion
  * @property numeric-string $cantidad_liberada

@@ -27,6 +27,12 @@ return [
         'cortesias.aplicar' => 'Autorizar cortesías',
         'devoluciones.crear' => 'Registrar devoluciones',
     ]],
+    'impresion' => ['titulo' => 'Impresión operativa', 'acciones' => [
+        'impresion.comandas' => 'Imprimir comandas y avisos de anulación',
+        'impresion.precuentas' => 'Imprimir precuentas',
+        'impresion.tickets' => 'Imprimir tickets de cobro',
+        'impresion.reimprimir' => 'Autorizar reimpresiones',
+    ]],
     'clientes' => ['titulo' => 'Clientes', 'acciones' => [
         'clientes.ver' => 'Consultar clientes',
         'clientes.crear' => 'Registrar clientes',

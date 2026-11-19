@@ -59,7 +59,10 @@ class GestionImpresoras
                 'puerto' => $validado['puerto'], 'ancho_mm' => $validado['ancho'],
                 'area_preparacion_id' => $destino?->id, 'activo' => $validado['activo'],
             ])->save();
-            Caja::query()->where('impresora_id', $impresora->id)->update(['impresora_id' => null]);
+            // Conserva la caja seleccionada: su modelo puede tener ya este id y no emitir otro UPDATE.
+            Caja::query()->where('impresora_id', $impresora->id)
+                ->when($caja, fn ($query) => $query->whereKeyNot($caja->id))
+                ->update(['impresora_id' => null]);
             $caja?->update(['impresora_id' => $impresora->id]);
             activity()->causedBy($actor)->performedOn($impresora)->event('impresora_configurada')
                 ->withProperties(['antes' => $antes, 'despues' => $impresora->only($impresora->getFillable()),

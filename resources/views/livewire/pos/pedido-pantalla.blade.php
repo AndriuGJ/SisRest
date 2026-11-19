@@ -21,6 +21,7 @@
             @if(!in_array($pedido->estado->value, ['cerrado','anulado'], true) && $pedido->detalles->where('estado.value', 'borrador')->isNotEmpty())
                 @can('pedidos.enviar')<flux:button class="w-full" variant="primary" icon="paper-airplane" wire:click="requestSend" wire:loading.attr="disabled">Confirmar y enviar</flux:button>@endcan
             @endif
+            @canany(['impresion.comandas','impresion.precuentas'])<flux:button class="w-full" icon="printer" wire:click="openPrinting">Comandas / precuenta</flux:button>@endcanany
             @if(!in_array($pedido->estado->value, ['cerrado','anulado'], true))
                 @can('cobros.crear')<flux:button class="w-full" icon="banknotes" href="{{ route('pos.cobrar', $pedido) }}" wire:navigate>Cobrar / dividir cuenta</flux:button>@endcan
                 <p class="text-sm {{ $cuentaPagada ? 'text-green-700 dark:text-green-400' : 'text-zinc-500' }}">{{ $cuentaPagada ? 'Cuenta pagada.' : 'Cuenta pendiente de cobro.' }}</p>

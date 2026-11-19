@@ -183,6 +183,15 @@ class PedidoPantalla extends Component
         }
     }
 
+    public function openPrinting(): void
+    {
+        $actor = $this->actor();
+        abort_unless($actor->can('impresion.comandas') || $actor->can('impresion.precuentas'), 403);
+        $this->pedido();
+        $this->exigirGuardado();
+        $this->redirectRoute('pos.imprimir-pedido', $this->pedidoId, navigate: true);
+    }
+
     public function requestSend(): void
     {
         Gate::forUser($this->actor())->authorize('pedidos.enviar');

@@ -6,6 +6,7 @@ use App\Models\AreaPreparacion;
 use App\Models\Caja;
 use App\Models\Impresora;
 use App\Models\PruebaImpresion;
+use App\Models\TrabajoImpresion;
 use App\Models\User;
 use Closure;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -35,6 +36,9 @@ trait BloqueaImpresion
                 // Un proceso interrumpido no se vuelve a enviar automáticamente.
                 PruebaImpresion::query()->where('estado', 'procesando')->where('updated_at', '<', now()->subMinute())
                     ->update(['estado' => 'resultado_incierto', 'mensaje' => 'La prueba se interrumpió. Revisa el papel antes de solicitar otra.']);
+
+                TrabajoImpresion::query()->where('estado', 'procesando')->where('updated_at', '<', now()->subMinute())
+                    ->update(['estado' => 'resultado_incierto', 'ultimo_error' => 'El proceso se interrumpió. Revisa el papel antes de solicitar una copia.']);
 
                 return $operacion();
             }, 3);

@@ -11,13 +11,21 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 /**
+ * @phpstan-import-type Contenido from \App\Services\Impresion\FuenteImpresion
+ *
+ * @property int|null $pedido_id
+ * @property array{tipo:string,id:int,caja:int,area:int}|null $solicitud
+ * @property array{nombre:string,host:string,puerto:int,ancho_mm:int}|null $configuracion
+ * @property string|null $usuario_nombre
+ * @property string|null $motivo_reimpresion
+ * @property string|null $clave_documento
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
  * @property int $impresora_id
  * @property int $usuario_id
  * @property TipoTrabajoImpresion $tipo
- * @property array<string, mixed> $contenido
+ * @property Contenido|array{} $contenido
  * @property EstadoTrabajoImpresion $estado
  * @property int $intentos
  * @property int|null $reimpresion_de_id
@@ -32,6 +40,7 @@ class TrabajoImpresion extends Model
     protected $table = 'trabajos_impresion';
 
     protected $fillable = [
+        'pedido_id', 'solicitud', 'configuracion', 'usuario_nombre', 'motivo_reimpresion', 'clave_documento',
         'impresora_id',
         'usuario_id',
         'tipo',
@@ -50,6 +59,7 @@ class TrabajoImpresion extends Model
     protected function casts(): array
     {
         return [
+            'solicitud' => 'array', 'configuracion' => 'array',
             'tipo' => TipoTrabajoImpresion::class,
             'contenido' => 'array',
             'estado' => EstadoTrabajoImpresion::class,

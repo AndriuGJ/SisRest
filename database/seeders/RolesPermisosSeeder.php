@@ -39,11 +39,13 @@ class RolesPermisosSeeder extends Seeder
                 'clientes.editar', 'productos.ver', 'cajas.ver_propias', 'cajas.abrir',
                 'cajas.cerrar', 'cajas.arquear', 'cajas.registrar_ingreso',
                 'cajas.registrar_egreso', 'comprobantes.ver', 'comprobantes.emitir',
+                'impresion.comandas', 'impresion.precuentas', 'impresion.tickets',
                 'reportes.ver_propios', 'reportes.exportar',
             ],
             'mozo' => [
                 'pos.ver', 'pedidos.ver_propios', 'pedidos.crear', 'pedidos.editar',
                 'pedidos.enviar', 'mesas.liberar', 'productos.ver', 'entregas.confirmar',
+                'impresion.comandas', 'impresion.precuentas',
             ],
             'cocina' => ['cocina.ver', 'cocina.preparar', 'cocina.marcar_listo'],
         ];

@@ -99,3 +99,7 @@ jobs:
       - name: Verify concurrent refunds and product returns
         if: matrix.database == 'mysql'
         run: php tests/Support/devoluciones-concurrency.php
+
+      - name: Verify concurrent operational printing
+        if: matrix.database == 'mysql'
+        run: php tests/Support/printing-concurrency.php

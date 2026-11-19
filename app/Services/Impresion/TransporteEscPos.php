@@ -24,12 +24,12 @@ class TransporteEscPos
             while ($posicion < $longitud) {
                 $escrito = @fwrite($socket, substr($contenido, $posicion));
                 if ($escrito === false || $escrito === 0 || stream_get_meta_data($socket)['timed_out'] || microtime(true) > $limite) {
-                    throw new FalloImpresion('El envío se interrumpió y pudo llegar parcialmente. Revisa el papel antes de solicitar otra prueba.', true);
+                    throw new FalloImpresion('El envío se interrumpió y pudo llegar parcialmente. Revisa el papel antes de solicitar un nuevo envío.', true);
                 }
                 $posicion += $escrito;
             }
             if (! @fflush($socket)) {
-                throw new FalloImpresion('No se pudo confirmar el envío completo. Revisa el papel antes de solicitar otra prueba.', true);
+                throw new FalloImpresion('No se pudo confirmar el envío completo. Revisa el papel antes de solicitar un nuevo envío.', true);
             }
         } finally {
             fclose($socket);

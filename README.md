@@ -72,7 +72,7 @@ La migración `2026_11_18_000058_create_pruebas_impresion_table.php` registra la
 - Mientras haya una prueba o trabajo operativo pendiente/en curso, no se permite modificar la impresora. La red se utiliza después de registrar y cerrar la transacción de la prueba.
 - La pantalla muestra las diez pruebas más recientes. También se registra el resultado en auditoría, sin volcar errores internos al usuario.
 
-Se verificaron los bytes ESC/POS contra un receptor TCP local y el flujo de navegador. La compatibilidad física, corte y avance de la POS80 se deben comprobar en el equipo del restaurante. Las comandas, precuentas y comprobantes operativos se conectarán a estas asignaciones al implementar sus módulos.
+Se verificaron los bytes ESC/POS contra un receptor TCP local y el flujo de navegador. La compatibilidad física, corte y avance de la POS80 se deben comprobar en el equipo del restaurante. Las comandas, precuentas y tickets internos ya usan estas asignaciones; los comprobantes tributarios se incorporarán con la facturación.
 
 ## Inventario: Insumos y Productos para la venta
 
@@ -303,7 +303,7 @@ Solo se entrega lo confirmado: productos con destino necesitan cantidad lista en
 
 Los combos se entregan por componentes; la raíz muestra las unidades completas entregadas según sus factores históricos, sin otro movimiento de inventario. El pedido pasa a **Listo** cuando todo lo confirmado está listo y a **Entregado** cuando todo se entrega. Una nueva confirmación vuelve a reflejar lo que aún falta preparar. Entregar no cierra automáticamente la atención ni libera la mesa: se cierra manualmente cuando todo esté pagado y entregado.
 
-La caja puede estar cerrada al terminar preparación/entrega de productos ya confirmados. Para agregar/guardar/confirmar nuevos productos se necesita un turno abierto. El seguimiento del reparto, asignación de repartidor/taxi, ajustes de inventario fuera de anulaciones, impresión operativa y emisión fiscal se integrarán después. Los envíos de esta etapa son registros digitales para la pantalla de Cocina; **no imprimen comandas automáticamente**.
+La caja puede estar cerrada al terminar preparación/entrega de productos ya confirmados. Para agregar/guardar/confirmar nuevos productos se necesita un turno abierto. El seguimiento del reparto, la asignación de repartidor/taxi, los ajustes de inventario ajenos a estos flujos y la emisión fiscal se integrarán después. Los envíos alimentan Cocina y pueden imprimirse desde **Comandas / precuenta**. Confirmar productos no imprime automáticamente.
 
 La migración `2026_11_19_000065_create_confirmaciones_pedido.php` agrega los lotes, su vínculo con detalles/envíos y el nombre histórico del destino; conserva opcionales los vínculos de registros anteriores. Actualizar con `php artisan migrate` y `npm run build`. No hay permisos ni dependencias nuevas y no se cambian roles existentes.
 
@@ -379,7 +379,7 @@ No se acumula con descuentos/cortesías por producto dentro del mismo cobro. Se 
 
 La migración `2026_11_19_000067_add_pos_cancellations_and_benefits.php` incorpora historial de anulaciones y sus efectos por artículo, historial de beneficios, instantáneas de autorización y desglose de descuentos en los detalles cobrados. Conserva registros anteriores y no crea beneficios, existencias ni permisos nuevos. Actualizar con `php artisan migrate` y `npm run build`.
 
-CI añade `tests/Support/pos-adjustments-concurrency.php` en MySQL: anulación frente a Cocina/cobro, beneficio frente a cobro y repetición de anulaciones con merma/beneficios. Solo testing y base desechable `sisrest_test`; limpia sus propios datos. La impresión y emisión tributaria siguen pendientes; las devoluciones se describen a continuación.
+CI añade `tests/Support/pos-adjustments-concurrency.php` en MySQL: anulación frente a Cocina/cobro, beneficio frente a cobro y repetición de anulaciones con merma/beneficios. Solo testing y base desechable `sisrest_test`; limpia sus propios datos. Las devoluciones y la impresión operativa se describen a continuación; la emisión tributaria sigue pendiente.
 
 ## Devoluciones de cobros y productos
 
@@ -410,11 +410,57 @@ Una cantidad solo puede resolverse una vez, aunque una devolución se divida ent
 
 El turno conserva **cobrado bruto**, **devuelto por medio** y **cobrado menos devuelto**. Este neto puede ser negativo al devolver cobros anteriores y no equivale al efectivo físico. El egreso automático queda enlazado al reintegro; el filtro de movimientos incluye **Devolución de venta**. Las devoluciones digitales también invalidan una revisión de cierre anterior. Los arqueos ya cerrados conservan su instantánea, incluidos cierres de versiones anteriores sin esos campos.
 
-Cobro y pagos originales permanecen confirmados e inmutables. Esta devolución interna no modifica ni emite comprobantes o estados SUNAT. **La impresión de comandas, precuentas y tickets, y después la emisión con Greenter, son las siguientes etapas.**
+Cobro y pagos originales permanecen confirmados e inmutables. Esta devolución interna no modifica ni emite comprobantes o estados SUNAT. **La impresión operativa se describe a continuación; la emisión con Greenter continúa pendiente.**
 
 ### Verificación
 
 `tests/Feature/Cobros/DevolucionesTest.php` cubre netos y céntimos, pagos combinados/vuelto, referencias, envío, importes cero, permisos, caja de otro turno, stock separado, cancelación pagada, retornos, costos históricos, combos, alcance de acceso, revisiones y formularios Livewire. CI MySQL añade `tests/Support/devoluciones-concurrency.php`: saldo competido, UUID de devolución y retorno repetidos, mismo producto retornado dos veces, cancelación pagada frente a entrega y devolución frente a cierre. Solo usa testing y base desechable `sisrest_test`; limpia sus propias filas.
+
+## Impresión de comandas, precuentas y tickets
+
+La impresión operativa usa ESC/POS por TCP desde PHP. Funciona con el servidor en la misma red accesible que las impresoras, incluidos cajeros Windows y mozos en tablet. No abre el cuadro de impresión del navegador ni requiere instalar un controlador en cada tablet. El acceso desde hosting a impresoras de la red del local necesitará un puente local posterior; no está incluido.
+
+### Cómo imprimir
+
+1. Configurar y activar las impresoras en **Configuración → Impresoras**: una por destino (Cocina/Barra) y una propia por caja. Se usan los formatos **80 mm / 48 columnas** y **58 mm / 32 columnas**, con texto de la impresora, avance y corte. Las pruebas de conexión siguen disponibles.
+2. En un pedido, abrir **Comandas / precuenta**. Exige guardar los cambios del formulario. Cada envío confirmado aparece por lote y destino; los productos de entrega directa no generan comanda. **Ver comanda** abre su vista previa. No vuelve a reservar, preparar ni entregar productos.
+3. Para una **precuenta**, seleccionar la caja que debe imprimir y abrir **Vista previa de precuenta**. Muestra solo cantidades confirmadas sin cobrar, sus descuentos por producto restantes y envío aún pendiente. No incluye borradores ni descuenta dos veces grupos ya pagados. Una devolución no crea una nueva deuda. Los descuentos generales se deciden al cobrar y no se presuponen aquí.
+4. Desde el detalle del cobro, **Imprimir ticket** abre el documento de ese cobro y sus pagos originales. Incluye productos, descuentos/cortesías, envío, total, medios combinados, referencia y efectivo recibido/vuelto. Puede imprimirse con el turno original ya cerrado; no recibe otro pago. La salida puede dirigirse a otra caja activa autorizada.
+5. Revisar el documento, pulsar **Imprimir documento** y aceptar SweetAlert2. Se registra primero la solicitud y luego se envían los bytes fuera de la transacción de base de datos. Cancelar la confirmación no envía nada. Un error de impresión conserva pedido, inventario, cobro y pagos.
+
+Confirmar productos y registrar cobros no imprimen automáticamente. El usuario solicita cada documento revisado. El ticket es **interno**, no una boleta/factura, y no cambia el estado en SUNAT. La cabecera usa los datos disponibles de Empresa; no se inventa un desglose de IGV. Texto ASCII y fuente incorporada en la impresora evitan depender de fuentes del navegador; las tildes se transliteran. La salida física y el corte deben comprobarse en el modelo concreto del restaurante.
+
+### Lotes, anulaciones y copias
+
+La comanda identifica pedido, atención/mesa, mozo, lote y destino; conserva notas y componentes de combos, sin precios ni costos. Muestra cantidades vigentes y avance de Cocina para evitar preparar de nuevo lo ya iniciado/listo/entregado. Los nuevos productos generan otro lote.
+
+Las anulaciones y cancelaciones pagadas pendientes generan **avisos imprimibles por destino** en la misma pantalla. Indican cantidades ya canceladas y “no preparar / no entregar”; imprimir el aviso no vuelve a ejecutar la anulación. Es una solicitud explícita: verificar que Cocina/Barra recibió el aviso.
+
+Un original de comanda/aviso/ticket solo se envía una vez, incluso con otra UUID o desde otro equipo. Volver a abrirlo muestra el documento registrado. La precuenta tiene versiones según su contenido pendiente; repetir la misma versión muestra su original. Si cambian las cantidades/beneficios/envío pendientes, se prepara una versión nueva.
+
+Para otro ejemplar, usar **Preparar copia** en el historial, con `impresion.reimprimir`, motivo obligatorio y confirmación. La copia mantiene el contenido histórico, aparece marcada **COPIA / REIMPRESIÓN**, se enlaza al original y conserva su propio usuario/fecha/UUID. Puede usar la conexión actual corregida de la impresora o una caja autorizada distinta, sin reescribir la conexión original. Una copia de comanda no constituye un pedido nuevo.
+
+### Estados y recuperación
+
+| Estado | Significado / acción |
+| --- | --- |
+| En curso | Solicitud persistida y envío en ejecución; bloquea otro envío y cambios de esa impresora. |
+| Enviado | Bytes enviados; verificar salida física, papel y corte. No se puede confirmar el resultado del papel por TCP. |
+| Error | No pudo generarse el documento o conectarse con la impresora. Corregir la causa y solicitar una copia explícita. |
+| Resultado sin confirmar | El envío pudo llegar total o parcialmente, o se interrumpió el proceso. Revisar el papel antes de solicitar una copia. |
+
+No hay reintentos automáticos de red. La repetición de una petición devuelve su registro sin reenviar. **Actualizar estado** identifica solicitudes en curso de más de un minuto como resultado sin confirmar, sin volver a enviarlas. El historial conserva contenido, conexión, responsable, estado y motivo de copia. Los controles de configuración usan el mismo bloqueo de impresora y no se modifican destinos/conexión durante un envío.
+
+### Permisos y actualización
+
+- `impresion.comandas`: comandas y avisos de anulación, con acceso al pedido.
+- `impresion.precuentas`: precuentas del pedido autorizado; no da acceso a tickets ni movimientos financieros.
+- `impresion.tickets`: tickets, además de `cobros.crear` y alcance de la caja original; la salida debe ser una caja autorizada.
+- `impresion.reimprimir`: copias, además del permiso de impresión del documento original.
+
+La migración **000069** crea estos cuatro permisos y agrega las instantáneas y claves de documento al historial. Concede los cuatro al administrador existente; comandas/precuentas a cajero/mozo que ya tienen POS y envío de pedidos, y tickets al cajero que conserva cobros. No sincroniza ni reinicia los demás permisos. Los nuevos roles reciben esos mismos valores; copias quedan inicialmente para el administrador. No añade dependencias. También conserva la asignación de caja al editar conexión/ancho de una impresora ya asignada.
+
+Pruebas de impresión cubren vistas previas, bytes contra receptor TCP, Cocina/Barra, combos/notas, saldo y descuentos pendientes, pagos/vuelto, permisos, copias, errores, resultado incierto, ancho y limpieza de caracteres de control. CI añade `tests/Support/printing-concurrency.php` en MySQL: mismo documento con UUID distintas, UUID repetida, copia repetida, impresión frente a configuración y precuenta frente a cobro. El transporte simulado mantiene el envío abierto hasta que compite la otra petición y comprueba que no hay transacción durante la red; usa solo testing y base desechable `sisrest_test`.
 
 ## Alertas reutilizables
 
@@ -549,7 +595,7 @@ Solo en local/testing. Crea arroz, pollo, huevo, chaufa, gaseosa, un combo y un 
 | chart.js | Gráficos |
 | sweetalert2 | Alertas y confirmaciones reutilizables |
 
-Greenter Lite evita exigir wkhtmltopdf. Los PDF de reportes se generarán con DomPDF; los tickets tendrán su integración ESC/POS.
+Greenter Lite evita exigir wkhtmltopdf. Los PDF de reportes se generarán con DomPDF; los tickets internos ya usan ESC/POS; la representación de comprobantes tributarios se incorporará con Greenter.
 
 Chart.js está disponible en `resources/js/charts.js` para importar desde los futuros widgets y empaquetarse localmente.
 

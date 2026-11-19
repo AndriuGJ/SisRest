@@ -32,6 +32,7 @@ class ProbarImpresora
         Validator::make(['clave' => $clave], ['clave' => ['required', 'uuid']])->validate();
         $enviar = false;
         $prueba = $this->transaccion($actor, 'impresoras.gestionar', function () use ($actor, $impresoraId, $clave, $huella, &$enviar): PruebaImpresion {
+            $enviar = false;
             $existente = PruebaImpresion::query()->whereKey($clave)->first();
             if ($existente) {
                 abort_unless($existente->usuario_id === $actor->id && $existente->impresora_id === $impresoraId, 403);
