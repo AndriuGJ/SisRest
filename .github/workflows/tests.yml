@@ -103,3 +103,7 @@ jobs:
       - name: Verify concurrent operational printing
         if: matrix.database == 'mysql'
         run: php tests/Support/printing-concurrency.php
+
+      - name: Verify concurrent fiscal emission and SUNAT dispatch
+        if: matrix.database == 'mysql'
+        run: php tests/Support/fiscal-concurrency.php

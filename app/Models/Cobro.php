@@ -124,6 +124,12 @@ class Cobro extends Model
         return $this->hasMany(Pago::class, 'cobro_id');
     }
 
+    /** @return HasMany<Comprobante, $this> */
+    public function comprobantes(): HasMany
+    {
+        return $this->hasMany(Comprobante::class, 'cobro_id');
+    }
+
     /** @return HasOne<Comprobante, $this> */
     public function comprobante(): HasOne
     {

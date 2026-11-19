@@ -102,13 +102,18 @@ class TicketOperativo
         return implode("\n", $lineas)."\n";
     }
 
-    public function generar(string $texto): string
+    public function generar(string $texto, ?string $qr = null): string
     {
         $conector = new MemoryPrintConnector;
         $impresora = new Printer($conector);
         try {
             $impresora->setFont(Printer::FONT_A);
             $impresora->text($texto);
+            if ($qr !== null) {
+                $impresora->setJustification(Printer::JUSTIFY_CENTER);
+                $impresora->qrCode($qr, Printer::QR_ECLEVEL_M, 4);
+                $impresora->setJustification(Printer::JUSTIFY_LEFT);
+            }
             $impresora->feed(4);
             $impresora->cut();
 

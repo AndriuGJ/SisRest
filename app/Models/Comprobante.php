@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
+ * @property string $entorno
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -45,6 +46,7 @@ class Comprobante extends Model
     protected $table = 'comprobantes';
 
     protected $fillable = [
+        'entorno',
         'serie_comprobante_id',
         'correlativo',
         'cobro_id',

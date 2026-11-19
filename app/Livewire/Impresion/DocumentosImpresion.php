@@ -7,12 +7,14 @@ use App\Models\AnulacionPedido;
 use App\Models\AreaPreparacion;
 use App\Models\Caja;
 use App\Models\Cobro;
+use App\Models\Comprobante;
 use App\Models\EnvioCocina;
 use App\Models\Pedido;
 use App\Models\ResolucionDevolucion;
 use App\Models\TrabajoImpresion;
 use App\Models\TurnoCaja;
 use App\Models\User;
+use App\Services\Facturacion\AccesoFacturacion;
 use App\Services\Impresion\AccesoImpresion;
 use App\Services\Impresion\FuenteImpresion;
 use App\Services\Impresion\ImpresionOperativa;
@@ -41,6 +43,9 @@ class DocumentosImpresion extends Component
 
     #[Locked]
     public ?int $cobroId = null;
+
+    #[Locked]
+    public ?int $comprobanteId = null;
 
     public string $cajaId = '';
 
@@ -85,6 +90,9 @@ class DocumentosImpresion extends Component
         abort_unless($actor instanceof User, 403);
         $actual = AccesoPos::usuario($actor);
         AccesoPos::pedido($actual, Pedido::findOrFail($this->pedidoId));
+        if ($this->comprobanteId) {
+            AccesoFacturacion::cobro($actual, Comprobante::findOrFail($this->comprobanteId)->cobro()->firstOrFail());
+        }
         if ($this->cobroId) {
             AccesoImpresion::cobro($actual, Cobro::findOrFail($this->cobroId));
         } else {
@@ -94,8 +102,12 @@ class DocumentosImpresion extends Component
         return $actual;
     }
 
-    public function mount(?Pedido $pedido = null, ?Cobro $cobro = null): void
+    public function mount(?Pedido $pedido = null, ?Cobro $cobro = null, ?Comprobante $comprobante = null): void
     {
+        if ($comprobante !== null && $comprobante->exists) {
+            $this->comprobanteId = $comprobante->id;
+            $cobro = $comprobante->cobro()->firstOrFail();
+        }
         if ($cobro !== null && $cobro->exists) {
             $this->cobroId = $cobro->id;
             $this->pedidoId = $cobro->pedido_id;
@@ -114,14 +126,14 @@ class DocumentosImpresion extends Component
 
     public function openPreview(string $tipo, int $id, int $area = 0): void
     {
-        $this->abrir(['tipo' => $tipo, 'id' => $id, 'caja' => in_array($tipo, ['precuenta', 'ticket'], true) ? (ctype_digit($this->cajaId) ? (int) $this->cajaId : 0) : 0, 'area' => $area], 0);
+        $this->abrir(['tipo' => $tipo, 'id' => $id, 'caja' => in_array($tipo, ['precuenta', 'ticket', 'comprobante'], true) ? (ctype_digit($this->cajaId) ? (int) $this->cajaId : 0) : 0, 'area' => $area], 0);
     }
 
     /** @param Solicitud $solicitud */
     private function abrir(array $solicitud, int $copiaId): void
     {
         $actor = $this->actor();
-        abort_unless($this->cobroId ? $solicitud['tipo'] === 'ticket' && $solicitud['id'] === $this->cobroId : $solicitud['tipo'] !== 'ticket', 403);
+        abort_unless($this->cobroId ? $solicitud['tipo'] === ($this->comprobanteId ? 'comprobante' : 'ticket') && $solicitud['id'] === ($this->comprobanteId ?? $this->cobroId) : ! in_array($solicitud['tipo'], ['ticket', 'comprobante'], true), 403);
         $this->resetValidation();
         $this->showPreview = false;
         try {
@@ -153,7 +165,7 @@ class DocumentosImpresion extends Component
     {
         $trabajo = TrabajoImpresion::findOrFail($id);
         AccesoImpresion::trabajo($this->actor(), $trabajo);
-        abort_unless($trabajo->pedido_id === $this->pedidoId && ($this->cobroId ? $trabajo->solicitud && $trabajo->solicitud['tipo'] === 'ticket' && $trabajo->solicitud['id'] === $this->cobroId : $trabajo->tipo->value !== 'ticket'), 403);
+        abort_unless($trabajo->pedido_id === $this->pedidoId && ($this->cobroId ? $trabajo->solicitud && $trabajo->solicitud['tipo'] === ($this->comprobanteId ? 'comprobante' : 'ticket') && $trabajo->solicitud['id'] === ($this->comprobanteId ?? $this->cobroId) : ! in_array($trabajo->tipo->value, ['ticket', 'comprobante'], true)), 403);
 
         return $trabajo;
     }
@@ -179,7 +191,7 @@ class DocumentosImpresion extends Component
         }
         abort_unless($trabajo->solicitud !== null, 404);
         $solicitud = $trabajo->solicitud;
-        if (in_array($solicitud['tipo'], ['precuenta', 'ticket'], true)) {
+        if (in_array($solicitud['tipo'], ['precuenta', 'ticket', 'comprobante'], true)) {
             $solicitud['caja'] = ctype_digit($this->cajaId) ? (int) $this->cajaId : 0;
         }
         $this->abrir($solicitud, $trabajo->id);
@@ -243,8 +255,8 @@ class DocumentosImpresion extends Component
     {
         $actor = $this->actor();
         $pedido = Pedido::findOrFail($this->pedidoId);
-        $tipos = $this->cobroId ? ['ticket'] : array_values(array_filter(['comanda', 'precuenta'], fn ($t) => $actor->can(AccesoImpresion::permiso($t))));
-        $historial = TrabajoImpresion::with('impresora')->where('pedido_id', $pedido->id)->whereIn('tipo', $tipos)->when($this->cobroId, fn ($q) => $q->where('documento_id', $this->cobroId)->where('documento_type', Cobro::class))->latest('id')->paginate(12);
+        $tipos = $this->cobroId ? [$this->comprobanteId ? 'comprobante' : 'ticket'] : array_values(array_filter(['comanda', 'precuenta'], fn ($t) => $actor->can(AccesoImpresion::permiso($t))));
+        $historial = TrabajoImpresion::with('impresora')->where('pedido_id', $pedido->id)->whereIn('tipo', $tipos)->when($this->cobroId, fn ($q) => $q->where('documento_id', $this->comprobanteId ?? $this->cobroId)->where('documento_type', $this->comprobanteId ? Comprobante::class : Cobro::class))->latest('id')->paginate(12);
         $avisos = [];
         if (! $this->cobroId && $actor->can('impresion.comandas')) {
             $fuentes = AnulacionPedido::where('pedido_id', $pedido->id)->get()->map(fn ($a) => ['tipo' => 'anulacion', 'id' => $a->id])->all();
@@ -258,7 +270,7 @@ class DocumentosImpresion extends Component
             }
         }
 
-        return view('livewire.impresion.documentos', ['pedido' => $pedido, 'cobro' => $this->cobroId ? Cobro::findOrFail($this->cobroId) : null, 'cajas' => $this->cobroId ? AccesoImpresion::cajasTicket($actor)->orderBy('id')->get() : Caja::where('activo', true)->orderBy('id')->get(),
+        return view('livewire.impresion.documentos', ['comprobante' => $this->comprobanteId ? Comprobante::findOrFail($this->comprobanteId) : null, 'pedido' => $pedido, 'cobro' => $this->cobroId ? Cobro::findOrFail($this->cobroId) : null, 'cajas' => $this->cobroId ? AccesoImpresion::cajasTicket($actor)->orderBy('id')->get() : Caja::where('activo', true)->orderBy('id')->get(),
             'envios' => EnvioCocina::with(['detalles', 'areaPreparacion'])->where('pedido_id', $pedido->id)->orderByDesc('numero_envio')->orderBy('area_preparacion_id')->get(), 'historial' => $historial, 'avisos' => $avisos]);
     }
 }

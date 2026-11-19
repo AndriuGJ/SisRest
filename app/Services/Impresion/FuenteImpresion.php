@@ -5,6 +5,7 @@ namespace App\Services\Impresion;
 use App\Models\AnulacionPedido;
 use App\Models\Cobro;
 use App\Models\CobroDetalle;
+use App\Models\Comprobante;
 use App\Models\Empresa;
 use App\Models\EnvioCocina;
 use App\Models\Pedido;
@@ -13,12 +14,14 @@ use App\Models\ResolucionDevolucion;
 use App\Models\User;
 use App\Services\Cobros\CalculoBeneficios;
 use App\Services\Cobros\EstadoCuenta;
+use App\Services\Facturacion\AccesoFacturacion;
+use App\Services\Facturacion\RepresentacionFiscal;
 use App\Support\Cantidad;
 use Illuminate\Validation\ValidationException;
 
 /**
  * @phpstan-type Linea array{descripcion:string,cantidad:string,nota:string,extra:list<string>,precio?:numeric-string,descuento?:numeric-string,total?:numeric-string}
- * @phpstan-type Contenido array{version:int,titulo:string,empresa:list<string>,referencia:string,fecha:string,datos:list<string>,lineas:list<Linea>,totales:list<array{nombre:string,monto:numeric-string}>,pagos:list<array{nombre:string,monto:numeric-string,extra:list<string>}>,avisos:list<string>}
+ * @phpstan-type Contenido array{version:int,titulo:string,empresa:list<string>,referencia:string,fecha:string,datos:list<string>,lineas:list<Linea>,totales:list<array{nombre:string,monto:numeric-string}>,pagos:list<array{nombre:string,monto:numeric-string,extra:list<string>}>,avisos:list<string>,qr?:string}
  * @phpstan-type Identidad array{pedido:Pedido,modelo:class-string,id:int,tipo:string,area:int}
  */
 class FuenteImpresion
@@ -27,7 +30,7 @@ class FuenteImpresion
     public static function modelo(string $tipo): string
     {
         return match ($tipo) {
-            'comanda' => EnvioCocina::class, 'precuenta' => Pedido::class, 'ticket' => Cobro::class,
+            'comanda' => EnvioCocina::class, 'precuenta' => Pedido::class, 'ticket' => Cobro::class, 'comprobante' => Comprobante::class,
             'anulacion' => AnulacionPedido::class, 'cancelacion_pagada' => ResolucionDevolucion::class,
             default => abort(404),
         };
@@ -41,6 +44,7 @@ class FuenteImpresion
             'comanda' => EnvioCocina::findOrFail($id)->pedido_id,
             'precuenta' => $id,
             'ticket' => Cobro::findOrFail($id)->pedido_id,
+            'comprobante' => Comprobante::findOrFail($id)->cobro()->firstOrFail()->pedido_id,
             'anulacion' => AnulacionPedido::findOrFail($id)->pedido_id,
             'cancelacion_pagada' => ResolucionDevolucion::findOrFail($id)->detalleDevolucion->devolucion->cobro->pedido_id,
             default => abort(404),
@@ -49,6 +53,9 @@ class FuenteImpresion
         AccesoImpresion::pedido($actor, $pedido, $tipo);
         if ($tipo === 'ticket') {
             AccesoImpresion::cobro($actor, Cobro::findOrFail($id));
+        }
+        if ($tipo === 'comprobante') {
+            AccesoFacturacion::cobro($actor, Comprobante::findOrFail($id)->cobro()->firstOrFail());
         }
         if ($tipo === 'comanda') {
             $area = EnvioCocina::findOrFail($id)->area_preparacion_id;
@@ -69,6 +76,9 @@ class FuenteImpresion
      */
     public function contenido(array $fuente): array
     {
+        if ($fuente['tipo'] === 'comprobante') {
+            return app(RepresentacionFiscal::class)->contenido(Comprobante::findOrFail($fuente['id']));
+        }
         $pedido = $fuente['pedido'];
         $empresa = Empresa::first();
         $encabezado = [$empresa?->nombre_comercial ?: ($empresa?->razon_social ?: 'RESTAURANTE')];

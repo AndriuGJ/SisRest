@@ -9,6 +9,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
+ * @property string|null $xml_nombre
+ * @property string|null $xml_ruta
+ * @property string|null $xml_sha256
+ * @property int|null $usuario_id
+ * @property bool $consultando
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -27,6 +32,12 @@ class ComprobanteEnvio extends Model
     protected $table = 'comprobante_envios';
 
     protected $fillable = [
+        'xml_nombre',
+        'xml_ruta',
+        'xml_sha256',
+        'usuario_id',
+        'consultando',
+
         'comprobante_id',
         'intento',
         'estado',
@@ -42,6 +53,8 @@ class ComprobanteEnvio extends Model
     protected function casts(): array
     {
         return [
+            'consultando' => 'boolean',
+
             'estado' => EstadoComprobanteEnvio::class,
             'iniciado_at' => 'immutable_datetime',
             'finalizado_at' => 'immutable_datetime',

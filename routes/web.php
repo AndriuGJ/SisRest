@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Facturacion\ArchivoComprobanteController;
 use App\Http\Controllers\Inventario\ImagenProductoController;
 use App\Livewire\Administracion\Roles;
 use App\Livewire\Administracion\RolFormulario;
@@ -23,6 +24,10 @@ use App\Livewire\Configuracion\Mesas;
 use App\Livewire\Configuracion\Salones;
 use App\Livewire\Devoluciones\DevolucionFormulario;
 use App\Livewire\Devoluciones\DevolucionPantalla;
+use App\Livewire\Facturacion\ComprobantePantalla;
+use App\Livewire\Facturacion\Comprobantes;
+use App\Livewire\Facturacion\ConfiguracionFiscal;
+use App\Livewire\Facturacion\EmisionCobro;
 use App\Livewire\Impresion\DocumentosImpresion;
 use App\Livewire\Inventario\InsumoFormulario;
 use App\Livewire\Inventario\Insumos;
@@ -96,6 +101,15 @@ Route::middleware(['auth'])->group(function () {
         Route::get('cobros/{cobro}/devolver', DevolucionFormulario::class)->middleware('permission:devoluciones.crear')->name('devolver');
         Route::get('devoluciones/{devolucion}', DevolucionPantalla::class)->middleware('permission:devoluciones.crear')->name('devolucion');
         Route::get('cobros/{cobro}', CobroDetallePantalla::class)->middleware('permission:cobros.crear')->name('cobro');
+    });
+
+    Route::get('configuracion/sistema/facturacion', ConfiguracionFiscal::class)->middleware('permission:configuracion.sistema')->name('configuracion.facturacion');
+    Route::middleware('permission:comprobantes.ver')->prefix('comprobantes')->name('comprobantes.')->group(function () {
+        Route::get('/', Comprobantes::class)->name('index');
+        Route::get('cobros/{cobro}/emitir', EmisionCobro::class)->middleware('permission:comprobantes.emitir')->name('emitir');
+        Route::get('{comprobante}/archivo/{archivo}', ArchivoComprobanteController::class)->whereIn('archivo', ['xml', 'pdf', 'cdr', 'resumen'])->name('archivo');
+        Route::get('{comprobante}/impresion', DocumentosImpresion::class)->middleware('permission:impresion.tickets')->name('imprimir');
+        Route::get('{comprobante}', ComprobantePantalla::class)->name('ver');
     });
 
     Route::get('usuarios', Usuarios::class)

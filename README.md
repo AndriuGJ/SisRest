@@ -4,9 +4,9 @@ Base de un sistema de restaurante para un local, con dos cajas, atención en mes
 
 ## Estado
 
-Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores**, **Cajas y Arqueos**, **Clientes**, **POS**, **Cocina/Barra**, **Cobros** y **Anulaciones/Beneficios**, implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. POS ya confirma y reserva productos, Cocina registra el avance y la entrega descuenta existencias. Cobros permite dividir por productos y combinar medios de pago. La emisión fiscal y las demás operaciones pendientes se integrarán en las siguientes entregas.
+Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores**, **Cajas y Arqueos**, **Clientes**, **POS**, **Cocina/Barra**, **Cobros** y **Anulaciones/Beneficios**, implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. POS ya confirma y reserva productos, Cocina registra el avance y la entrega descuenta existencias. Cobros permite dividir por productos y combinar medios de pago. La emisión de boletas y facturas con Greenter ya está integrada con los cobros, con firma, PDF, QR, impresión de red y seguimiento de SUNAT independiente del pago.
 
-Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. Los cobros internos ya están implementados; la presencia de las tablas tributarias no significa que ya exista emisión fiscal. La confirmación de compras y preparación diaria ya está implementada.
+Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. Los cobros internos y la emisión tributaria son operaciones distintas; cada comprobante conserva sus propias instantáneas y estados. La confirmación de compras y preparación diaria ya está implementada.
 
 ## Usuarios y permisos
 
@@ -72,7 +72,7 @@ La migración `2026_11_18_000058_create_pruebas_impresion_table.php` registra la
 - Mientras haya una prueba o trabajo operativo pendiente/en curso, no se permite modificar la impresora. La red se utiliza después de registrar y cerrar la transacción de la prueba.
 - La pantalla muestra las diez pruebas más recientes. También se registra el resultado en auditoría, sin volcar errores internos al usuario.
 
-Se verificaron los bytes ESC/POS contra un receptor TCP local y el flujo de navegador. La compatibilidad física, corte y avance de la POS80 se deben comprobar en el equipo del restaurante. Las comandas, precuentas y tickets internos ya usan estas asignaciones; los comprobantes tributarios se incorporarán con la facturación.
+Se verificaron los bytes ESC/POS contra un receptor TCP local y el flujo de navegador. La compatibilidad física, corte y avance de la POS80 se deben comprobar en el equipo del restaurante. Las comandas, precuentas y tickets internos ya usan estas asignaciones; los comprobantes tributarios también usan esas asignaciones y agregan su QR fiscal.
 
 ## Inventario: Insumos y Productos para la venta
 
@@ -334,7 +334,7 @@ Cajas distingue el origen **Cobro de venta** en sus movimientos, y conserva el r
 
 **Cuenta pagada** se calcula desde cantidades liquidadas y envío; no equivale a productos entregados. Tras completar ambos, **Cerrar atención** pide confirmación y vuelve a comprobar borradores, cobros, entregas, reservas y envíos pendientes. Requiere `pedidos.editar` y, si hay mesa, `mesas.liberar`. Guarda fecha/estado de cierre y libera solamente su ocupación. Puede cerrarse con caja cerrada, pues no mueve dinero. Pagar no cierra automáticamente ni libera una mesa con productos pendientes.
 
-Esta etapa registra **cobros internos**: no emite boleta/factura, no calcula un desglose tributario supuesto ni comunica con SUNAT. Pago y emisión seguirán separados. Los cobros/pagos confirmados no se editan ni eliminan; las devoluciones de dinero y productos se registran por separado, conservando el cobro original. Los documentos tributarios se integrarán después.
+El módulo Cobros registra **cobros internos**. La boleta/factura se emite después desde el detalle del cobro, con su propia configuración y cálculo tributario. Pago y emisión seguirán separados. Los cobros/pagos confirmados no se editan ni eliminan; las devoluciones de dinero y productos se registran por separado, conservando el cobro original. La emisión tributaria se describe en la sección Facturación electrónica.
 
 ### Actualización y pruebas
 
@@ -410,7 +410,7 @@ Una cantidad solo puede resolverse una vez, aunque una devolución se divida ent
 
 El turno conserva **cobrado bruto**, **devuelto por medio** y **cobrado menos devuelto**. Este neto puede ser negativo al devolver cobros anteriores y no equivale al efectivo físico. El egreso automático queda enlazado al reintegro; el filtro de movimientos incluye **Devolución de venta**. Las devoluciones digitales también invalidan una revisión de cierre anterior. Los arqueos ya cerrados conservan su instantánea, incluidos cierres de versiones anteriores sin esos campos.
 
-Cobro y pagos originales permanecen confirmados e inmutables. Esta devolución interna no modifica ni emite comprobantes o estados SUNAT. **La impresión operativa se describe a continuación; la emisión con Greenter continúa pendiente.**
+Cobro y pagos originales permanecen confirmados e inmutables. Esta devolución interna no modifica ni emite comprobantes o estados SUNAT. **La impresión operativa y la emisión con Greenter se describen a continuación. Las notas de crédito y bajas tributarias siguen pendientes.**
 
 ### Verificación
 
@@ -492,6 +492,57 @@ if (resultado.isConfirmed) { /* Acción autorizada por el servidor. */ }
 ~~~
 
 Tipos: `success`, `error`, `warning`, `info` y `question`. Los textos se muestran literalmente; no se admite HTML de usuarios. Los avisos breves duran 4,5 segundos, pueden cerrarse y pausan su tiempo al pasar el puntero o recibir foco. Los errores que requieran lectura usan `toast: false`. Las validaciones de formularios continúan junto a sus campos. Los mensajes flash se consumen una sola vez y los listeners se registran una vez durante la navegación Livewire.
+
+
+## Facturación electrónica: boletas y facturas
+
+Se emite desde **POS → detalle del cobro → Emitir boleta / factura**. El historial general está en **Ventas → Comprobantes** (`/comprobantes`). La configuración está en **Config. sistema → Empresa y facturación** (`/configuracion/sistema/facturacion`). No se repite la navegación del sidebar en las cabeceras.
+
+### Puesta en marcha
+
+1. Actualizar el código de `codex/base-restaurante`, ejecutar `composer install`, `php artisan migrate` y `npm ci && npm run build`. PHP necesita `bcmath`, `intl`, `openssl`, `soap`, `dom` y `zip`, además de las extensiones habituales de Laravel. Greenter Lite y Bacon QR Code ya están en Composer; no se requiere wkhtmltopdf.
+2. Completar RUC, razón social, dirección fiscal, ubigeo, departamento, provincia y distrito. Los precios siguen siendo finales, en soles y con impuestos incluidos.
+3. Elegir **beta**, definir la tasa total de IGV/IPM y su vigencia según el régimen del negocio. No se supone que todos los restaurantes califican para una tasa reducida. Se admiten operaciones gravadas, exoneradas e inafectas; la afectación se confirma por línea al emitir. Las tasas especiales con fecha de término pueden limitarse con “Vigente hasta”.
+4. Cargar certificado **PFX/P12** con clave privada y su contraseña, usuario SOL secundario **sin anteponer el RUC** y clave SOL del entorno. Configurar emisión electrónica y certificado en SUNAT según corresponda. El servidor requiere conexión a Internet para enviar/consultar; generar PDF e imprimir en LAN no envían a SUNAT.
+5. Activar las series **B001/F001 de beta**, inicialmente inactivas. Las series de producción se crean aparte. Una serie nueva permite indicar el último correlativo ya usado en otro sistema; ese número no se puede reducir ni editar después desde la pantalla.
+6. Para producción, volver a cargar certificado y credenciales del entorno, crear/activar sus series y confirmar expresamente la emisión real. No se reutilizan silenciosamente los secretos de beta.
+
+El certificado se valida con OpenSSL, se cifra con la clave de Laravel y se guarda en el disco privado `local`; las credenciales usan casts cifrados. Los secretos guardados nunca se precargan en Livewire ni se incluyen en auditoría. Los campos nuevos en blanco conservan los secretos actuales. Una configuración modificada en otra sesión exige recargarla. No se puede cambiar el RUC después de emitir documentos ni modificar configuración durante un envío/consulta en proceso.
+
+### Emisión
+
+- Exige un cobro confirmado, pagos aplicados que cuadren, permisos y acceso al pedido/turno de origen; no requiere reabrir su caja. No altera cobros, pagos, movimientos de caja ni existencias.
+- **Factura:** cliente con RUC válido, razón social y dirección. **Boleta:** admite DNI/RUC o cliente sin documento cuando el total no supera S/ 700. Se controla el umbral en servidor.
+- Los productos, cantidades, descuentos y cargo de delivery se toman del cobro. Los componentes de un combo no vuelven a facturarse. Los descuentos se expresan por línea; el impuesto se extrae del precio final mediante BCMath.
+- Una línea gratuita requiere escoger una afectación de transferencia gratuita: no se deduce del motivo de cumpleaños o cortesía. Conserva valor referencial y, cuando corresponde, impuesto de la transferencia separado del importe que paga el cliente.
+- SweetAlert2 confirma la emisión. La configuración revisada se comprueba otra vez dentro de la transacción. Cada cobro tiene como máximo un comprobante por entorno; UUID, bloqueo de serie e índices únicos evitan duplicados y pérdida de correlativos.
+- Firma y XML quedan guardados antes de habilitar el envío. Emisor, receptor, tasa, fecha, serie, totales, líneas y hash se conservan como datos históricos. Cambiar luego el catálogo o la empresa no reescribe el documento.
+- Beta y producción tienen series, correlativos, archivos y vínculo al cobro independientes. Un ensayo beta no bloquea la emisión real del mismo cobro; ambos quedan identificados por entorno.
+
+### SUNAT y recuperación
+
+- **Factura:** envío del XML firmado mediante `sendBill`, conservando el CDR. **Boleta:** esta primera versión prepara un resumen diario de **una boleta por resumen**, con secuencia independiente por día/entorno; `sendSummary` devuelve ticket y `getStatus` recupera el CDR. No se simula aceptación por el solo hecho de obtener ticket.
+- El resumen completa los campos que no trae la plantilla instalada de Greenter, como la tasa, nombre del receptor e impuesto de transferencias gratuitas. La modificación se hace **antes de firmar**, sin tocar `vendor`.
+- El transporte usa endpoints oficiales fijos, verificación TLS, límites de conexión/lectura y trazas desactivadas. La llamada de red ocurre después de confirmar la transacción que registra el intento. No se exponen mensajes internos que pudieran contener credenciales.
+- Estados: pendiente, enviado, aceptado, observado (aceptado con observaciones), rechazado y desconocido. Se verifica ZIP, tamaño, emisor y referencia del CDR antes de aceptar. Las constancias se conservan junto al intento.
+- Un envío repetido conserva el intento existente y no vuelve a ejecutar SOAP. Si falta una respuesta verificable, queda **desconocido**. Una factura de producción puede consultar su CDR; una boleta con ticket puede volver a consultar su procesamiento. La consulta respeta el mismo ámbito de acceso, incluido el cajero responsable.
+- Si un proceso se interrumpe, entrar al comprobante o pulsar **Actualizar** libera su estado en curso después de dos minutos y lo marca sin respuesta confirmada. No reenvía automáticamente. Una boleta sin ticket o una factura beta sin CDR requieren conciliación manual; esta entrega no incluye reenvío forzado, rectificación de XML emitido ni conciliación manual que cambie estados sin constancia.
+- Se comprueba el plazo de envío de factura (3 días calendario siguientes) y resumen de boletas (7); si venció, se bloquea el envío y se solicita revisar la regularización.
+
+### Archivos e impresión
+
+- PDF A4, XML firmado, CDR y XML del resumen se descargan por rutas autenticadas y autorización del cobro de origen; no por enlaces públicos al almacenamiento.
+- PDF y ESC/POS incluyen identificación, importes, leyenda, hash y QR. Beta lleva marca visible de prueba sin validez tributaria. El PDF se genera localmente con DomPDF, sin cargar recursos remotos.
+- La impresión fiscal reutiliza vista previa, confirmación, impresora de caja, 58/80 mm, historial, control de duplicados y copias con motivo. Usa `impresion.tickets` más `comprobantes.ver`; una copia exige además `impresion.reimprimir`.
+- Emitir/imprimir no cambia la respuesta de SUNAT ni genera otro cobro. Los tickets internos se conservan como documentos distintos de boletas/facturas.
+
+### Alcance y comprobación
+
+Esta entrega cubre boleta y factura al contado, en PEN, desde cobros ya confirmados. No incluye notas de crédito/débito, bajas, contingencia, anticipos, detracciones, percepciones, retenciones, ISC ni ICBPER. Un cobro con devolución confirmada no puede originar un nuevo comprobante por su importe original; una devolución posterior tampoco modifica un comprobante ya emitido. Su regularización mediante nota de crédito corresponde a la siguiente etapa.
+
+Se probaron firma real con un certificado efímero de prueba, cálculo decimal, idempotencia, seguridad, CDR simulado, PDF, XML, impresión ESC/POS con QR contra receptor TCP, Livewire/navegador y concurrencia MySQL. **No se envió a SUNAT ni se certificó emisión real con credenciales del negocio.** La prueba física de la impresora y la validación con certificado/SOL reales quedan para la instalación.
+
+Referencias: [Greenter: uso y resúmenes](https://greenter.dev/usage/), [boletas y resúmenes SUNAT](https://cpe.sunat.gob.pe/tipos_de_comprobantes/boleta), [guías y reglas SUNAT](https://cpe.sunat.gob.pe/guias-y-manuales), [IGV general](https://emprender.sunat.gob.pe/principales-impuestos/impuesto-general-las-ventas-igv/impuesto-general-las-ventas), [tasa especial para restaurantes](https://orientacion.sunat.gob.pe/reduccion-del-igv-para-restaurantes-hoteles-y-alojamiento-turisticos-1).
 
 ## Requisitos
 
@@ -595,7 +646,7 @@ Solo en local/testing. Crea arroz, pollo, huevo, chaufa, gaseosa, un combo y un 
 | chart.js | Gráficos |
 | sweetalert2 | Alertas y confirmaciones reutilizables |
 
-Greenter Lite evita exigir wkhtmltopdf. Los PDF de reportes se generarán con DomPDF; los tickets internos ya usan ESC/POS; la representación de comprobantes tributarios se incorporará con Greenter.
+Greenter Lite evita exigir wkhtmltopdf. Los PDF de reportes se generarán con DomPDF; los tickets internos ya usan ESC/POS; la representación de comprobantes tributarios usa DomPDF y Bacon QR Code; Greenter genera y firma el XML.
 
 Chart.js está disponible en `resources/js/charts.js` para importar desde los futuros widgets y empaquetarse localmente.
 

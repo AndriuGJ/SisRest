@@ -25,6 +25,9 @@
                         <flux:sidebar.item icon="user-group" :href="route('clientes.index')" :current="request()->routeIs('clientes.*')" wire:navigate>Clientes</flux:sidebar.item>
                     @endcan
                 </flux:sidebar.group>
+                @can('comprobantes.ver')
+                    <flux:sidebar.group heading="Ventas" class="mt-5 grid"><flux:sidebar.item icon="document-text" :href="route('comprobantes.index')" :current="request()->routeIs('comprobantes.*')" wire:navigate>Comprobantes</flux:sidebar.item></flux:sidebar.group>
+                @endcan
                 @canany(['productos.ver', 'inventario.ver', 'preparaciones.ver'])
                     <flux:sidebar.group heading="Inventario" class="mt-5 grid">
                         @can('productos.ver')
@@ -63,6 +66,9 @@
                         @endcan
                     </flux:sidebar.group>
                 @endcanany
+                @can('configuracion.sistema')
+                    <flux:sidebar.group heading="Config. sistema" class="mt-5 grid"><flux:sidebar.item icon="building-office" :href="route('configuracion.facturacion')" :current="request()->routeIs('configuracion.facturacion')" wire:navigate>Empresa y facturación</flux:sidebar.item></flux:sidebar.group>
+                @endcan
                 @canany(['configuracion.restaurante', 'impresoras.gestionar'])
                     <flux:sidebar.group heading="Config. restaurante" class="mt-5 grid">
                         @can('configuracion.restaurante')

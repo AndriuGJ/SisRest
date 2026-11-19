@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
+ * @property string $entorno
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -20,6 +21,8 @@ class SerieComprobante extends Model
     protected $table = 'series_comprobante';
 
     protected $fillable = [
+        'entorno',
+
         'tipo_comprobante_id',
         'serie',
         'ultimo_correlativo',

@@ -6,6 +6,9 @@ use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
+ * @property string|null $departamento
+ * @property string|null $provincia
+ * @property string|null $distrito
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -27,6 +30,10 @@ class Empresa extends Model
     protected $table = 'empresa';
 
     protected $fillable = [
+        'departamento',
+        'provincia',
+        'distrito',
+
         'singleton',
         'ruc',
         'razon_social',

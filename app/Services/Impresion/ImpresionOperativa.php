@@ -82,7 +82,7 @@ class ImpresionOperativa
         // Persistido antes de tocar la red. No reejecutar el envío dentro de una transacción o reintento.
         $iniciado = false;
         try {
-            $bytes = $this->ticket->generar($this->texto($trabajo));
+            $bytes = $this->ticket->generar($this->texto($trabajo), $trabajo->contenido['qr'] ?? null);
             $iniciado = true;
             if (! $trabajo->configuracion) {
                 throw new \LogicException('Falta la conexión histórica de la impresión.');
@@ -121,7 +121,7 @@ class ImpresionOperativa
      */
     private function calcular(User $actor, array $solicitud, int $copiaId): array
     {
-        Validator::make(['solicitud' => $solicitud], ['solicitud' => ['required', 'array:tipo,id,caja,area'], 'solicitud.tipo' => ['required', 'in:comanda,precuenta,ticket,anulacion,cancelacion_pagada'], 'solicitud.id' => ['required', 'integer', 'min:1'], 'solicitud.caja' => ['required', 'integer', 'min:0'], 'solicitud.area' => ['required', 'integer', 'min:0']])->validate();
+        Validator::make(['solicitud' => $solicitud], ['solicitud' => ['required', 'array:tipo,id,caja,area'], 'solicitud.tipo' => ['required', 'in:comanda,precuenta,ticket,comprobante,anulacion,cancelacion_pagada'], 'solicitud.id' => ['required', 'integer', 'min:1'], 'solicitud.caja' => ['required', 'integer', 'min:0'], 'solicitud.area' => ['required', 'integer', 'min:0']])->validate();
         $fuente = $this->fuentes->identificar($actor, $solicitud['tipo'], $solicitud['id'], $solicitud['area']);
         $claveDocumento = $solicitud['tipo'].':'.$solicitud['id'].':'.$fuente['area'];
         $original = null;
@@ -158,7 +158,7 @@ class ImpresionOperativa
             $impresora = $impresoras->firstOrFail();
         } else {
             $caja = Caja::findOrFail($solicitud['caja']);
-            if ($solicitud['tipo'] === 'ticket') {
+            if (in_array($solicitud['tipo'], ['ticket', 'comprobante'], true)) {
                 AccesoImpresion::cajasTicket($actor)->findOrFail($caja->id);
             }
             $impresora = $caja->impresora;

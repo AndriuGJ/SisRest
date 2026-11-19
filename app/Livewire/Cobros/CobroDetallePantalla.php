@@ -3,6 +3,7 @@
 namespace App\Livewire\Cobros;
 
 use App\Models\Cobro;
+use App\Models\ConfiguracionFacturacion;
 use App\Models\User;
 use App\Services\Cajas\AccesoCajas;
 use App\Services\Pos\AccesoPos;
@@ -33,7 +34,7 @@ class CobroDetallePantalla extends Component
         abort_unless($actor instanceof User, 403);
         $actual = AccesoPos::usuario($actor);
         Gate::forUser($actual)->authorize('cobros.crear');
-        $cobro = Cobro::with(['pedido', 'turnoCaja.caja', 'usuario', 'detalles', 'pagos.medioPago'])->findOrFail($this->cobroId);
+        $cobro = Cobro::with(['pedido', 'turnoCaja.caja', 'usuario', 'detalles', 'pagos.medioPago', 'comprobante' => fn ($q) => $q->where('entorno', ConfiguracionFacturacion::firstOrFail()->entorno->value)])->findOrFail($this->cobroId);
         AccesoPos::pedido($actual, $cobro->pedido);
         AccesoCajas::turno($actual, $cobro->turnoCaja);
 

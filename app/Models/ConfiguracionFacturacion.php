@@ -11,6 +11,7 @@ use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
 
 /**
+ * @property CarbonImmutable|null $vigente_hasta
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -21,7 +22,7 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property string|null $clave_sol
  * @property string|null $clave_certificado
  * @property string|null $certificado_ruta
- * @property string|null $tasa_impuesto
+ * @property numeric-string|null $tasa_impuesto
  * @property CarbonImmutable|null $vigente_desde
  */
 class ConfiguracionFacturacion extends Model
@@ -31,6 +32,8 @@ class ConfiguracionFacturacion extends Model
     protected $table = 'configuraciones_facturacion';
 
     protected $fillable = [
+        'vigente_hasta',
+
         'empresa_id',
         'habilitada',
         'entorno',
@@ -42,12 +45,14 @@ class ConfiguracionFacturacion extends Model
         'vigente_desde',
     ];
 
-    protected $hidden = ['usuario_sol', 'clave_sol', 'clave_certificado'];
+    protected $hidden = ['usuario_sol', 'clave_sol', 'clave_certificado', 'certificado_ruta'];
 
     /** @return array<string, string> */
     protected function casts(): array
     {
         return [
+            'vigente_hasta' => 'immutable_date',
+
             'habilitada' => 'boolean',
             'entorno' => EntornoConfiguracionFacturacion::class,
             'tasa_impuesto' => 'decimal:4',

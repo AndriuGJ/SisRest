@@ -56,6 +56,7 @@ class ConfiguracionInicialSeeder extends Seeder
             $tipo = TipoComprobante::query()->where('codigo', $codigo)->firstOrFail();
             SerieComprobante::firstOrCreate([
                 'tipo_comprobante_id' => $tipo->id,
+                'entorno' => 'beta',
                 'serie' => $serie,
             ], ['activo' => false]);
         }

@@ -86,7 +86,7 @@ Las migraciones son la fuente de verdad del esquema. Esta guía explica su organ
 | --- | --- | --- |
 | series_comprobante | SerieComprobante | tipoComprobante → TipoComprobante |
 | comprobantes | Comprobante | serie → SerieComprobante, cobro → Cobro, referencia → Comprobante, detalles → ComprobanteDetalle, envios → ComprobanteEnvio |
-| comprobante_detalles | ComprobanteDetalle | comprobante → Comprobante, detalleCobro → CobroDetalle, resoluciones → ResolucionDevolucion |
+| comprobante_detalles | ComprobanteDetalle | comprobante → Comprobante, detalleCobro → CobroDetalle |
 | comprobante_envios | ComprobanteEnvio | comprobante → Comprobante |
 | trabajos_impresion | TrabajoImpresion | impresora → Impresora, reimpresionDe → TrabajoImpresion |
 | pruebas_impresion | PruebaImpresion | impresora → Impresora; usuario_id identifica al responsable |
@@ -118,7 +118,7 @@ La plantilla mantiene users, sesiones, recuperación, cache, colas, passkeys y d
 
 ## Límites de esta entrega
 
-Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas, Preparación diaria, Compras, Proveedores, Cajas, Arqueos, Clientes, POS, Cocina/Barra, Cobros, Anulaciones/Beneficios y Devoluciones disponen de pantallas Livewire y servicios. Las pruebas ESC/POS se registran por UUID con una instantánea de conexión y estados que distinguen envío, error y resultado incierto. Los ajustes ajenos a anulaciones/devoluciones, los comprobantes tributarios y otros módulos siguen pendientes. La impresión operativa ya usa las fuentes de pedidos y cobros. El esquema no sustituye la autorización en servidor, el bloqueo de filas, la validación de totales, el control de operaciones ya confirmadas ni los procedimientos tributarios.
+Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas, Preparación diaria, Compras, Proveedores, Cajas, Arqueos, Clientes, POS, Cocina/Barra, Cobros, Anulaciones/Beneficios y Devoluciones disponen de pantallas Livewire y servicios. Las pruebas ESC/POS se registran por UUID con una instantánea de conexión y estados que distinguen envío, error y resultado incierto. Los ajustes ajenos a anulaciones/devoluciones, las notas tributarias y otros módulos siguen pendientes. Boletas/facturas ya se emiten con Greenter desde cobros confirmados. La impresión operativa ya usa las fuentes de pedidos y cobros. El esquema no sustituye la autorización en servidor, el bloqueo de filas, la validación de totales, el control de operaciones ya confirmadas ni los procedimientos tributarios.
 
 Las compras conservan UUID de registro, datos de proveedor/documento, responsables de confirmación/anulación y motivo del borrador anulado. El detalle conserva unidad y nombre de presentación además de su factor. Los pagos conservan el nombre del medio, origen y turno solo cuando el dinero sale físicamente de caja. No se borran recepciones ni pagos para corregir saldos.
 
@@ -143,3 +143,11 @@ Solo el reingreso de reventa registra stock positivo, valorado a sus salidas his
 Desde la migración 000069, trabajos_impresion añade pedido_id, solicitud tipada de origen, configuración de conexión, nombre del usuario, motivo de reimpresión y clave_documento única para originales. El enum tipo incorpora ticket, reservado al cobro interno; comprobante se conserva para la futura integración tributaria. El contenido JSON versionado guarda cabecera, líneas, cantidades, importes y avisos del documento, sin tomar contenido del cliente. Documento sigue siendo polimórfico; las fuentes aceptadas son EnvioCocina (comanda), Pedido (precuenta), Cobro (ticket) y anulaciones/resoluciones de cancelación pendiente (aviso por destino). Los históricos anteriores quedan nulos en los nuevos metadatos, sin inventar conexiones o documentos.
 
 Cada comanda/aviso/ticket tiene un original por identidad y destino. Las precuentas agregan hash de contenido para sus versiones. Reimpresiones no tienen clave_documento; enlazan el original mediante reimpresion_de_id y mantienen su contenido, conexión de salida actual, motivo y usuario/fecha propios. Clave_idempotencia limita cada petición. En curso se persiste antes de TCP; intentos queda en uno por trabajo. Fallos no borran documentos ni reintentan automáticamente. Al recuperar un proceso interrumpido se marca resultado_incierto, conservando lo que pudo enviarse. Las pruebas de impresora siguen en su tabla separada.
+
+## Emisión electrónica (migración 000070)
+
+`empresa` agrega departamento/provincia/distrito; `configuraciones_facturacion` agrega `vigente_hasta`. `series_comprobante` y `comprobantes` distinguen `entorno`: las claves únicas son tipo/serie/entorno y cobro/entorno respectivamente. Se conserva la clave serie/correlativo y el UUID de comprobante. `secuencias_resumen` identifica fecha/entorno y asigna el número RC bajo el bloqueo de Empresa. `comprobante_envios` agrega usuario, nombre/ruta/hash SHA-256 del XML enviado y la marca de consulta en curso. Un resumen informa una boleta, mientras el XML individual de la boleta se conserva en su Comprobante.
+
+El certificado PFX cifrado vive en almacenamiento privado; sus bytes y secretos SOL no se incluyen en el snapshot del comprobante. El comprobante sí conserva emisor/receptor, perfil de impuestos, fecha civil de Lima y hora de emisión, serie, leyendas, valores por tipo de operación y hash SHA-256 del XML firmado. El hash XMLDSIG se guarda en `hash_documento`. El CDR se valida antes de modificar estados. La confirmación financiera se conserva aunque SUNAT aún no responda o rechace el documento.
+
+El rollback se bloquea expresamente si datos beta/producción comparten una serie o cobro y la restricción anterior perdería esa separación. No se borran documentos para forzar la reversión.
