@@ -129,4 +129,10 @@ class Cobro extends Model
     {
         return $this->hasOne(Comprobante::class, 'cobro_id');
     }
+
+    /** @return HasMany<Devolucion, $this> */
+    public function devoluciones(): HasMany
+    {
+        return $this->hasMany(Devolucion::class, 'cobro_id');
+    }
 }

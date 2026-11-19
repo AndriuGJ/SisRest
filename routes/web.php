@@ -10,6 +10,7 @@ use App\Livewire\Clientes\ClienteFormulario;
 use App\Livewire\Clientes\Clientes;
 use App\Livewire\Cobros\CobroDetallePantalla;
 use App\Livewire\Cobros\CobroFormulario;
+use App\Livewire\Cobros\HistorialCobros;
 use App\Livewire\Cocina\Cocina;
 use App\Livewire\Compras\CompraDetalle;
 use App\Livewire\Compras\CompraFormulario;
@@ -20,6 +21,8 @@ use App\Livewire\Configuracion\Destinos;
 use App\Livewire\Configuracion\Impresoras;
 use App\Livewire\Configuracion\Mesas;
 use App\Livewire\Configuracion\Salones;
+use App\Livewire\Devoluciones\DevolucionFormulario;
+use App\Livewire\Devoluciones\DevolucionPantalla;
 use App\Livewire\Inventario\InsumoFormulario;
 use App\Livewire\Inventario\Insumos;
 use App\Livewire\Inventario\PreparacionDetalle;
@@ -86,6 +89,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', Pos::class)->name('index');
         Route::get('pedidos/{pedido}', PedidoPantalla::class)->name('pedido');
         Route::get('pedidos/{pedido}/cobrar', CobroFormulario::class)->middleware('permission:cobros.crear')->name('cobrar');
+        Route::get('cobros', HistorialCobros::class)->middleware('permission:cobros.crear|devoluciones.crear')->name('cobros');
+        Route::get('cobros/{cobro}/devolver', DevolucionFormulario::class)->middleware('permission:devoluciones.crear')->name('devolver');
+        Route::get('devoluciones/{devolucion}', DevolucionPantalla::class)->middleware('permission:devoluciones.crear')->name('devolucion');
         Route::get('cobros/{cobro}', CobroDetallePantalla::class)->middleware('permission:cobros.crear')->name('cobro');
     });
 

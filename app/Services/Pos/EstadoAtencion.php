@@ -16,7 +16,7 @@ final class EstadoAtencion
         $entregado = true;
         $listo = true;
         foreach ($hojas as $detalle) {
-            $activa = bcsub($detalle->cantidad, $detalle->cantidad_anulada, 4);
+            $activa = $detalle->cantidadVigente();
             $entregado = $entregado && bccomp($detalle->cantidad_entregada, $activa, 4) >= 0;
             if ($detalle->area_preparacion_id) {
                 $lista = '0';

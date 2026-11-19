@@ -389,7 +389,7 @@ class PedidoPantalla extends Component
         $progreso = [];
         $envios = EnvioCocinaDetalle::whereIn('pedido_detalle_id', $pedido->detalles->pluck('id'))->get()->groupBy('pedido_detalle_id');
         foreach ($pedido->detalles->where('estado.value', 'confirmado') as $detalle) {
-            $lista = $detalle->area_preparacion_id ? '0' : bcsub($detalle->cantidad, $detalle->cantidad_anulada, 4);
+            $lista = $detalle->area_preparacion_id ? '0' : $detalle->cantidadVigente();
             $iniciada = '0';
             foreach ($envios->get($detalle->id, collect()) as $envio) {
                 $lista = bcadd($lista, $envio->cantidad_lista, 4);

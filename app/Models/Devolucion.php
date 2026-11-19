@@ -12,6 +12,9 @@ use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
 
 /**
+ * @property numeric-string $cargo_envio
+ * @property string|null $usuario_nombre
+ * @property string|null $caja_nombre
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -33,6 +36,9 @@ class Devolucion extends Model
     protected $table = 'devoluciones';
 
     protected $fillable = [
+        'caja_nombre',
+        'usuario_nombre',
+        'cargo_envio',
         'codigo',
         'cobro_id',
         'turno_caja_id',
@@ -49,6 +55,7 @@ class Devolucion extends Model
     protected function casts(): array
     {
         return [
+            'cargo_envio' => 'decimal:2',
             'estado' => EstadoDevolucion::class,
             'total' => 'decimal:2',
             'devuelta_at' => 'immutable_datetime',

@@ -46,7 +46,7 @@ class CerrarAtencion
                 }
             }
             foreach ($detalles->where('estado.value', 'confirmado') as $detalle) {
-                if (bccomp($detalle->cantidad_entregada, bcsub($detalle->cantidad, $detalle->cantidad_anulada, 4), 4) !== 0) {
+                if (bccomp($detalle->cantidad_entregada, $detalle->cantidadVigente(), 4) !== 0) {
                     throw ValidationException::withMessages(['seguridad' => 'Termina las entregas antes de cerrar la atención.']);
                 }
             }

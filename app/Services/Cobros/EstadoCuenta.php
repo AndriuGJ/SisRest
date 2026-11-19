@@ -10,7 +10,7 @@ final class EstadoCuenta
     public static function huella(Pedido $pedido): string
     {
         return hash('sha256', json_encode([$pedido->getAttributes(), $pedido->detalles()->orderBy('id')->get()->toArray(),
-            $pedido->delivery?->getAttributes(), $pedido->cobros()->with(['detalles', 'pagos'])->orderBy('id')->get()->toArray()], JSON_THROW_ON_ERROR));
+            $pedido->delivery?->getAttributes(), $pedido->cobros()->with(['detalles', 'pagos', 'devoluciones.detalles', 'devoluciones.pagos'])->orderBy('id')->get()->toArray()], JSON_THROW_ON_ERROR));
     }
 
     /** @return numeric-string */

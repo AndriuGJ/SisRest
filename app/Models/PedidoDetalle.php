@@ -15,6 +15,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $beneficio_motivo_texto
  * @property string|null $beneficio_autorizado_nombre
  * @property CarbonImmutable|null $beneficio_autorizado_at
+ * @property numeric-string $cantidad_cancelada_pagada
+ * @property numeric-string $cantidad_devuelta
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -46,6 +48,8 @@ class PedidoDetalle extends Model
     protected $table = 'pedido_detalles';
 
     protected $fillable = [
+        'cantidad_devuelta',
+        'cantidad_cancelada_pagada',
         'beneficio_motivo_nombre', 'beneficio_motivo_texto', 'beneficio_autorizado_nombre', 'beneficio_autorizado_at',
         'confirmacion_pedido_id',
         'factor_componente',
@@ -75,6 +79,8 @@ class PedidoDetalle extends Model
     protected function casts(): array
     {
         return [
+            'cantidad_devuelta' => 'decimal:4',
+            'cantidad_cancelada_pagada' => 'decimal:4',
             'beneficio_autorizado_at' => 'immutable_datetime',
             'tipo_linea' => TipoLineaPedidoDetalle::class,
             'factor_componente' => 'decimal:4',
@@ -119,5 +125,11 @@ class PedidoDetalle extends Model
     public function reservas(): HasMany
     {
         return $this->hasMany(ReservaInventario::class, 'pedido_detalle_id');
+    }
+
+    /** @return numeric-string */
+    public function cantidadVigente(): string
+    {
+        return bcsub(bcsub($this->cantidad, $this->cantidad_anulada, 4), $this->cantidad_cancelada_pagada, 4);
     }
 }

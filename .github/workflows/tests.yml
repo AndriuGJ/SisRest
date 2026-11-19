@@ -95,3 +95,7 @@ jobs:
       - name: Verify concurrent cancellations and benefits
         if: matrix.database == 'mysql'
         run: php tests/Support/pos-adjustments-concurrency.php
+
+      - name: Verify concurrent refunds and product returns
+        if: matrix.database == 'mysql'
+        run: php tests/Support/devoluciones-concurrency.php

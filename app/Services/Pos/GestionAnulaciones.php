@@ -124,16 +124,9 @@ class GestionAnulaciones
             $merma = '0.0000';
             $cambios = [];
             foreach ($envios as $envio) {
-                $sinIniciar = bcsub(bcsub($envio->cantidad, $envio->cantidad_anulada, 4), $envio->cantidad_iniciada, 4);
-                $libre = bccomp($cantidadHoja, $sinIniciar, 4) <= 0 ? $cantidadHoja : $sinIniciar;
-                $merma = bcsub($cantidadHoja, $libre, 4);
-                $preparando = bcsub($envio->cantidad_iniciada, $envio->cantidad_lista, 4);
-                $proceso = bccomp($merma, $preparando, 4) <= 0 ? $merma : $preparando;
-                $lista = bcsub($merma, $proceso, 4);
-                $despues = ['cantidad_anulada' => bcadd($envio->cantidad_anulada, $cantidadHoja, 4), 'cantidad_iniciada' => bcsub($envio->cantidad_iniciada, $merma, 4), 'cantidad_lista' => bcsub($envio->cantidad_lista, $lista, 4)];
-                if (bccomp($despues['cantidad_lista'], $envio->cantidad_entregada, 4) < 0) {
-                    throw ValidationException::withMessages(['seguridad' => 'La anulación alcanzaría cantidades entregadas.']);
-                }
+                $calculo = CalculoAnulacion::envio($envio, $cantidadHoja);
+                $merma = $calculo['merma'];
+                $despues = $calculo['despues'];
                 $cambios[] = ['id' => $envio->id, 'antes' => $envio->only(['cantidad_anulada', 'cantidad_iniciada', 'cantidad_lista', 'cantidad_entregada']), 'despues' => $despues];
             }
             if (bccomp($merma, '0', 4) > 0) {

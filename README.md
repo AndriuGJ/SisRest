@@ -334,7 +334,7 @@ Cajas distingue el origen **Cobro de venta** en sus movimientos, y conserva el r
 
 **Cuenta pagada** se calcula desde cantidades liquidadas y envío; no equivale a productos entregados. Tras completar ambos, **Cerrar atención** pide confirmación y vuelve a comprobar borradores, cobros, entregas, reservas y envíos pendientes. Requiere `pedidos.editar` y, si hay mesa, `mesas.liberar`. Guarda fecha/estado de cierre y libera solamente su ocupación. Puede cerrarse con caja cerrada, pues no mueve dinero. Pagar no cierra automáticamente ni libera una mesa con productos pendientes.
 
-Esta etapa registra **cobros internos**: no emite boleta/factura, no calcula un desglose tributario supuesto ni comunica con SUNAT. Pago y emisión seguirán separados. Los cobros/pagos confirmados no se editan ni eliminan; devoluciones/anulaciones con sus movimientos y documentos se implementarán después.
+Esta etapa registra **cobros internos**: no emite boleta/factura, no calcula un desglose tributario supuesto ni comunica con SUNAT. Pago y emisión seguirán separados. Los cobros/pagos confirmados no se editan ni eliminan; las devoluciones de dinero y productos se registran por separado, conservando el cobro original. Los documentos tributarios se integrarán después.
 
 ### Actualización y pruebas
 
@@ -348,7 +348,7 @@ En los productos confirmados del POS aparecen **Anular producto** y **Descuento 
 
 ### Anular productos confirmados
 
-Requiere `pedidos.anular_enviados` y acceso al pedido. Seleccionar una cantidad entera y explicar el motivo con al menos cinco caracteres. Solo alcanza cantidades no cobradas y no entregadas; en combos se comprueban también todos sus componentes y factores históricos. Si ya se cobró o entregó lo solicitado, corresponde el futuro flujo de devolución.
+Requiere `pedidos.anular_enviados` y acceso al pedido. Seleccionar una cantidad entera y explicar el motivo con al menos cinco caracteres. Solo alcanza cantidades no cobradas y no entregadas; en combos se comprueban también todos sus componentes y factores históricos. Si ya se cobró o entregó lo solicitado, corresponde el flujo de devolución desde el detalle del cobro.
 
 - Se toma primero cantidad **sin iniciar**: libera la reserva y vuelve a estar disponible, sin mover existencia actual ni restituir ingredientes.
 - Si la cantidad alcanza productos **iniciados o listos**, la revisión muestra por producto cuánto se libera y cuánto será **merma**. Esa parte exige además `inventario.registrar_merma`, consume la reserva y genera una salida de merma del artículo preparado/reventa con su costo vigente. No vuelve a estar disponible ni devuelve materia prima.
@@ -379,7 +379,42 @@ No se acumula con descuentos/cortesías por producto dentro del mismo cobro. Se 
 
 La migración `2026_11_19_000067_add_pos_cancellations_and_benefits.php` incorpora historial de anulaciones y sus efectos por artículo, historial de beneficios, instantáneas de autorización y desglose de descuentos en los detalles cobrados. Conserva registros anteriores y no crea beneficios, existencias ni permisos nuevos. Actualizar con `php artisan migrate` y `npm run build`.
 
-CI añade `tests/Support/pos-adjustments-concurrency.php` en MySQL: anulación frente a Cocina/cobro, beneficio frente a cobro y repetición de anulaciones con merma/beneficios. Solo testing y base desechable `sisrest_test`; limpia sus propios datos. Las devoluciones de dinero, retornos de productos entregados, impresión y emisión tributaria siguen pendientes.
+CI añade `tests/Support/pos-adjustments-concurrency.php` en MySQL: anulación frente a Cocina/cobro, beneficio frente a cobro y repetición de anulaciones con merma/beneficios. Solo testing y base desechable `sisrest_test`; limpia sus propios datos. La impresión y emisión tributaria siguen pendientes; las devoluciones se describen a continuación.
+
+## Devoluciones de cobros y productos
+
+En **POS → Historial de cobros** se buscan registros por código de cobro/pedido, grupo, cliente o documento, incluidos turnos y atenciones cerrados, con filtro de devoluciones y alcance de pedidos/cajas. Desde el detalle de un cobro, **Devolver productos / pago** abre `/pos/cobros/{cobro}/devolver`. Requiere `devoluciones.crear`, acceso al pedido, al turno del cobro original y al turno actual. El administrador puede conceder este permiso; el rol cajero no lo recibe automáticamente.
+
+1. Indicar cantidades enteras del cobro original aún no devueltas. Se calcula su **neto realmente cobrado**, incluidos los descuentos por producto y generales; las devoluciones parciales distribuyen los céntimos restantes sin superar el original. Puede devolverse también el cargo de envío completo restante, incluso sin productos.
+2. Registrar los importes reintegrados por cada **pago original**. Se conserva el medio y su condición histórica de efectivo; cada importe se limita a lo aplicado menos devoluciones anteriores. El vuelto recibido originalmente no es reintegrable. En esta etapa no se cambia de medio. Si la configuración actual exige referencia, registrar la referencia de la nueva devolución, aunque el medio esté inactivo.
+3. Seleccionar una **caja actualmente abierta y autorizada**, explicar el motivo y revisar con SweetAlert2. Registrar el dinero efectivamente entregado/transferido: la aplicación no ejecuta transferencias bancarias ni de Yape. El efectivo requiere además `cajas.registrar_egreso` y saldo suficiente. Los digitales no generan egreso físico.
+4. El registro interno `/pos/devoluciones/{devolucion}` permite resolver **después y por partes** los productos. Devolver dinero no cancela entregas ni reingresa inventario automáticamente.
+
+La devolución puede referirse a un turno cerrado: su egreso pertenece al turno actual, sin reescribir el cierre original. Una cortesía o producto de importe cero admite devolución de cantidades sin pagos ficticios, con turno abierto igualmente. UUID, revisión bloqueada y revalidación del saldo impiden duplicados o aceptar cambios posteriores a la revisión. Los históricos que no concilien productos/pagos/devoluciones se bloquean para conciliación, sin atribuir importes o costos supuestos.
+
+### Resolver los productos
+
+Cada cantidad devuelta admite una decisión independiente con motivo, usuario y fecha:
+
+| Decisión | Efecto |
+| --- | --- |
+| Mantener entrega | Decisión comercial solo sobre dinero; no cancela ni registra retorno. La cantidad queda resuelta y mantiene su entrega acordada. |
+| Cancelar lo pendiente | Solo unidades pagadas aún no entregadas; requiere `pedidos.anular_enviados`. Lo no iniciado libera reserva; lo iniciado/listo consume reserva y stock como merma con `inventario.registrar_merma`. Cocina deja de tener esa cantidad pendiente. |
+| Retorno físico | Solo cantidades entregadas sin retorno previo. Cada componente de combo elige reingreso, merma o sin recuperar stock. |
+
+**Reingreso** requiere `inventario.ajustar` y un artículo de reventa activo, con unidad activa y condición apta para venderse otra vez. Recupera stock al costo histórico de su salida, asignando primero las entregas más antiguas no retornadas y actualizando el costo promedio ponderado. Los preparados no vuelven a disponibilidad. **Merma** requiere `inventario.registrar_merma`; en productos ya entregados se registra su disposición sin volver a descontar stock. **Sin recuperar stock** registra el retorno sin movimiento de inventario.
+
+Una cantidad solo puede resolverse una vez, aunque una devolución se divida entre varias decisiones. Los combos usan sus factores guardados y verifican cada componente. Los contadores originales de cobrado/entregado se conservan; cancelaciones pagadas y retornos tienen acumulados separados. No se genera una nueva deuda al devolver dinero. Las atenciones cerradas no se reabren ni se altera la ocupación actual de mesas; una atención pagada con entregas canceladas puede cerrarse manualmente cuando no mantenga reservas o envíos pendientes.
+
+### Caja y comprobantes
+
+El turno conserva **cobrado bruto**, **devuelto por medio** y **cobrado menos devuelto**. Este neto puede ser negativo al devolver cobros anteriores y no equivale al efectivo físico. El egreso automático queda enlazado al reintegro; el filtro de movimientos incluye **Devolución de venta**. Las devoluciones digitales también invalidan una revisión de cierre anterior. Los arqueos ya cerrados conservan su instantánea, incluidos cierres de versiones anteriores sin esos campos.
+
+Cobro y pagos originales permanecen confirmados e inmutables. Esta devolución interna no modifica ni emite comprobantes o estados SUNAT. **La impresión de comandas, precuentas y tickets, y después la emisión con Greenter, son las siguientes etapas.**
+
+### Verificación
+
+`tests/Feature/Cobros/DevolucionesTest.php` cubre netos y céntimos, pagos combinados/vuelto, referencias, envío, importes cero, permisos, caja de otro turno, stock separado, cancelación pagada, retornos, costos históricos, combos, alcance de acceso, revisiones y formularios Livewire. CI MySQL añade `tests/Support/devoluciones-concurrency.php`: saldo competido, UUID de devolución y retorno repetidos, mismo producto retornado dos veces, cancelación pagada frente a entrega y devolución frente a cierre. Solo usa testing y base desechable `sisrest_test`; limpia sus propias filas.
 
 ## Alertas reutilizables
 

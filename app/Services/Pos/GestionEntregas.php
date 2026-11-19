@@ -29,7 +29,7 @@ class GestionEntregas
                 throw ValidationException::withMessages(['seguridad' => 'Selecciona un producto confirmado o un componente del combo.']);
             }
             $valor = CalculoProduccion::cantidad($cantidad);
-            $pendiente = bcsub(bcsub($detalle->cantidad, $detalle->cantidad_anulada, 4), $detalle->cantidad_entregada, 4);
+            $pendiente = bcsub($detalle->cantidadVigente(), $detalle->cantidad_entregada, 4);
             if (bccomp($valor, $pendiente, 4) > 0) {
                 throw ValidationException::withMessages(['cantidad' => 'La entrega supera la cantidad pendiente.']);
             }
@@ -73,7 +73,7 @@ class GestionEntregas
             $detalle->update(['cantidad_entregada' => $acumulada]);
             if ($detalle->detalle_padre_id) {
                 $padre = PedidoDetalle::lockForUpdate()->findOrFail($detalle->detalle_padre_id);
-                $unidades = $padre->cantidad;
+                $unidades = $padre->cantidadVigente();
                 foreach ($padre->hijos()->lockForUpdate()->get() as $hijo) {
                     if (! $hijo->factor_componente || bccomp($hijo->factor_componente, '0', 4) <= 0) {
                         throw ValidationException::withMessages(['seguridad' => 'El combo no tiene un factor histórico válido.']);

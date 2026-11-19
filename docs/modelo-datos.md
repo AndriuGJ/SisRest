@@ -72,7 +72,9 @@ Las migraciones son la fuente de verdad del esquema. Esta guía explica su organ
 | cobro_detalles | CobroDetalle | cobro → Cobro, detallePedido → PedidoDetalle |
 | pagos | Pago | cobro → Cobro, medioPago → MedioPago |
 | devoluciones | Devolucion | cobro → Cobro, turnoCaja → TurnoCaja, detalles → DevolucionDetalle, pagos → DevolucionPago |
-| devolucion_detalles | DevolucionDetalle | devolucion → Devolucion, detalleCobro → CobroDetalle |
+| devolucion_detalles | DevolucionDetalle | devolucion → Devolucion, detalleCobro → CobroDetalle, resoluciones → ResolucionDevolucion |
+| resoluciones_devolucion | ResolucionDevolucion | detalleDevolucion → DevolucionDetalle, detalles → ResolucionDevolucionDetalle |
+| resolucion_devolucion_detalles | ResolucionDevolucionDetalle | FKs: resolución, línea del pedido, artículo, salida de entrega (opcional) |
 | devolucion_pagos | DevolucionPago | devolucion → Devolucion, pagoOriginal → Pago, medioPago → MedioPago |
 | movimientos_caja | MovimientoCaja | turnoCaja → TurnoCaja, usuario → User |
 | arqueos_caja | ArqueoCaja | turnoCaja → TurnoCaja, usuario → User |
@@ -84,7 +86,7 @@ Las migraciones son la fuente de verdad del esquema. Esta guía explica su organ
 | --- | --- | --- |
 | series_comprobante | SerieComprobante | tipoComprobante → TipoComprobante |
 | comprobantes | Comprobante | serie → SerieComprobante, cobro → Cobro, referencia → Comprobante, detalles → ComprobanteDetalle, envios → ComprobanteEnvio |
-| comprobante_detalles | ComprobanteDetalle | comprobante → Comprobante, detalleCobro → CobroDetalle |
+| comprobante_detalles | ComprobanteDetalle | comprobante → Comprobante, detalleCobro → CobroDetalle, resoluciones → ResolucionDevolucion |
 | comprobante_envios | ComprobanteEnvio | comprobante → Comprobante |
 | trabajos_impresion | TrabajoImpresion | impresora → Impresora, reimpresionDe → TrabajoImpresion |
 | pruebas_impresion | PruebaImpresion | impresora → Impresora; usuario_id identifica al responsable |
@@ -116,7 +118,7 @@ La plantilla mantiene users, sesiones, recuperación, cache, colas, passkeys y d
 
 ## Límites de esta entrega
 
-Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas, Preparación diaria, Compras, Proveedores, Cajas, Arqueos, Clientes, POS, Cocina/Barra, Cobros y Anulaciones/Beneficios disponen de pantallas Livewire y servicios. Las pruebas ESC/POS se registran por UUID con una instantánea de conexión y estados que distinguen envío, error y resultado incierto. La devolución de cobros/productos entregados, ajustes ajenos a anulaciones, impresión operativa y otros módulos siguen pendientes. El esquema no sustituye la autorización en servidor, el bloqueo de filas, la validación de totales, el control de operaciones ya confirmadas ni los procedimientos tributarios.
+Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas, Preparación diaria, Compras, Proveedores, Cajas, Arqueos, Clientes, POS, Cocina/Barra, Cobros, Anulaciones/Beneficios y Devoluciones disponen de pantallas Livewire y servicios. Las pruebas ESC/POS se registran por UUID con una instantánea de conexión y estados que distinguen envío, error y resultado incierto. Los ajustes ajenos a anulaciones/devoluciones, la impresión operativa y otros módulos siguen pendientes. El esquema no sustituye la autorización en servidor, el bloqueo de filas, la validación de totales, el control de operaciones ya confirmadas ni los procedimientos tributarios.
 
 Las compras conservan UUID de registro, datos de proveedor/documento, responsables de confirmación/anulación y motivo del borrador anulado. El detalle conserva unidad y nombre de presentación además de su factor. Los pagos conservan el nombre del medio, origen y turno solo cuando el dinero sale físicamente de caja. No se borran recepciones ni pagos para corregir saldos.
 
@@ -131,3 +133,8 @@ Desde la migración 000065, `confirmaciones_pedido` conserva UUID, pedido, turno
 Desde la migración 000066, cobros conserva alias del grupo y datos históricos del cliente/caja/cajero; pagos conserva nombre del medio y si afectaba efectivo. La identidad y los nombres actuales no reescriben el registro. Cada CobroDetalle liquida una raíz y cantidad del pedido; la suma confirmada coincide con cantidad_cobrada. Los combos propagan cantidades a sus componentes sin otra línea cobrada. Cargo de envío se liquida una sola vez entre los cobros confirmados. Pago guarda monto aplicado, recibido y vuelto; únicamente el aplicado en efectivo genera MovimientoCaja enlazado. UUID del cobro y claves de pago/movimiento evitan duplicados. Cerrar la atención exige pago y entrega completos y libera OcupacionMesa, sin borrar sus datos históricos. Los comprobantes tributarios siguen siendo una operación independiente.
 
 Desde la migración 000067, anulaciones conserva UUID, raíz, cantidad, responsable/nombre, motivo y fecha; sus detalles guardan artículo, cantidades liberadas/merma y avance de Cocina antes/después. Una anulación parcial conserva la línea original y acumula cantidad_anulada. Merma consume reserva/stock con movimiento; liberación no altera existencia actual. Beneficios conserva autorizaciones antes/después; PedidoDetalle mantiene presupuesto y motivo/autor históricos. CobroDetalle separa descuento_producto y descuento_general, total descuento y cortesía con instantánea de autorización. Los cobros previos permanecen intactos y el beneficio pendiente se reparte entre cantidades aún no liquidadas, ajustándose al anular solo la parte no cobrada.
+
+
+Desde la migración 000068, Devolucion conserva cargo_envio y nombres históricos de responsable/caja; DevolucionPago conserva nombre del medio y afecta_efectivo. El servicio exige pago_original_id de este cobro y limita el reintegro al aplicado pendiente, conservando el original. Total cero permite resolver cantidades de cortesía sin pago ficticio. DevolucionDetalle acumula cantidad_resuelta; resoluciones_devolucion conserva UUID, cantidad, acción, responsable, motivo y fecha. Sus detalles guardan destinos por hoja/componente, cantidades, costo de entrega y movimiento_entrega_id para asignaciones de retornos. Las cancelaciones pendientes guardan avance de Cocina antes/después. PedidoDetalle agrega cantidad_cancelada_pagada y cantidad_devuelta sin reducir los contadores históricos cobrados/entregados. La cantidad operativa vigente resta la anulación sin cobro y la cancelación pagada; un retorno ya entregado no crea una nueva entrega pendiente.
+
+Solo el reingreso de reventa registra stock positivo, valorado a sus salidas históricas no retornadas. Merma de un producto ya entregado conserva trazabilidad sin segundo descuento. Una cancelación pagada pendiente libera reserva no iniciada o consume reserva/stock como merma si ya estaba iniciado. El reintegro en efectivo genera egreso en el turno actual enlazado a DevolucionPago. ResumenTurno separa bruto, devuelto y neto, con instantáneas inmutables al cierre. Comprobantes y estado SUNAT continúan independientes.

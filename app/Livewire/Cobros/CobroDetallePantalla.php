@@ -42,6 +42,13 @@ class CobroDetallePantalla extends Component
 
     public function render(): View
     {
-        return view('livewire.cobros.detalle', ['cobro' => $this->cobro()]);
+        $cobro = $this->cobro();
+        $devuelto = '0.00';
+        foreach ($cobro->devoluciones()->where('estado', 'confirmada')->get() as $devolucion) {
+            $devuelto = bcadd($devuelto, $devolucion->total, 2);
+        }
+        $historial = $cobro->devoluciones()->whereIn('turno_caja_id', AccesoCajas::consulta(Auth::user())->select('id'))->orderByDesc('id')->get();
+
+        return view('livewire.cobros.detalle', ['cobro' => $cobro, 'devuelto' => $devuelto, 'historialDevoluciones' => $historial]);
     }
 }

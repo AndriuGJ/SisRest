@@ -6,8 +6,10 @@ use App\Enums\DestinoProductoDevolucionDetalle;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
+ * @property numeric-string $cantidad_resuelta
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -22,6 +24,7 @@ class DevolucionDetalle extends Model
     protected $table = 'devolucion_detalles';
 
     protected $fillable = [
+        'cantidad_resuelta',
         'devolucion_id',
         'cobro_detalle_id',
         'cantidad',
@@ -33,6 +36,7 @@ class DevolucionDetalle extends Model
     protected function casts(): array
     {
         return [
+            'cantidad_resuelta' => 'decimal:4',
             'cantidad' => 'decimal:4',
             'importe' => 'decimal:2',
             'destino_producto' => DestinoProductoDevolucionDetalle::class,
@@ -49,5 +53,11 @@ class DevolucionDetalle extends Model
     public function detalleCobro(): BelongsTo
     {
         return $this->belongsTo(CobroDetalle::class, 'cobro_detalle_id');
+    }
+
+    /** @return HasMany<ResolucionDevolucion, $this> */
+    public function resoluciones(): HasMany
+    {
+        return $this->hasMany(ResolucionDevolucion::class, 'devolucion_detalle_id');
     }
 }
