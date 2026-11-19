@@ -91,3 +91,7 @@ jobs:
       - name: Verify concurrent split payments
         if: matrix.database == 'mysql'
         run: php tests/Support/cobros-concurrency.php
+
+      - name: Verify concurrent cancellations and benefits
+        if: matrix.database == 'mysql'
+        run: php tests/Support/pos-adjustments-concurrency.php

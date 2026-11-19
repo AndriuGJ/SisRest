@@ -4,7 +4,7 @@ Base de un sistema de restaurante para un local, con dos cajas, atención en mes
 
 ## Estado
 
-Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores**, **Cajas y Arqueos**, **Clientes**, **POS**, **Cocina/Barra** y **Cobros**, implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. POS ya confirma y reserva productos, Cocina registra el avance y la entrega descuenta existencias. Cobros permite dividir por productos y combinar medios de pago. La emisión fiscal y las demás operaciones pendientes se integrarán en las siguientes entregas.
+Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores**, **Cajas y Arqueos**, **Clientes**, **POS**, **Cocina/Barra**, **Cobros** y **Anulaciones/Beneficios**, implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. POS ya confirma y reserva productos, Cocina registra el avance y la entrega descuenta existencias. Cobros permite dividir por productos y combinar medios de pago. La emisión fiscal y las demás operaciones pendientes se integrarán en las siguientes entregas.
 
 Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. Los cobros internos ya están implementados; la presencia de las tablas tributarias no significa que ya exista emisión fiscal. La confirmación de compras y preparación diaria ya está implementada.
 
@@ -282,7 +282,7 @@ Después de **Guardar borrador**, **Confirmar y enviar** (`pedidos.enviar`) pide
 - Registra un lote con UUID, responsable, fecha y turno de confirmación. Repetir el mismo UUID devuelve el resultado original, sin duplicar reservas ni envíos.
 - Reserva cada producto preparado/reventa; el combo reserva sus componentes guardados, sin reservar ni cobrar otra vez la raíz. No vuelve a consumir ingredientes ni modifica efectivo.
 - Crea un envío por destino con las cantidades, nombres y notas de las líneas nuevas. Conserva el número de lote y nombre del destino. Los productos de entrega directa no generan envío y quedan listos para entregar.
-- Pedir más en la misma atención genera otro lote; las cantidades iniciadas/listas/entregadas de los anteriores permanecen intactas. Las líneas confirmadas no se editan como borrador.
+- Pedir más en la misma atención genera otro lote; las cantidades iniciadas/listas/entregadas de los anteriores permanecen intactas. Las líneas confirmadas no se editan como borrador; sus anulaciones y beneficios se gestionan con las acciones autorizadas descritas abajo.
 
 ### Pantalla de Cocina
 
@@ -303,7 +303,7 @@ Solo se entrega lo confirmado: productos con destino necesitan cantidad lista en
 
 Los combos se entregan por componentes; la raíz muestra las unidades completas entregadas según sus factores históricos, sin otro movimiento de inventario. El pedido pasa a **Listo** cuando todo lo confirmado está listo y a **Entregado** cuando todo se entrega. Una nueva confirmación vuelve a reflejar lo que aún falta preparar. Entregar no cierra automáticamente la atención ni libera la mesa: se cierra manualmente cuando todo esté pagado y entregado.
 
-La caja puede estar cerrada al terminar preparación/entrega de productos ya confirmados. Para agregar/guardar/confirmar nuevos productos se necesita un turno abierto. El seguimiento del reparto, asignación de repartidor/taxi, descuentos, anulación de confirmados y movimientos de merma, impresión operativa y emisión fiscal se integrarán después. Los envíos de esta etapa son registros digitales para la pantalla de Cocina; **no imprimen comandas automáticamente**.
+La caja puede estar cerrada al terminar preparación/entrega de productos ya confirmados. Para agregar/guardar/confirmar nuevos productos se necesita un turno abierto. El seguimiento del reparto, asignación de repartidor/taxi, ajustes de inventario fuera de anulaciones, impresión operativa y emisión fiscal se integrarán después. Los envíos de esta etapa son registros digitales para la pantalla de Cocina; **no imprimen comandas automáticamente**.
 
 La migración `2026_11_19_000065_create_confirmaciones_pedido.php` agrega los lotes, su vínculo con detalles/envíos y el nombre histórico del destino; conserva opcionales los vínculos de registros anteriores. Actualizar con `php artisan migrate` y `npm run build`. No hay permisos ni dependencias nuevas y no se cambian roles existentes.
 
@@ -322,7 +322,7 @@ Desde el pedido, **Cobrar / dividir cuenta** abre `/pos/pedidos/{pedido}/cobrar`
 
 Ejemplo: total S/ 80, efectivo aplicado S/ 50 con billete de S/ 100, más Yape S/ 30. Se registran S/ 50 de vuelto, un ingreso físico de S/ 50 y cobros por medios de S/ 80. El efectivo esperado de caja no suma Yape ni el billete completo antes del vuelto.
 
-El cobro, sus productos, pagos, cantidades cobradas y movimientos de caja se confirman en una transacción. No vuelve a reservar/descontar productos ni consume ingredientes. Solo los medios que afectan efectivo generan ingreso automático, enlazado a su pago: no se registra además un ingreso manual. Se valida el rango del efectivo esperado antes de escribir. Los productos del catálogo con precio cero pueden liquidarse sin líneas de pago ni movimientos ficticios; aplicar descuentos/cortesías requiere su futura integración de autorización.
+El cobro, sus productos, pagos, cantidades cobradas y movimientos de caja se confirman en una transacción. No vuelve a reservar/descontar productos ni consume ingredientes. Solo los medios que afectan efectivo generan ingreso automático, enlazado a su pago: no se registra además un ingreso manual. Se valida el rango del efectivo esperado antes de escribir. Los productos del catálogo con precio cero pueden liquidarse sin líneas de pago ni movimientos ficticios; los descuentos/cortesías autorizados por producto se conservan y prorratean al cobrar.
 
 El resto de cantidades queda pendiente para los siguientes grupos, incluso desde otra caja autorizada. Cada cobro tiene UUID: repetir la misma petición devuelve su registro original y no duplica pagos ni movimientos, aunque el turno se haya cerrado después. Dos revisiones competidoras no pueden cobrar las mismas unidades; deben volver a consultar el pendiente.
 
@@ -341,6 +341,45 @@ Esta etapa registra **cobros internos**: no emite boleta/factura, no calcula un 
 La migración `2026_11_19_000066_add_cobro_payment_snapshots.php` añade instantáneas opcionales del grupo/cliente/caja/cajero al cobro y nombre/clasificación de efectivo al pago. Conserva intactos los registros previos, sin inventar nombres históricos, permisos ni saldos. Actualizar con `php artisan migrate` y `npm run build`; no hay dependencias nuevas.
 
 CI MySQL añade `tests/Support/cobros-concurrency.php`: dos grupos compitiendo por las mismas unidades, UUID repetido, cargo de delivery cobrado una sola vez y cobro frente a cierre de caja. Comprueba que el cobro no modifica inventario. Se restringe a testing y base desechable `sisrest_test`, y limpia solo sus datos.
+
+## Anulaciones, descuentos y cortesías
+
+En los productos confirmados del POS aparecen **Anular producto** y **Descuento / cortesía**, según permisos. Antes de abrirlos se exige guardar los cambios del borrador. Cada operación se revisa con SweetAlert2 y conserva UUID, responsable, motivo y datos históricos; el historial de las últimas operaciones está al pie del pedido. No modifica cobros confirmados ni devuelve dinero automáticamente.
+
+### Anular productos confirmados
+
+Requiere `pedidos.anular_enviados` y acceso al pedido. Seleccionar una cantidad entera y explicar el motivo con al menos cinco caracteres. Solo alcanza cantidades no cobradas y no entregadas; en combos se comprueban también todos sus componentes y factores históricos. Si ya se cobró o entregó lo solicitado, corresponde el futuro flujo de devolución.
+
+- Se toma primero cantidad **sin iniciar**: libera la reserva y vuelve a estar disponible, sin mover existencia actual ni restituir ingredientes.
+- Si la cantidad alcanza productos **iniciados o listos**, la revisión muestra por producto cuánto se libera y cuánto será **merma**. Esa parte exige además `inventario.registrar_merma`, consume la reserva y genera una salida de merma del artículo preparado/reventa con su costo vigente. No vuelve a estar disponible ni devuelve materia prima.
+- Cocina conserva el total originalmente enviado y aumenta anulado. Se ajustan iniciados/listos para mantener sus límites; antes/después quedan en el detalle de anulación. La parte no anulada continúa normalmente y la pantalla de Cocina muestra las cantidades anuladas.
+- Todo ocurre en una transacción. Repetir UUID no duplica liberaciones ni merma. Cambios de Cocina, entrega o cobro entre revisar y aceptar invalidan la revisión. La caja puede estar cerrada, pues la operación no mueve dinero.
+
+Las líneas permanecen en el pedido con sus cantidades anuladas. Anular todos los productos no libera automáticamente la mesa: puede agregarse otro pedido o cerrarse manualmente cuando no queden productos, envíos o importes pendientes. El cargo de delivery conserva su propia liquidación; anular productos no lo elimina.
+
+### Beneficio por producto
+
+Requiere `descuentos.aplicar` o `cortesias.aplicar`, respectivamente. Solo se modifica una raíz confirmada vigente **antes de su primer cobro**; los cobros ya existentes no se reescriben. Puede autorizarse después de preparar/entregar, si el producto todavía no tiene cobros. Una cortesía de un artículo concreto puede registrarse en su propia línea del pedido.
+
+- Descuento en **porcentaje** (mayor que cero y hasta 100) o **soles** (descuento total de esa línea, sin superar su importe vigente).
+- Un descuento que cubra el importe completo (porcentaje, soles o redondeo) exige además permiso de cortesía; no se puede sustituir esa autorización con un descuento del 100 %.
+- Cortesía conserva cantidad/precio original y autoriza el importe completo como beneficio. Se entrega y consume inventario normalmente; al liquidarse no crea pagos ni ingresos ficticios.
+- Elegir motivo activo compatible (Cumpleaños, Promoción, Atención comercial u Otro) y explicar la autorización. Se conserva responsable, fecha y motivo; no se comprueba cumpleaños automáticamente.
+- Retirar/reemplazar un beneficio conserva su historial y requiere permiso para el beneficio anterior y para el nuevo cuando corresponda. No requiere caja abierta, pues todavía no está registrando dinero.
+
+Al dividir la cuenta se distribuye el presupuesto restante del beneficio entre las cantidades pendientes, ajustando céntimos al último cobro. Ejemplo: S/ 1 de descuento para tres unidades se reparte S/ 0,33 + S/ 0,34 + S/ 0,33. Si se anula cantidad no cobrada, se retira únicamente su parte del beneficio pendiente; los descuentos de cobros anteriores se conservan.
+
+### Descuento general del cobro
+
+En **Cobrar / dividir cuenta**, con `descuentos.aplicar`, elegir porcentaje o soles, motivo y detalle. Afecta solo productos seleccionados de ese cobro, sin incluir envío ni grupos ya liquidados. Para descontar toda la cuenta pendiente, seleccionar todos sus productos.
+
+No se acumula con descuentos/cortesías por producto dentro del mismo cobro. Se reparte entre los detalles con precisión de céntimos y se conserva el autorizador y motivo en el recibo interno. La suma de los pagos debe cubrir el **total neto**; un total cero no necesita medios de pago. La fila de pago completamente vacía se ignora, sin generar un pago cero. El cajero puede liquidar beneficios de producto ya autorizados sin obtener por ello permiso para conceder otros.
+
+### Persistencia y comprobación
+
+La migración `2026_11_19_000067_add_pos_cancellations_and_benefits.php` incorpora historial de anulaciones y sus efectos por artículo, historial de beneficios, instantáneas de autorización y desglose de descuentos en los detalles cobrados. Conserva registros anteriores y no crea beneficios, existencias ni permisos nuevos. Actualizar con `php artisan migrate` y `npm run build`.
+
+CI añade `tests/Support/pos-adjustments-concurrency.php` en MySQL: anulación frente a Cocina/cobro, beneficio frente a cobro y repetición de anulaciones con merma/beneficios. Solo testing y base desechable `sisrest_test`; limpia sus propios datos. Las devoluciones de dinero, retornos de productos entregados, impresión y emisión tributaria siguen pendientes.
 
 ## Alertas reutilizables
 

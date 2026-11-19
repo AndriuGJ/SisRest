@@ -6,9 +6,11 @@ use App\Concerns\ConAlertas;
 use App\Models\Cliente;
 use App\Models\Cobro;
 use App\Models\MedioPago;
+use App\Models\MotivoBeneficio;
 use App\Models\Pedido;
 use App\Models\User;
 use App\Services\Cajas\AccesoCajas;
+use App\Services\Cobros\CalculoBeneficios;
 use App\Services\Cobros\EstadoCuenta;
 use App\Services\Cobros\GestionCobros;
 use App\Services\Compras\ImportesCompra;
@@ -44,6 +46,14 @@ class CobroFormulario extends Component
 
     public bool $incluirEnvio = false;
 
+    public string $descuentoTipo = '';
+
+    public string $descuentoValor = '0';
+
+    public string $motivoId = '';
+
+    public string $motivoDetalle = '';
+
     /** @var array<int,string> */
     public array $cantidades = [];
 
@@ -57,7 +67,7 @@ class CobroFormulario extends Component
     #[Locked]
     public array $revision = [];
 
-    /** @var array{clienteId:string,grupoPagador:string,incluirEnvio:bool}|array{} */
+    /** @var array{clienteId:string,grupoPagador:string,incluirEnvio:bool,descuentoTipo:string,descuentoValor:string,motivoId:string,motivoDetalle:string}|array{} */
     #[Locked]
     public array $datosRevisados = [];
 
@@ -139,6 +149,10 @@ class CobroFormulario extends Component
 
     public function updated(string $campo): void
     {
+        if ($campo === 'descuentoTipo' && $this->descuentoTipo === '') {
+            $this->descuentoValor = '0';
+            $this->motivoId = $this->motivoDetalle = '';
+        }
         if (preg_match('/^pagos\.([^.]+)\.medioId$/', $campo, $partes) && isset($this->pagosParaVista($this->pagos)[$partes[1]])) {
             $this->pagos[$partes[1]]['entregado'] = '';
         }
@@ -154,7 +168,7 @@ class CobroFormulario extends Component
                 $seleccion['d-'.$id] = ['detalleId' => (string) $id, 'cantidad' => $cantidad];
             }
         }
-        $datos = ['clienteId' => $this->clienteId, 'grupoPagador' => $this->grupoPagador, 'incluirEnvio' => $this->incluirEnvio];
+        $datos = ['clienteId' => $this->clienteId, 'grupoPagador' => $this->grupoPagador, 'incluirEnvio' => $this->incluirEnvio, 'descuentoTipo' => $this->descuentoTipo, 'descuentoValor' => $this->descuentoValor, 'motivoId' => $this->motivoId, 'motivoDetalle' => $this->motivoDetalle];
         $plan = $gestion->previsualizar($this->actor(), $this->pedidoId, (int) $this->turnoId, $datos, $seleccion, $this->pagos);
         $this->revision = $plan;
         $this->clave = (string) Str::uuid();
@@ -218,16 +232,35 @@ class CobroFormulario extends Component
         $actor = $this->actor();
         $pedido = $this->pedido()->load('detalles');
         $lineas = $pedido->detalles->whereNull('detalle_padre_id')->where('estado.value', 'confirmado');
-        $subtotal = '0.00';
+        $subtotal = $descuentoProductos = $descuentoGeneral = '0.00';
+        $lineasImportes = [];
+        $puedeGeneral = true;
         $cantidadesVista = [];
         foreach ($lineas as $detalle) {
             $valor = $this->cantidades[$detalle->id] ?? '';
             $cantidad = $this->cantidadParaVista($valor);
             $cantidadesVista[$detalle->id] = $cantidad;
-            $subtotal = bcadd($subtotal, bcmul($cantidad, $detalle->precio_unitario, 2), 2);
+            $bruto = bcmul($cantidad, $detalle->precio_unitario, 2);
+            $subtotal = bcadd($subtotal, $bruto, 2);
+            $beneficio = '0.00';
+            if (bccomp($cantidad, '0', 4) > 0) {
+                $puedeGeneral = $puedeGeneral && ! ($detalle->es_cortesia || $detalle->descuento_tipo !== null || bccomp($detalle->descuento_importe, '0', 2) !== 0);
+                try {
+                    $beneficio = CalculoBeneficios::paraCantidad($detalle, $cantidad);
+                } catch (ValidationException) { /* Revisar valida la selección completa. */
+                }
+            }
+            $descuentoProductos = bcadd($descuentoProductos, $beneficio, 2);
+            $lineasImportes[$detalle->id] = ['bruto' => $bruto, 'beneficio' => $beneficio, 'total' => bcsub($bruto, $beneficio, 2)];
         }
         $envioPendiente = EstadoCuenta::envioPendiente($pedido);
-        $total = bcadd($subtotal, $this->incluirEnvio ? $envioPendiente : '0', 2);
+        if ($this->descuentoTipo !== '' && $puedeGeneral) {
+            try {
+                $descuentoGeneral = CalculoBeneficios::presupuesto($subtotal, $this->descuentoTipo, $this->descuentoValor);
+            } catch (ValidationException) { /* La revisión muestra el error. */
+            }
+        }
+        $total = bcadd(bcsub(bcsub($subtotal, $descuentoProductos, 2), $descuentoGeneral, 2), $this->incluirEnvio ? $envioPendiente : '0', 2);
         $clientes = collect();
         if ($actor->can('clientes.ver')) {
             $query = Cliente::where('activo', true)->orderBy('nombre');
@@ -266,7 +299,8 @@ class CobroFormulario extends Component
         $historial = Cobro::where('pedido_id', $pedido->id)->whereIn('turno_caja_id', (clone $turnosQuery)->select('id'))->latest('id')->get();
 
         return view('livewire.cobros.formulario', ['pedido' => $pedido, 'lineas' => $lineas, 'cantidadesVista' => $cantidadesVista, 'subtotal' => $subtotal, 'total' => $total,
-            'envioPendiente' => $envioPendiente, 'medios' => $medios, 'clientes' => $clientes, 'pagosVista' => $pagosVista, 'aplicado' => $aplicado, 'efectivo' => $efectivo, 'vuelto' => $vuelto,
+            'envioPendiente' => $envioPendiente, 'descuentoProductos' => $descuentoProductos, 'descuentoGeneral' => $descuentoGeneral, 'puedeGeneral' => $puedeGeneral, 'lineasImportes' => $lineasImportes,
+            'motivosBeneficio' => MotivoBeneficio::where('activo', true)->whereIn('tipo', ['descuento', 'ambos'])->orderBy('nombre')->get(), 'medios' => $medios, 'clientes' => $clientes, 'pagosVista' => $pagosVista, 'aplicado' => $aplicado, 'efectivo' => $efectivo, 'vuelto' => $vuelto,
             'turnos' => $turnosQuery->with('caja')->where('estado', 'abierta')->whereHas('caja', fn ($q) => $q->where('activo', true))->get(), 'historial' => $historial]);
     }
 }

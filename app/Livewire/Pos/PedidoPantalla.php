@@ -3,6 +3,8 @@
 namespace App\Livewire\Pos;
 
 use App\Concerns\ConAlertas;
+use App\Models\AnulacionPedido;
+use App\Models\BeneficioPedido;
 use App\Models\CategoriaProducto;
 use App\Models\Cliente;
 use App\Models\EnvioCocinaDetalle;
@@ -277,6 +279,23 @@ class PedidoPantalla extends Component
         $this->redirectRoute('pos.index', navigate: true);
     }
 
+    public function openBenefit(int $id): void
+    {
+        $actor = $this->actor();
+        abort_unless($actor->can('descuentos.aplicar') || $actor->can('cortesias.aplicar'), 403);
+        $this->pedido();
+        $this->exigirGuardado();
+        $this->dispatch('pos:beneficio', detalleId: $id)->to(AccionesProducto::class);
+    }
+
+    public function openCancel(int $id): void
+    {
+        Gate::forUser($this->actor())->authorize('pedidos.anular_enviados');
+        $this->pedido();
+        $this->exigirGuardado();
+        $this->dispatch('pos:anulacion', detalleId: $id)->to(AccionesProducto::class);
+    }
+
     public function requestDiscard(): void
     {
         Gate::forUser($this->actor())->authorize('pedidos.editar');
@@ -361,7 +380,10 @@ class PedidoPantalla extends Component
             }
         }
         foreach ($pedido->detalles->whereNull('detalle_padre_id')->where('estado.value', 'confirmado') as $detalle) {
-            $total = bcadd($total, bcmul(bcsub($detalle->cantidad, $detalle->cantidad_anulada, 4), $detalle->precio_unitario, 6), 2);
+            $total = bcadd($total, bcsub(bcmul(bcsub($detalle->cantidad, $detalle->cantidad_anulada, 4), $detalle->precio_unitario, 6), $detalle->descuento_importe, 2), 2);
+        }
+        foreach ($pedido->cobros()->where('estado', 'confirmado')->get() as $cobro) {
+            $total = bcsub($total, $cobro->descuento_general, 2);
         }
         $total = bcadd($total, $pedido->delivery && $pedido->estado->value !== 'anulado' ? $pedido->delivery->costo_envio : '0', 2);
         $progreso = [];
@@ -378,6 +400,8 @@ class PedidoPantalla extends Component
 
         return view('livewire.pos.pedido-pantalla', ['pedido' => $pedido, 'productos' => $catalogo->paginate(18), 'seleccionados' => $seleccionados,
             'filasVista' => $filasVista, 'categorias' => CategoriaProducto::where('activo', true)->orderBy('orden')->get(), 'clientes' => $clientes, 'total' => $total,
+            'anulaciones' => AnulacionPedido::with('detalles')->where('pedido_id', $pedido->id)->latest('id')->limit(20)->get(),
+            'beneficiosHistorial' => BeneficioPedido::where('pedido_id', $pedido->id)->latest('id')->limit(20)->get(),
             'cuentaPagada' => EstadoCuenta::liquidada($pedido), 'progreso' => $progreso, 'turnos' => TurnoCaja::with('caja')->where('estado', 'abierta')->whereHas('caja', fn ($q) => $q->where('activo', true))->get()]);
     }
 }

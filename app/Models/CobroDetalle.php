@@ -7,6 +7,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
+ * @property numeric-string $descuento_producto
+ * @property numeric-string $descuento_general
+ * @property array<string,mixed>|null $beneficio_resumen
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -26,6 +29,7 @@ class CobroDetalle extends Model
     protected $table = 'cobro_detalles';
 
     protected $fillable = [
+        'descuento_producto', 'descuento_general', 'beneficio_resumen',
         'cobro_id',
         'pedido_detalle_id',
         'descripcion',
@@ -42,6 +46,7 @@ class CobroDetalle extends Model
     protected function casts(): array
     {
         return [
+            'descuento_producto' => 'decimal:2', 'descuento_general' => 'decimal:2', 'beneficio_resumen' => 'array',
             'cantidad' => 'decimal:4',
             'precio_unitario' => 'decimal:2',
             'subtotal' => 'decimal:2',

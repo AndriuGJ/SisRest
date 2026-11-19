@@ -30,6 +30,7 @@
                         <div wire:key="cocina-linea-{{ $detalle->id }}" class="space-y-3 py-4 {{ $vigente ? '' : 'opacity-50' }}">
                             <div><p class="text-sm font-semibold">{{ \App\Support\Cantidad::mostrar($detalle->cantidad) }} × {{ $detalle->descripcion }}</p>
                             @if($detalle->detallePedido->padre)<p class="mt-1 text-xs text-zinc-500">Combo: {{ $detalle->detallePedido->padre->descripcion }}</p>@endif
+                            @if(bccomp($detalle->cantidad_anulada, '0', 4) > 0)<p class="mt-1 text-xs text-red-700 dark:text-red-300">Anulados: {{ \App\Support\Cantidad::mostrar($detalle->cantidad_anulada) }}</p>@endif
                             @if($detalle->nota)<p class="mt-2 border-l-2 border-amber-500 pl-2 text-sm">{{ $detalle->nota }}</p>@endif</div>
                             <dl class="grid grid-cols-3 gap-2 text-xs"><div><dt class="text-zinc-500">Sin iniciar</dt><dd class="mt-1 font-semibold">{{ \App\Support\Cantidad::mostrar($porIniciar) }}</dd></div><div><dt class="text-zinc-500">Preparando</dt><dd class="mt-1 font-semibold">{{ \App\Support\Cantidad::mostrar($preparando) }}</dd></div><div><dt class="text-zinc-500">Listo</dt><dd class="mt-1 font-semibold text-green-700 dark:text-green-400">{{ \App\Support\Cantidad::mostrar($lista) }}</dd></div></dl>
                             @if($vigente && (bccomp($porIniciar, '0', 4) > 0 || bccomp($preparando, '0', 4) > 0))

@@ -29,5 +29,7 @@
             <p class="text-xs text-zinc-500">Estado: {{ str_replace('_', ' ', ucfirst($pedido->estado->value)) }}. Preparación, entrega y pago se controlan por separado.</p>
         </div></div>
     </div>
+    @include('livewire.pos.historial-productos')
+    <livewire:pos.acciones-producto :pedido-id="$pedido->id" :key="'acciones-pedido-'.$pedido->id" />
     @can('pedidos.editar')<flux:modal wire:model="showDiscard" class="md:w-lg"><div class="space-y-5"><flux:heading level="2" size="lg">Descartar borrador</flux:heading><flux:textarea wire:model="motivo" label="Motivo del descarte" rows="3" maxlength="500" /><div class="flex justify-end gap-2"><flux:button wire:click="$set('showDiscard', false)">Cancelar</flux:button><flux:button variant="danger" wire:click="requestDiscard">Revisar descarte</flux:button></div></div></flux:modal>@endcan
 </div>

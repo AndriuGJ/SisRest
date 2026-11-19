@@ -11,6 +11,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
+ * @property string|null $beneficio_motivo_nombre
+ * @property string|null $beneficio_motivo_texto
+ * @property string|null $beneficio_autorizado_nombre
+ * @property CarbonImmutable|null $beneficio_autorizado_at
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -42,6 +46,7 @@ class PedidoDetalle extends Model
     protected $table = 'pedido_detalles';
 
     protected $fillable = [
+        'beneficio_motivo_nombre', 'beneficio_motivo_texto', 'beneficio_autorizado_nombre', 'beneficio_autorizado_at',
         'confirmacion_pedido_id',
         'factor_componente',
         'pedido_id',
@@ -70,6 +75,7 @@ class PedidoDetalle extends Model
     protected function casts(): array
     {
         return [
+            'beneficio_autorizado_at' => 'immutable_datetime',
             'tipo_linea' => TipoLineaPedidoDetalle::class,
             'factor_componente' => 'decimal:4',
             'cantidad' => 'decimal:4',

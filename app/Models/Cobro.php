@@ -18,6 +18,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $cliente_direccion
  * @property string|null $caja_nombre
  * @property string|null $cajero_nombre
+ * @property string|null $beneficio_motivo_nombre
+ * @property string|null $beneficio_motivo_texto
+ * @property string|null $beneficio_autorizado_nombre
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -46,6 +49,7 @@ class Cobro extends Model
     protected $table = 'cobros';
 
     protected $fillable = [
+        'beneficio_motivo_nombre', 'beneficio_motivo_texto', 'beneficio_autorizado_nombre',
         'grupo_pagador', 'cliente_nombre', 'cliente_tipo_documento', 'cliente_numero_documento', 'cliente_direccion', 'caja_nombre', 'cajero_nombre',
         'codigo',
         'pedido_id',
