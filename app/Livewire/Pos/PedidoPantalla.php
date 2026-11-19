@@ -6,7 +6,6 @@ use App\Concerns\ConAlertas;
 use App\Models\AnulacionPedido;
 use App\Models\BeneficioPedido;
 use App\Models\CategoriaProducto;
-use App\Models\Cliente;
 use App\Models\EnvioCocinaDetalle;
 use App\Models\Pedido;
 use App\Models\PedidoDetalle;
@@ -81,17 +80,25 @@ class PedidoPantalla extends Component
 
     public string $turnoId = '';
 
+    #[Locked]
     public string $clienteId = '';
 
+    #[Locked]
     public string $comensales = '';
 
+    #[Locked]
     public string $observaciones = '';
 
     public string $search = '';
 
     public string $categoriaId = '';
 
-    public string $clienteSearch = '';
+    #[Locked]
+    public string $notaClave = '';
+
+    public string $notaEdicion = '';
+
+    public bool $showNote = false;
 
     public bool $showDiscard = false;
 
@@ -150,9 +157,65 @@ class PedidoPantalla extends Component
 
             return;
         }
+        foreach ($this->paraVista($this->filas) as $clave => $fila) {
+            if ($fila['productoId'] === (string) $id && preg_match('/^[1-9][0-9]{0,3}$/', $fila['cantidad'])) {
+                $this->filas[$clave]['cantidad'] = (string) min(9999, (int) $fila['cantidad'] + 1);
+
+                return;
+            }
+        }
         if (count($this->filas) < 50) {
             $this->filas['n-'.Str::uuid()] = ['detalleId' => '', 'productoId' => (string) $id, 'cantidad' => '1', 'nota' => ''];
         }
+    }
+
+    public function cambiarCantidad(string $clave, int $cambio): void
+    {
+        Gate::forUser($this->actor())->authorize('pedidos.editar');
+        $this->pedido();
+        abort_unless(in_array($cambio, [-1, 1], true) && isset($this->filas[$clave]), 403);
+        $fila = $this->paraVista($this->filas)[$clave] ?? null;
+        if ($fila) {
+            $this->filas[$clave]['cantidad'] = (string) max(1, min(9999, (int) $fila['cantidad'] + $cambio));
+        }
+    }
+
+    public function editarNota(string $clave): void
+    {
+        Gate::forUser($this->actor())->authorize('pedidos.editar');
+        $this->pedido();
+        $fila = $this->paraVista($this->filas)[$clave] ?? null;
+        abort_unless($fila !== null, 404);
+        $this->notaClave = $clave;
+        $this->notaEdicion = $fila['nota'];
+        $this->showNote = true;
+    }
+
+    public function guardarNota(): void
+    {
+        Gate::forUser($this->actor())->authorize('pedidos.editar');
+        $this->pedido();
+        $this->validate(['notaEdicion' => ['nullable', 'string', 'max:500']]);
+        abort_unless(isset($this->filas[$this->notaClave]), 404);
+        $this->filas[$this->notaClave]['nota'] = trim($this->notaEdicion);
+        $this->showNote = false;
+    }
+
+    public function anadir(GestionPedidos $gestion): void
+    {
+        Gate::forUser($this->actor())->authorize('pedidos.enviar');
+        $this->resetValidation();
+        $this->validate(['turnoId' => ['required', 'integer']]);
+        if ($this->filas === []) {
+            $this->notificar('Selecciona los productos que deseas añadir.', 'info');
+
+            return;
+        }
+        $pedido = $gestion->guardar($this->actor(), $this->pedidoId, (int) $this->turnoId, $this->version,
+            ['clienteId' => $this->clienteId, 'comensales' => $this->comensales, 'observaciones' => $this->observaciones], $this->filas);
+        $this->filas = [];
+        $this->mount($pedido->fresh());
+        $this->requestSend();
     }
 
     public function removeRow(string $clave): void
@@ -183,6 +246,17 @@ class PedidoPantalla extends Component
         }
     }
 
+    public function irCobro(): void
+    {
+        Gate::forUser($this->actor())->authorize('cobros.crear');
+        $this->exigirGuardado();
+        $pedido = $this->pedido();
+        if ($pedido->detalles()->where('estado', 'borrador')->exists()) {
+            throw ValidationException::withMessages(['seguridad' => 'Añade los productos pendientes antes de cobrar.']);
+        }
+        $this->redirectRoute('pos.cobrar', $pedido, navigate: true);
+    }
+
     public function openPrinting(): void
     {
         $actor = $this->actor();
@@ -205,7 +279,7 @@ class PedidoPantalla extends Component
         $this->versionEnvio = $this->version;
         $this->claveEnvio = (string) Str::uuid();
         $this->turnoEnvio = (int) $this->turnoId;
-        $this->confirmar('Confirmar productos', 'Se reservarán las existencias de '.$lineas.' líneas nuevas. Los productos con destino se enviarán a Cocina o Barra; los de entrega directa quedarán disponibles para entregar.', 'confirmSend', 'Confirmar y enviar');
+        $this->confirmar('Añadir productos al pedido', 'Se reservarán las existencias de '.$lineas.' líneas nuevas. Los productos con destino se enviarán a Cocina o Barra; los de entrega directa quedarán disponibles para entregar.', 'confirmSend', 'Confirmar y enviar');
     }
 
     public function confirmSend(ConfirmarPedido $servicio): void
@@ -365,20 +439,6 @@ class PedidoPantalla extends Component
         $filasVista = $this->paraVista($this->filas);
         $ids = array_values(array_filter(array_column($filasVista, 'productoId'), fn ($id) => ctype_digit($id)));
         $seleccionados = app(CatalogoPos::class)->consulta()->whereIn('id', $ids)->get()->keyBy('id');
-        $clientes = collect();
-        if ($actor->can('clientes.ver')) {
-            $consulta = Cliente::where('activo', true)->orderBy('nombre');
-            if (trim($this->clienteSearch) !== '') {
-                $consulta->where(fn ($q) => $q->where('nombre', 'like', '%'.mb_substr(trim($this->clienteSearch), 0, 100).'%')->orWhere('numero_documento', 'like', '%'.mb_substr(trim($this->clienteSearch), 0, 100).'%'));
-            }
-            $clientes = $consulta->limit(30)->get();
-            if ($this->clienteId !== '' && ctype_digit($this->clienteId) && ! $clientes->contains('id', (int) $this->clienteId)) {
-                $actual = Cliente::find($this->clienteId);
-                if ($actual && ($actual->activo || $pedido->cliente_id === $actual->id)) {
-                    $clientes->push($actual);
-                }
-            }
-        }
         $total = '0.00';
         foreach ($filasVista as $fila) {
             $producto = $seleccionados->get($fila['productoId']);
@@ -395,6 +455,38 @@ class PedidoPantalla extends Component
             $total = bcsub($total, $cobro->descuento_general, 2);
         }
         $total = bcadd($total, $pedido->delivery && $pedido->estado->value !== 'anulado' ? $pedido->delivery->costo_envio : '0', 2);
+        $grupos = [];
+        foreach ($pedido->detalles->whereNull('detalle_padre_id')->filter(fn ($d) => $d->estado->value !== 'borrador') as $detalle) {
+            $key = hash('sha256', json_encode([$detalle->producto_id, trim($detalle->nota ?? ''), $detalle->precio_unitario], JSON_THROW_ON_ERROR));
+            if (! isset($grupos[$key])) {
+                $grupos[$key] = ['productoId' => $detalle->producto_id, 'nombre' => $detalle->descripcion, 'nota' => $detalle->nota ?? '', 'precio' => $detalle->precio_unitario, 'cantidad' => '0.0000', 'importe' => '0.00', 'confirmados' => collect(), 'borradores' => []];
+            }
+            $grupos[$key]['confirmados']->push($detalle);
+            if ($detalle->estado->value === 'confirmado') {
+                $cantidadOriginal = bcsub($detalle->cantidad, $detalle->cantidad_anulada, 4);
+                $grupos[$key]['cantidad'] = bcadd($grupos[$key]['cantidad'], $cantidadOriginal, 4);
+                $grupos[$key]['importe'] = bcadd($grupos[$key]['importe'], bcsub(bcmul($cantidadOriginal, $detalle->precio_unitario, 2), $detalle->descuento_importe, 2), 2);
+            }
+        }
+        foreach ($filasVista as $clave => $fila) {
+            $producto = $seleccionados->get($fila['productoId']);
+            $anterior = $pedido->detalles->firstWhere('id', (int) $fila['detalleId']);
+            if (! $producto && ! $anterior) {
+                continue;
+            }
+            $precio = $anterior->precio_unitario ?? $producto->precio_venta;
+            $id = $anterior->producto_id ?? $producto->id;
+            $key = hash('sha256', json_encode([$id, trim($fila['nota']), $precio], JSON_THROW_ON_ERROR));
+            if (! isset($grupos[$key])) {
+                $grupos[$key] = ['productoId' => $id, 'nombre' => $anterior->descripcion ?? $producto->nombre, 'nota' => $fila['nota'], 'precio' => $precio, 'cantidad' => '0.0000', 'importe' => '0.00', 'confirmados' => collect(), 'borradores' => []];
+            }
+            $grupos[$key]['borradores'][$clave] = $fila;
+            if (preg_match('/^[1-9][0-9]{0,3}$/', $fila['cantidad'])) {
+                $cantidad = CalculoProduccion::cantidad($fila['cantidad']);
+                $grupos[$key]['cantidad'] = bcadd($grupos[$key]['cantidad'], $cantidad, 4);
+                $grupos[$key]['importe'] = bcadd($grupos[$key]['importe'], bcmul($cantidad, $precio, 2), 2);
+            }
+        }
         $progreso = [];
         $envios = EnvioCocinaDetalle::whereIn('pedido_detalle_id', $pedido->detalles->pluck('id'))->get()->groupBy('pedido_detalle_id');
         foreach ($pedido->detalles->where('estado.value', 'confirmado') as $detalle) {
@@ -408,7 +500,7 @@ class PedidoPantalla extends Component
         }
 
         return view('livewire.pos.pedido-pantalla', ['pedido' => $pedido, 'productos' => $catalogo->paginate(18), 'seleccionados' => $seleccionados,
-            'filasVista' => $filasVista, 'categorias' => CategoriaProducto::where('activo', true)->orderBy('orden')->get(), 'clientes' => $clientes, 'total' => $total,
+            'gruposPedido' => $grupos, 'filasVista' => $filasVista, 'categorias' => CategoriaProducto::where('activo', true)->orderBy('orden')->get(),  'total' => $total,
             'anulaciones' => AnulacionPedido::with('detalles')->where('pedido_id', $pedido->id)->latest('id')->limit(20)->get(),
             'beneficiosHistorial' => BeneficioPedido::where('pedido_id', $pedido->id)->latest('id')->limit(20)->get(),
             'cuentaPagada' => EstadoCuenta::liquidada($pedido), 'progreso' => $progreso, 'turnos' => TurnoCaja::with('caja')->where('estado', 'abierta')->whereHas('caja', fn ($q) => $q->where('activo', true))->get()]);

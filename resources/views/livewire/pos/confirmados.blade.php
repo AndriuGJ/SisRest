@@ -1,5 +1,5 @@
-<div class="space-y-3" wire:poll.5s>
-    @foreach($pedido->detalles->whereNull('detalle_padre_id')->filter(fn($d) => $d->estado->value !== 'borrador') as $detalle)
+<div class="space-y-3">
+    @foreach(($confirmadosVista ?? $pedido->detalles->whereNull('detalle_padre_id')->filter(fn($d) => $d->estado->value !== 'borrador')) as $detalle)
         <div wire:key="confirmado-{{ $detalle->id }}" class="space-y-3 rounded-md border border-zinc-200 p-3 text-sm dark:border-zinc-700">
             <div><p class="font-medium">{{ $detalle->descripcion }} × {{ \App\Support\Cantidad::mostrar($detalle->cantidad) }}</p><p class="mt-1 text-xs text-zinc-500">{{ ucfirst($detalle->estado->value) }} · S/ {{ $detalle->precio_unitario }} por unidad</p>@if($detalle->nota)<p class="mt-1 text-xs">{{ $detalle->nota }}</p>@endif</div>
             @if(bccomp($detalle->cantidad_anulada, '0', 4) > 0)<p class="text-xs text-red-700 dark:text-red-300">Anulados: {{ \App\Support\Cantidad::mostrar($detalle->cantidad_anulada) }}. Vigentes: {{ \App\Support\Cantidad::mostrar($detalle->cantidadVigente()) }}.</p>@endif
