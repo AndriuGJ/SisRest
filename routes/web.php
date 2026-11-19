@@ -8,6 +8,7 @@ use App\Livewire\Cajas\Cajas;
 use App\Livewire\Cajas\TurnoDetalle;
 use App\Livewire\Clientes\ClienteFormulario;
 use App\Livewire\Clientes\Clientes;
+use App\Livewire\Cocina\Cocina;
 use App\Livewire\Compras\CompraDetalle;
 use App\Livewire\Compras\CompraFormulario;
 use App\Livewire\Compras\Compras;
@@ -76,6 +77,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('nuevo', ClienteFormulario::class)->middleware('permission:clientes.crear')->name('crear');
         Route::get('{cliente}/editar', ClienteFormulario::class)->middleware('permission:clientes.editar')->name('editar');
     });
+
+    Route::get('cocina', Cocina::class)->middleware('permission:cocina.ver')->name('cocina.index');
 
     Route::middleware('permission:pos.ver')->prefix('pos')->name('pos.')->group(function () {
         Route::get('/', Pos::class)->name('index');

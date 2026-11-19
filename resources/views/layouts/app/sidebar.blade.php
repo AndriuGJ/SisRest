@@ -18,6 +18,9 @@
                     @can('pos.ver')
                         <flux:sidebar.item icon="squares-2x2" :href="route('pos.index')" :current="request()->routeIs('pos.*')" wire:navigate>POS</flux:sidebar.item>
                     @endcan
+                    @can('cocina.ver')
+                        <flux:sidebar.item icon="fire" :href="route('cocina.index')" :current="request()->routeIs('cocina.*')" wire:navigate>Cocina</flux:sidebar.item>
+                    @endcan
                     @can('clientes.ver')
                         <flux:sidebar.item icon="user-group" :href="route('clientes.index')" :current="request()->routeIs('clientes.*')" wire:navigate>Clientes</flux:sidebar.item>
                     @endcan

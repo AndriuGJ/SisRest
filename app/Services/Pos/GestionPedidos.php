@@ -3,7 +3,6 @@
 namespace App\Services\Pos;
 
 use App\Models\Articulo;
-use App\Models\Caja;
 use App\Models\Cliente;
 use App\Models\CobroDetalle;
 use App\Models\EnvioCocinaDetalle;
@@ -15,12 +14,9 @@ use App\Models\Producto;
 use App\Models\ReservaInventario;
 use App\Models\Salon;
 use App\Models\TipoDocumentoIdentidad;
-use App\Models\TurnoCaja;
 use App\Models\User;
 use App\Services\Compras\ImportesCompra;
 use App\Services\Inventario\CalculoProduccion;
-use App\Services\Inventario\TransaccionCatalogo;
-use Closure;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -29,40 +25,13 @@ use Illuminate\Validation\ValidationException;
 
 class GestionPedidos
 {
-    use TransaccionCatalogo;
-
-    /**
-     * @template T
-     *
-     * @param  Closure():T  $operacion
-     * @return T
-     */
-    private function ejecutar(User $actor, string $permiso, Closure $operacion): mixed
-    {
-        return $this->transaccion($actor, $permiso, function () use ($actor, $operacion) {
-            AccesoPos::usuario($actor);
-            Salon::orderBy('id')->lockForUpdate()->get();
-            Mesa::orderBy('id')->lockForUpdate()->get();
-            Caja::orderBy('id')->lockForUpdate()->get();
-
-            return $operacion();
-        });
-    }
-
-    private function turno(int $id): TurnoCaja
-    {
-        $turno = TurnoCaja::lockForUpdate()->findOrFail($id);
-        if ($turno->estado->value !== 'abierta' || ! Caja::lockForUpdate()->findOrFail($turno->caja_id)->activo) {
-            throw ValidationException::withMessages(['turnoId' => 'Selecciona una caja abierta para operar el pedido.']);
-        }
-
-        return $turno;
-    }
+    use TransaccionPos;
 
     /** @param array{modalidad:string,mesaId:string,mozoId:string,comensales:string,observaciones:string,destinatario:string,telefono:string,direccion:string,referencia:string,costoEnvio:string} $datos */
     public function abrir(User $actor, int $turnoId, string $clave, array $datos): Pedido
     {
         return $this->ejecutar($actor, 'pedidos.crear', function () use ($actor, $turnoId, $clave, $datos): Pedido {
+            AccesoPos::usuario($actor);
             Validator::make(['clave' => $clave], ['clave' => ['required', 'uuid']])->validate();
             if ($existente = Pedido::where('clave_registro', $clave)->lockForUpdate()->first()) {
                 abort_unless($existente->creado_por === $actor->id, 403);
@@ -124,6 +93,7 @@ class GestionPedidos
     public function guardar(User $actor, int $id, int $turnoId, string $version, array $datos, array $filas): Pedido
     {
         return $this->ejecutar($actor, 'pedidos.editar', function () use ($actor, $id, $turnoId, $version, $datos, $filas): Pedido {
+            AccesoPos::usuario($actor);
             $this->turno($turnoId);
             Validator::make($datos, ['clienteId' => ['nullable', 'integer'], 'comensales' => ['nullable', 'integer', 'min:1', 'max:65535'], 'observaciones' => ['nullable', 'string', 'max:2000']])->validate();
             $lectura = Pedido::findOrFail($id);
@@ -258,7 +228,7 @@ class GestionPedidos
 
     private function lineaEditable(PedidoDetalle $detalle): void
     {
-        if ($detalle->estado->value !== 'borrador' || $detalle->confirmado_at || bccomp($detalle->cantidad_anulada, '0', 4) > 0 || bccomp($detalle->cantidad_cobrada, '0', 4) > 0 || bccomp($detalle->cantidad_entregada, '0', 4) > 0
+        if ($detalle->estado->value !== 'borrador' || $detalle->confirmacion_pedido_id || $detalle->confirmado_at || bccomp($detalle->cantidad_anulada, '0', 4) > 0 || bccomp($detalle->cantidad_cobrada, '0', 4) > 0 || bccomp($detalle->cantidad_entregada, '0', 4) > 0
             || ReservaInventario::where('pedido_detalle_id', $detalle->id)->exists() || EnvioCocinaDetalle::where('pedido_detalle_id', $detalle->id)->exists() || CobroDetalle::where('pedido_detalle_id', $detalle->id)->exists()) {
             throw ValidationException::withMessages(['seguridad' => 'Una línea ya participa en una operación confirmada y no puede editarse como borrador.']);
         }

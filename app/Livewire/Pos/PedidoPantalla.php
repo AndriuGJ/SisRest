@@ -5,6 +5,7 @@ namespace App\Livewire\Pos;
 use App\Concerns\ConAlertas;
 use App\Models\CategoriaProducto;
 use App\Models\Cliente;
+use App\Models\EnvioCocinaDetalle;
 use App\Models\Pedido;
 use App\Models\PedidoDetalle;
 use App\Models\TurnoCaja;
@@ -12,6 +13,8 @@ use App\Models\User;
 use App\Services\Inventario\CalculoProduccion;
 use App\Services\Pos\AccesoPos;
 use App\Services\Pos\CatalogoPos;
+use App\Services\Pos\ConfirmarPedido;
+use App\Services\Pos\GestionEntregas;
 use App\Services\Pos\GestionPedidos;
 use App\Support\Alertas;
 use App\Support\Cantidad;
@@ -44,6 +47,30 @@ class PedidoPantalla extends Component
 
     #[Locked]
     public string $motivoConfirmado = '';
+
+    #[Locked]
+    public string $formularioGuardado = '';
+
+    #[Locked]
+    public string $versionEnvio = '';
+
+    #[Locked]
+    public string $claveEnvio = '';
+
+    #[Locked]
+    public int $turnoEnvio = 0;
+
+    #[Locked]
+    public string $versionEntrega = '';
+
+    #[Locked]
+    public int $detalleEntrega = 0;
+
+    #[Locked]
+    public string $cantidadEntrega = '';
+
+    /** @var array<int,string> */
+    public array $cantidadesEntrega = [];
 
     public string $turnoId = '';
 
@@ -80,6 +107,7 @@ class PedidoPantalla extends Component
         foreach ($pedido->detalles()->whereNull('detalle_padre_id')->where('estado', 'borrador')->get() as $detalle) {
             $this->filas['d-'.$detalle->id] = ['detalleId' => (string) $detalle->id, 'productoId' => (string) $detalle->producto_id, 'cantidad' => Cantidad::mostrar($detalle->cantidad), 'nota' => $detalle->nota ?? ''];
         }
+        $this->formularioGuardado = $this->huellaFormulario();
     }
 
     private function actor(): User
@@ -136,6 +164,89 @@ class PedidoPantalla extends Component
         $this->redirectRoute('pos.pedido', $this->pedidoId, navigate: true);
     }
 
+    private function huellaFormulario(): string
+    {
+        return hash('sha256', json_encode([$this->clienteId, $this->comensales, $this->observaciones, $this->filas], JSON_THROW_ON_ERROR));
+    }
+
+    private function exigirGuardado(): void
+    {
+        if (! hash_equals($this->formularioGuardado, $this->huellaFormulario())) {
+            throw ValidationException::withMessages(['seguridad' => 'Primero guarda los cambios del borrador para continuar.']);
+        }
+    }
+
+    public function requestSend(): void
+    {
+        Gate::forUser($this->actor())->authorize('pedidos.enviar');
+        $this->exigirGuardado();
+        $this->validate(['turnoId' => ['required', 'integer']]);
+        $pedido = $this->pedido();
+        $lineas = $pedido->detalles()->whereNull('detalle_padre_id')->where('estado', 'borrador')->count();
+        if (! $lineas) {
+            throw ValidationException::withMessages(['seguridad' => 'Guarda productos en borrador antes de confirmar.']);
+        }
+        $this->versionEnvio = $this->version;
+        $this->claveEnvio = (string) Str::uuid();
+        $this->turnoEnvio = (int) $this->turnoId;
+        $this->confirmar('Confirmar productos', 'Se reservarán las existencias de '.$lineas.' líneas nuevas. Los productos con destino se enviarán a Cocina o Barra; los de entrega directa quedarán disponibles para entregar.', 'confirmSend', 'Confirmar y enviar');
+    }
+
+    public function confirmSend(ConfirmarPedido $servicio): void
+    {
+        try {
+            $servicio->confirmar($this->actor(), $this->pedidoId, $this->turnoEnvio, $this->versionEnvio, $this->claveEnvio);
+        } catch (ValidationException $error) {
+            $this->notificar($error->validator->errors()->first(), 'error', toast: false);
+
+            return;
+        }
+        Alertas::flash('Productos confirmados. Existencias reservadas y envíos registrados.');
+        $this->redirectRoute('pos.pedido', $this->pedidoId, navigate: true);
+    }
+
+    public function requestDelivery(int $id): void
+    {
+        Gate::forUser($this->actor())->authorize('entregas.confirmar');
+        $this->exigirGuardado();
+        $this->validate(['cantidadesEntrega' => ['array'], 'cantidadesEntrega.*' => ['string', 'max:20']]);
+        $detalle = $this->pedido()->detalles()->findOrFail($id);
+        $this->detalleEntrega = $detalle->id;
+        $this->cantidadEntrega = CalculoProduccion::cantidad($this->cantidadesEntrega[$id] ?? '1');
+        $this->versionEntrega = $this->version;
+        $this->confirmar('Confirmar entrega', 'Se entregará '.Cantidad::mostrar($this->cantidadEntrega).' de '.$detalle->descripcion.' y se descontará esa cantidad de la existencia reservada.', 'confirmDelivery', 'Entregar');
+    }
+
+    public function confirmDelivery(GestionEntregas $gestion): void
+    {
+        try {
+            $gestion->entregar($this->actor(), $this->pedidoId, $this->detalleEntrega, $this->cantidadEntrega, $this->versionEntrega);
+        } catch (ValidationException $error) {
+            $this->notificar($error->validator->errors()->first(), 'error', toast: false);
+
+            return;
+        }
+        Alertas::flash('Entrega registrada. Existencias descontadas.');
+        $this->redirectRoute('pos.pedido', $this->pedidoId, navigate: true);
+    }
+
+    public function refreshPedido(): void
+    {
+        $this->pedido();
+        if (! hash_equals($this->formularioGuardado, $this->huellaFormulario())) {
+            $this->confirmar('Actualizar pedido', 'Los cambios del borrador que no guardaste se descartarán al actualizar.', 'confirmRefresh', 'Actualizar');
+
+            return;
+        }
+        $this->confirmRefresh();
+    }
+
+    public function confirmRefresh(): void
+    {
+        $this->pedido();
+        $this->redirectRoute('pos.pedido', $this->pedidoId, navigate: true);
+    }
+
     public function requestDiscard(): void
     {
         Gate::forUser($this->actor())->authorize('pedidos.editar');
@@ -184,7 +295,7 @@ class PedidoPantalla extends Component
     public function render(): View
     {
         $actor = $this->actor();
-        $pedido = $this->pedido()->load(['mesa.salon', 'mozo', 'delivery', 'detalles']);
+        $pedido = $this->pedido()->load(['mesa.salon', 'mozo', 'delivery', 'detalles.hijos', 'detalles.producto']);
         $catalogo = app(CatalogoPos::class)->consulta();
         $buscar = trim(mb_substr($this->search, 0, 100));
         if ($buscar !== '') {
@@ -222,10 +333,21 @@ class PedidoPantalla extends Component
         foreach ($pedido->detalles->whereNull('detalle_padre_id')->where('estado.value', 'confirmado') as $detalle) {
             $total = bcadd($total, bcmul(bcsub($detalle->cantidad, $detalle->cantidad_anulada, 4), $detalle->precio_unitario, 6), 2);
         }
-        $total = bcadd($total, $pedido->delivery ? $pedido->delivery->costo_envio : '0', 2);
+        $total = bcadd($total, $pedido->delivery && $pedido->estado->value !== 'anulado' ? $pedido->delivery->costo_envio : '0', 2);
+        $progreso = [];
+        $envios = EnvioCocinaDetalle::whereIn('pedido_detalle_id', $pedido->detalles->pluck('id'))->get()->groupBy('pedido_detalle_id');
+        foreach ($pedido->detalles->where('estado.value', 'confirmado') as $detalle) {
+            $lista = $detalle->area_preparacion_id ? '0' : bcsub($detalle->cantidad, $detalle->cantidad_anulada, 4);
+            $iniciada = '0';
+            foreach ($envios->get($detalle->id, collect()) as $envio) {
+                $lista = bcadd($lista, $envio->cantidad_lista, 4);
+                $iniciada = bcadd($iniciada, $envio->cantidad_iniciada, 4);
+            }
+            $progreso[$detalle->id] = ['lista' => $lista, 'iniciada' => $iniciada, 'entregable' => bcsub($lista, $detalle->cantidad_entregada, 4)];
+        }
 
         return view('livewire.pos.pedido-pantalla', ['pedido' => $pedido, 'productos' => $catalogo->paginate(18), 'seleccionados' => $seleccionados,
             'filasVista' => $filasVista, 'categorias' => CategoriaProducto::where('activo', true)->orderBy('orden')->get(), 'clientes' => $clientes, 'total' => $total,
-            'turnos' => TurnoCaja::with('caja')->where('estado', 'abierta')->whereHas('caja', fn ($q) => $q->where('activo', true))->get()]);
+            'progreso' => $progreso, 'turnos' => TurnoCaja::with('caja')->where('estado', 'abierta')->whereHas('caja', fn ($q) => $q->where('activo', true))->get()]);
     }
 }

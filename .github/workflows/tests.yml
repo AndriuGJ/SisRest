@@ -83,3 +83,7 @@ jobs:
       - name: Verify concurrent POS drafts
         if: matrix.database == 'mysql'
         run: php tests/Support/pos-concurrency.php
+
+      - name: Verify concurrent kitchen and deliveries
+        if: matrix.database == 'mysql'
+        run: php tests/Support/kitchen-concurrency.php

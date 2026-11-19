@@ -4,7 +4,7 @@ Base de un sistema de restaurante para un local, con dos cajas, atención en mes
 
 ## Estado
 
-Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores**, **Cajas y Arqueos**, **Clientes** y la **primera etapa del POS: pedidos en borrador**, implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. La confirmación de pedidos, Cocina, cobros y demás operaciones se implementarán en las siguientes entregas.
+Incluye la base de datos, dependencias y los módulos de **Usuarios y permisos**, **Salones y Mesas**, **Destinos de preparación**, **Impresoras**, **Insumos**, **Productos para la venta**, **Recetas**, **Preparación diaria**, **Compras y Proveedores**, **Cajas y Arqueos**, **Clientes**, **POS** y **Cocina/Barra**, implementados con Livewire y Spatie Laravel Permission. Conserva la plantilla Laravel + Livewire + Flux. POS ya confirma y reserva productos, Cocina registra el avance y la entrega descuenta existencias. Los cobros y demás operaciones se implementarán en las siguientes entregas.
 
 Las tablas soportan preparación real, reservas de existencias, combos por componentes, adicionales, cuentas divididas, pagos combinados, devoluciones y estados tributarios independientes. La presencia de estas tablas no significa que ya existan los servicios de cobros de ventas o emisión fiscal. La confirmación de compras y preparación diaria ya está implementada.
 
@@ -264,7 +264,7 @@ La migración `000063` agrega UUID de registro y usuario creador para impedir al
 4. **Guardar borrador** conserva precios del servidor, nombres, destinos y componentes del combo. Los componentes tienen precio cero para no cobrar dos veces. Cambiar después el precio o composición del catálogo no reescribe lo ya guardado. Se comprueba la disponibilidad del carrito completo, incluyendo componentes compartidos entre combos y productos individuales.
 5. Reabrir el pedido permite editar sus borradores. Se rechaza sobrescribir cambios de otra sesión. Las líneas confirmadas son de solo lectura, y pueden convivir con nuevas líneas en borrador sin reiniciar su preparación.
 
-**Guardar no reserva ni descuenta existencias, no envía a Cocina, no cobra ni imprime.** Distintos borradores pueden depender de las mismas existencias; la próxima etapa deberá comprobar y reservar al confirmar. El total es referencial, incluye el envío en delivery y todavía no constituye una venta ni un comprobante.
+**Guardar no reserva ni descuenta existencias, no envía a Cocina, no cobra ni imprime.** Distintos borradores pueden depender de las mismas existencias; la confirmación descrita a continuación vuelve a comprobar y reserva las cantidades. El total es referencial, incluye el envío en delivery y todavía no constituye una venta ni un comprobante.
 
 `pedidos.crear` autoriza apertura; `pedidos.editar`, guardar o descartar. `pedidos.ver_propios` limita al responsable/creador; `pedidos.ver_todos` amplía el alcance y permite asignar otro responsable habilitado. El pedido ajeno no se abre con un ID directo. Seleccionar/cambiar cliente exige `clientes.ver`; un mozo sin ese permiso no recibe el directorio. Los inactivos no se ofrecen para nuevas asignaciones y una referencia anterior se conserva.
 
@@ -273,6 +273,41 @@ La migración `000063` agrega UUID de registro y usuario creador para impedir al
 La migración `000064` agrega UUID, turno de apertura, nombres históricos y responsable/motivo de anulación al pedido, y factor del componente a sus detalles. Los campos nuevos son opcionales para registros anteriores. No hay permisos ni dependencias nuevas; actualizar con `php artisan migrate` y `npm run build`. La ruta autenticada de fotos admite `productos.ver` **o** `pos.ver`, sin conceder al mozo la gestión del catálogo.
 
 CI ejecuta `tests/Support/pos-concurrency.php` en MySQL: dos aperturas de una mesa, repetición del UUID de apertura, descarte repetido y ediciones concurrentes del mismo borrador. Se restringe al entorno testing y base desechable `sisrest_test`, y limpia sus propias filas.
+
+## Confirmación, Cocina y entregas
+
+Después de **Guardar borrador**, **Confirmar y enviar** (`pedidos.enviar`) pide confirmación SweetAlert2. Si hay cambios sin guardar, solicita guardarlos primero. Requiere un turno abierto de una caja activa y mantiene el alcance propio/general del pedido.
+
+- Revisa de nuevo estado, productos, destinos históricos y disponibilidad agregada. Si falta cualquier cantidad, revierte el lote completo.
+- Registra un lote con UUID, responsable, fecha y turno de confirmación. Repetir el mismo UUID devuelve el resultado original, sin duplicar reservas ni envíos.
+- Reserva cada producto preparado/reventa; el combo reserva sus componentes guardados, sin reservar ni cobrar otra vez la raíz. No vuelve a consumir ingredientes ni modifica efectivo.
+- Crea un envío por destino con las cantidades, nombres y notas de las líneas nuevas. Conserva el número de lote y nombre del destino. Los productos de entrega directa no generan envío y quedan listos para entregar.
+- Pedir más en la misma atención genera otro lote; las cantidades iniciadas/listas/entregadas de los anteriores permanecen intactas. Las líneas confirmadas no se editan como borrador.
+
+### Pantalla de Cocina
+
+`/cocina`, con `cocina.ver`, muestra envíos por orden de llegada y tiempo transcurrido. Filtra por destino (Cocina, Barra u otro) y pendientes de preparación, listos para entregar o todos sin entregar. Actualiza cada cinco segundos mediante Livewire, sin recargar la página completa; dispone también de actualización manual. No requiere acceso al POS ni muestra precios, clientes o importes de caja.
+
+Cada línea muestra descripción, cantidad, nota, combo de origen si aplica, pendientes de iniciar, preparando y listos. Indicar **Cantidad a procesar**; si se deja vacía se utiliza una unidad. Se admiten hasta cuatro decimales para componentes fraccionarios.
+
+- **Iniciar preparación** requiere `cocina.preparar` y no supera lo pendiente.
+- **Marcar listo** requiere `cocina.marcar_listo` y solo avanza cantidades ya iniciadas.
+- Cada acción vuelve a comprobar permisos, estado y versión de esa línea. Si otro equipo la modificó, no vuelve a aplicar la cantidad y solicita revisar el avance actualizado.
+- Preparar y marcar listo conservan existencias y reservas. No exigen mantener abierta la caja del envío.
+
+### Entrega desde el POS
+
+Los confirmados muestran cantidades listas y entregadas, con actualización cada cinco segundos. Con `entregas.confirmar` se indica cantidad y se acepta la confirmación SweetAlert2. Una nueva revisión conserva la cantidad elegida aunque se modifique el input después de abrir la alerta. **Actualizar pedido** permite volver a abrir la versión actual; si hay cambios sin guardar, pide confirmación antes de descartarlos.
+
+Solo se entrega lo confirmado: productos con destino necesitan cantidad lista en Cocina; entrega directa no necesita esa preparación. En una transacción consume la reserva, reduce existencia actual y reservada y registra un movimiento de salida `entrega` con cantidad/costo/responsable. No modifica el costo promedio ni genera dinero, venta, pago o comprobante. Una petición con la versión anterior no puede descontar nuevamente. El stock reservado para otros productos/pedidos permanece protegido.
+
+Los combos se entregan por componentes; la raíz muestra las unidades completas entregadas según sus factores históricos, sin otro movimiento de inventario. El pedido pasa a **Listo** cuando todo lo confirmado está listo y a **Entregado** cuando todo se entrega. Una nueva confirmación vuelve a reflejar lo que aún falta preparar. Entregar no cierra automáticamente la atención ni libera la mesa: falta liquidar su cuenta.
+
+La caja puede estar cerrada al terminar preparación/entrega de productos ya confirmados. Para agregar/guardar/confirmar nuevos productos se necesita un turno abierto. El seguimiento del reparto, asignación de repartidor/taxi, cobros/división de cuenta, descuentos, anulación de confirmados y movimientos de merma, impresión operativa y emisión fiscal se integrarán después. Los envíos de esta etapa son registros digitales para la pantalla de Cocina; **no imprimen comandas automáticamente**.
+
+La migración `2026_11_19_000065_create_confirmaciones_pedido.php` agrega los lotes, su vínculo con detalles/envíos y el nombre histórico del destino; conserva opcionales los vínculos de registros anteriores. Actualizar con `php artisan migrate` y `npm run build`. No hay permisos ni dependencias nuevas y no se cambian roles existentes.
+
+CI añade `tests/Support/kitchen-concurrency.php` en MySQL: confirmaciones que compiten por el stock, UUID de lote repetido, avance simultáneo de Cocina y entrega repetida. Usa procesos y barreras en entorno testing y base desechable `sisrest_test`. Comprueba también los movimientos y limpia solo sus datos.
 
 ## Alertas reutilizables
 

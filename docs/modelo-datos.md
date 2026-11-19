@@ -52,6 +52,7 @@ Las migraciones son la fuente de verdad del esquema. Esta guía explica su organ
 
 | Tabla | Modelo | Relaciones directas |
 | --- | --- | --- |
+| confirmaciones_pedido | ConfirmacionPedido | detalles → PedidoDetalle; pedido, turno y usuario por claves foráneas |
 | pedidos | Pedido | mesa → Mesa, mozo → User, cliente → Cliente, detalles → PedidoDetalle, cobros → Cobro, delivery → EntregaDelivery |
 | ocupaciones_mesa | OcupacionMesa | mesa → Mesa, pedido → Pedido |
 | entregas_delivery | EntregaDelivery | pedido → Pedido |
@@ -112,7 +113,7 @@ La plantilla mantiene users, sesiones, recuperación, cache, colas, passkeys y d
 
 ## Límites de esta entrega
 
-Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas, Preparación diaria, Compras, Proveedores, Cajas, Arqueos, Clientes y borradores POS disponen de pantallas Livewire y servicios. Las pruebas ESC/POS se registran por UUID con una instantánea de conexión y estados que distinguen envío, error y resultado incierto. Confirmar/reservar pedidos, Cocina y los cobros de ventas, entre otros módulos operativos, siguen pendientes. El esquema no sustituye la autorización en servidor, el bloqueo de filas, la validación de totales, el control de operaciones ya confirmadas ni los procedimientos tributarios.
+Usuarios y permisos, Salones y Mesas, Destinos de preparación, Impresoras, Insumos, Productos para la venta, Recetas, Preparación diaria, Compras, Proveedores, Cajas, Arqueos, Clientes, POS y Cocina/Barra disponen de pantallas Livewire y servicios. Las pruebas ESC/POS se registran por UUID con una instantánea de conexión y estados que distinguen envío, error y resultado incierto. Los cobros de ventas, anulación de confirmados, impresión operativa y otros módulos siguen pendientes. El esquema no sustituye la autorización en servidor, el bloqueo de filas, la validación de totales, el control de operaciones ya confirmadas ni los procedimientos tributarios.
 
 Las compras conservan UUID de registro, datos de proveedor/documento, responsables de confirmación/anulación y motivo del borrador anulado. El detalle conserva unidad y nombre de presentación además de su factor. Los pagos conservan el nombre del medio, origen y turno solo cuando el dinero sale físicamente de caja. No se borran recepciones ni pagos para corregir saldos.
 
@@ -121,3 +122,5 @@ Los turnos conservan UUID de apertura, caja/responsable de ese momento y usuario
 Clientes conserva un UUID de alta y el usuario creador desde la migración 000063, sin rellenar autorías antiguas. El documento es único por tipo/número y los vínculos de pedidos/cobros se conservan al desactivar. La actualización de identidad utilizada se protege en el servicio; los documentos fiscales deberán conservar además su instantánea del receptor.
 
 Desde la migración 000064, pedidos conserva UUID de apertura, turno de origen, nombres de salón/mesa/mozo y motivo/autor de anulación. Los registros anteriores mantienen esos campos opcionales. Una ocupación se crea al abrir mesa; descartar conserva el pedido anulado y libera su ocupación. Los detalles en borrador conservan precio, nombre y destino; los componentes de combo guardan además su factor para recalcular cantidad sin cambiar la receta histórica. Guardar no genera reservas, envíos, cobros ni movimientos; las líneas confirmadas son de solo lectura. El total de pantalla incluye envío en delivery y todavía es referencial.
+
+Desde la migración 000065, `confirmaciones_pedido` conserva UUID, pedido, turno, usuario, número de lote y fecha. Detalles y envíos se vinculan opcionalmente al lote; los envíos guardan además el nombre del destino. Los históricos no reciben lotes ni reservas ficticias. Cada hoja confirmada reserva su artículo y un combo usa sus componentes históricos. Cocina conserva acumulados iniciada/lista/entregada por línea del envío; productos directos no generan envío. La entrega consume la reserva y registra salida, sin cobro. El padre combo refleja unidades completas entregadas y no duplica inventario. Estado de atención, pago y reparto son independientes.

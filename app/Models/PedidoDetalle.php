@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
+ * @property int|null $confirmacion_pedido_id
  * @property int $pedido_id
  * @property int $producto_id
  * @property int|null $detalle_padre_id
@@ -41,6 +42,7 @@ class PedidoDetalle extends Model
     protected $table = 'pedido_detalles';
 
     protected $fillable = [
+        'confirmacion_pedido_id',
         'factor_componente',
         'pedido_id',
         'producto_id',
