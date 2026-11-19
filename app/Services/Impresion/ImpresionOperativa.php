@@ -49,7 +49,11 @@ class ImpresionOperativa
             $enviar = false; // Una transacción reintentada debe volver a adquirir el envío.
             if ($existente = TrabajoImpresion::where('clave_idempotencia', $clave)->lockForUpdate()->first()) {
                 AccesoImpresion::trabajo($actor, $existente);
-                abort_unless($existente->usuario_id === $actor->id && $existente->solicitud === $solicitud && ($existente->reimpresion_de_id ?? 0) === $copiaId, 403);
+                // MySQL normaliza las claves JSON: comparar cada valor y tipo, sin depender de su orden.
+                abort_unless($existente->usuario_id === $actor->id && $existente->solicitud !== null
+                    && $existente->solicitud['tipo'] === $solicitud['tipo'] && $existente->solicitud['id'] === $solicitud['id']
+                    && $existente->solicitud['caja'] === $solicitud['caja'] && $existente->solicitud['area'] === $solicitud['area']
+                    && ($existente->reimpresion_de_id ?? 0) === $copiaId, 403);
 
                 return $existente;
             }

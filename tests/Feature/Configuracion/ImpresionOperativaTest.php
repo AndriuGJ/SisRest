@@ -502,3 +502,18 @@ test('editing printer connection or paper preserves its existing cash-box assign
     $copia = imprimirOperativo($this->actor, $solicitud, $original->id);
     expect($copia->estado->value)->toBe('enviado')->and($copia->configuracion['ancho_mm'])->toBe(58)->and($original->fresh()->configuracion['puerto'])->toBe(19102);
 });
+
+test('request identity compares typed JSON fields independently of object key order', function () {
+    $pedido = cuentaCobrosImpresion($this->actor, $this->turno, [$this->chaufa->id => 1]);
+    $s = solicitudImpresion('comanda', EnvioCocina::first()->id);
+    $g = app(ImpresionOperativa::class);
+    $plan = $g->previsualizar($this->actor, $s);
+    $clave = (string) Str::uuid();
+    $this->transporte->shouldReceive('enviar')->once();
+    $original = $g->imprimir($this->actor, $s, 0, '', $clave, $plan['huella']);
+    $reordenada = ['area' => $s['area'], 'caja' => $s['caja'], 'id' => $s['id'], 'tipo' => $s['tipo']];
+    expect($g->imprimir($this->actor, $reordenada, 0, '', $clave, $plan['huella'])->id)->toBe($original->id)->and(TrabajoImpresion::count())->toBe(1);
+    $otraCaja = $reordenada;
+    $otraCaja['caja'] = $this->turno->caja_id;
+    expect(fn () => $g->imprimir($this->actor, $otraCaja, 0, '', $clave, $plan['huella']))->toThrow(HttpException::class);
+});
