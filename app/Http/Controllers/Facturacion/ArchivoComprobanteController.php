@@ -9,6 +9,7 @@ use App\Services\Facturacion\RepresentacionFiscal;
 use App\Services\Facturacion\XmlFiscal;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -20,6 +21,7 @@ class ArchivoComprobanteController
         abort_unless($actor instanceof User, 403);
         AccesoFacturacion::cobro($actor, $comprobante->cobro()->firstOrFail());
         if ($archivo === 'pdf') {
+            File::ensureDirectoryExists((string) config('dompdf.options.font_cache', storage_path('fonts')));
             $representacion = app(RepresentacionFiscal::class);
 
             return Pdf::loadView('facturacion.comprobante', ['c' => $comprobante->load('detalles'), 'contenido' => $representacion->contenido($comprobante), 'qr' => $representacion->qrImagen($comprobante)])

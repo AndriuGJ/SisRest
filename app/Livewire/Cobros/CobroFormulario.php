@@ -5,20 +5,26 @@ namespace App\Livewire\Cobros;
 use App\Concerns\ConAlertas;
 use App\Models\Cliente;
 use App\Models\Cobro;
+use App\Models\Comprobante;
 use App\Models\ConfiguracionFacturacion;
 use App\Models\MedioPago;
 use App\Models\MotivoBeneficio;
 use App\Models\Pedido;
 use App\Models\PedidoDetalle;
+use App\Models\ProcesoCobro;
 use App\Models\SerieComprobante;
+use App\Models\TipoDocumentoIdentidad;
+use App\Models\TrabajoImpresion;
 use App\Models\User;
 use App\Services\Cajas\AccesoCajas;
+use App\Services\Clientes\GestionClientes;
 use App\Services\Cobros\CalculoBeneficios;
 use App\Services\Cobros\EstadoCuenta;
 use App\Services\Cobros\GestionCobros;
+use App\Services\Cobros\ProcesarVenta;
 use App\Services\Compras\ImportesCompra;
+use App\Services\Facturacion\ReglasFiscales;
 use App\Services\Pos\AccesoPos;
-use App\Support\Alertas;
 use App\Support\Cantidad;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection;
@@ -31,6 +37,7 @@ use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
+/** @phpstan-import-type Fiscal from ProcesarVenta */
 #[Layout('layouts.cobro')]
 #[Title('Cobrar y dividir cuenta')]
 class CobroFormulario extends Component
@@ -50,6 +57,39 @@ class CobroFormulario extends Component
     public bool $pagoMixto = false;
 
     public string $documento = 'interno';
+
+    public string $serieId = '';
+
+    /** @var array<int|string,string> */
+    public array $afectaciones = [];
+
+    public bool $showChargeReview = false;
+
+    public bool $showNewClient = false;
+
+    public string $nuevoTipoId = '';
+
+    public string $nuevoNumero = '';
+
+    public string $nuevoNombre = '';
+
+    public string $nuevoDireccion = '';
+
+    #[Locked]
+    public string $claveCliente = '';
+
+    /** @var Fiscal|array{} */
+    #[Locked]
+    public array $fiscalRevisado = [];
+
+    #[Locked]
+    public string $formularioRevisado = '';
+
+    #[Locked]
+    public bool $puedeLiberar = false;
+
+    #[Locked]
+    public int $cobroResultado = 0;
 
     #[Locked]
     public string $documentoRevisado = 'interno';
@@ -120,6 +160,13 @@ class CobroFormulario extends Component
     {
         $this->pedidoId = $pedido->id;
         $this->pedido();
+        $resultado = request()->query('cobro');
+        if (is_string($resultado) && ctype_digit($resultado)) {
+            $this->cobroResultado = (int) $resultado;
+            $this->cobroRegistrado();
+
+            return;
+        }
         $this->clienteId = (string) ($pedido->cliente_id ?? '');
         $this->turnoId = (string) (AccesoCajas::consulta($this->actor())->where('estado', 'abierta')->whereHas('caja', fn ($q) => $q->where('activo', true))->orderBy('id')->value('id') ?? '');
         $this->incluirEnvio = bccomp(EstadoCuenta::envioPendiente($pedido), '0', 2) > 0;
@@ -245,10 +292,54 @@ class CobroFormulario extends Component
         $this->pagos[$clave]['entregado'] = $valor === 'exacto' ? $this->pagos[$clave]['monto'] : $valor;
     }
 
-    public function review(GestionCobros $gestion): void
+    public function updatedDocumento(): void
+    {
+        $config = ConfiguracionFacturacion::first();
+        $this->serieId = (string) (SerieComprobante::where('activo', true)->where('entorno', $config?->entorno->value)->whereHas('tipoComprobante', fn ($q) => $q->where('activo', true)->where('codigo', $this->documento))->orderBy('id')->value('id') ?? '');
+        $this->showChargeReview = false;
+    }
+
+    public function updatedTurnoId(): void
+    {
+        if ($this->showChargeReview) {
+            $this->review(app(GestionCobros::class), app(ProcesarVenta::class));
+        }
+    }
+
+    private function huellaFormulario(): string
+    {
+        return hash('sha256', serialize([$this->clienteId, $this->grupoPagador, $this->incluirEnvio, $this->descuentoTipo, $this->descuentoValor, $this->motivoId, $this->motivoDetalle, $this->cantidades, $this->pagos, $this->documento, $this->serieId, $this->afectaciones]));
+    }
+
+    public function abrirCliente(): void
+    {
+        Gate::forUser($this->actor())->authorize('clientes.crear');
+        Gate::forUser($this->actor())->authorize('clientes.ver');
+        $this->resetValidation();
+        $this->nuevoTipoId = (string) (TipoDocumentoIdentidad::where('activo', true)->where('codigo', $this->documento === '01' ? '6' : '1')->value('id') ?? '');
+        $this->nuevoNumero = $this->nuevoNombre = $this->nuevoDireccion = '';
+        $this->claveCliente = (string) Str::uuid();
+        $this->showNewClient = true;
+    }
+
+    public function guardarCliente(GestionClientes $gestion): void
     {
         $this->resetValidation();
-        $this->validate(['documento' => ['required', 'in:interno,01,03'], 'turnoId' => ['required', 'integer'], 'cantidades' => ['array', 'max:1000'], 'cantidades.*' => ['string', 'max:20'], 'pagos' => ['array'], 'pagos.*' => ['array:medioId,monto,entregado,referencia'], 'pagos.*.medioId' => ['present', 'string', 'max:20'], 'pagos.*.monto' => ['present', 'string', 'max:20'], 'pagos.*.entregado' => ['present', 'string', 'max:20'], 'pagos.*.referencia' => ['present', 'string', 'max:150']]);
+        $this->validate(['nuevoTipoId' => ['required', 'integer'], 'nuevoNumero' => ['required', 'string', 'max:20'], 'nuevoNombre' => ['required', 'string', 'max:200'], 'nuevoDireccion' => ['string', 'max:250']]);
+        $tipo = TipoDocumentoIdentidad::where('activo', true)->whereIn('codigo', ['1', '6'])->findOrFail($this->nuevoTipoId);
+        if ($tipo->codigo === '6' && ! ReglasFiscales::ruc($this->nuevoNumero)) {
+            throw ValidationException::withMessages(['nuevoNumero' => 'El RUC no es válido.']);
+        }
+        $cliente = $gestion->guardar($this->actor(), null, $this->claveCliente, ['tipo' => $tipo->codigo === '6' ? 'empresa' : 'persona', 'nombre' => $this->nuevoNombre, 'tipoId' => $this->nuevoTipoId, 'numero' => $this->nuevoNumero, 'direccion' => $this->nuevoDireccion, 'telefono' => '', 'correo' => '', 'activo' => true]);
+        $this->clienteId = (string) $cliente->id;
+        $this->clienteSearch = $cliente->numero_documento ?? $cliente->nombre;
+        $this->showNewClient = false;
+    }
+
+    public function review(GestionCobros $gestion, ProcesarVenta $venta): void
+    {
+        $this->resetValidation();
+        $this->validate(['afectaciones' => ['array'], 'afectaciones.*' => ['string', 'max:2'], 'documento' => ['required', 'in:interno,01,03'], 'turnoId' => ['required', 'integer'], 'cantidades' => ['array', 'max:1000'], 'cantidades.*' => ['string', 'max:20'], 'pagos' => ['array'], 'pagos.*' => ['array:medioId,monto,entregado,referencia'], 'pagos.*.medioId' => ['present', 'string', 'max:20'], 'pagos.*.monto' => ['present', 'string', 'max:20'], 'pagos.*.entregado' => ['present', 'string', 'max:20'], 'pagos.*.referencia' => ['present', 'string', 'max:150']]);
         $seleccion = [];
         foreach ($this->cantidades as $id => $cantidad) {
             if ($cantidad !== '' && $cantidad !== '0') {
@@ -265,16 +356,15 @@ class CobroFormulario extends Component
             $pagos[$clave] = $fila;
         }
         $plan = $gestion->previsualizar($this->actor(), $this->pedidoId, (int) $this->turnoId, $datos, $seleccion, $pagos);
-        if ($this->documento !== 'interno') {
-            Gate::forUser($this->actor())->authorize('comprobantes.emitir');
-            $config = ConfiguracionFacturacion::firstOrFail();
-            if (! $config->habilitada || ! SerieComprobante::where('activo', true)->where('entorno', $config->entorno->value)->whereHas('tipoComprobante', fn ($q) => $q->where('activo', true)->where('codigo', $this->documento))->exists()) {
-                throw ValidationException::withMessages(['documento' => 'Habilita la facturación y una serie del documento elegido antes de cobrar, o elige Nota de venta.']);
-            }
-            if ($this->documento === '01' && (! preg_match('/^[0-9]{11}$/', $plan['cliente']['documento'] ?? '') || trim($plan['cliente']['direccion'] ?? '') === '')) {
-                throw ValidationException::withMessages(['clienteId' => 'Para factura selecciona un cliente con RUC y dirección.']);
-            }
+        if ($this->documento !== 'interno' && $this->serieId === '') {
+            $this->updatedDocumento();
         }
+        $this->fiscalRevisado = $venta->fiscal($this->actor(), $plan, $this->documento, $this->serieId, $this->afectaciones);
+        $turno = AccesoCajas::consulta($this->actor())->findOrFail($this->turnoId);
+        $this->showChargeReview = true;
+        $venta->impresora($this->actor(), $turno->caja_id);
+        $this->puedeLiberar = $venta->cubreCuenta($this->pedido(), $seleccion, $this->incluirEnvio);
+        $this->formularioRevisado = $this->huellaFormulario();
         $this->documentoRevisado = $this->documento;
         $this->revision = $plan;
         $this->clave = (string) Str::uuid();
@@ -283,31 +373,37 @@ class CobroFormulario extends Component
         $this->seleccionRevisada = $seleccion;
         $this->pagosRevisados = $pagos;
         $this->turnoRevisado = (int) $this->turnoId;
-        $this->confirmar('Registrar cobro', 'Total: S/ '.$plan['total'].'. Efectivo aplicado: S/ '.$plan['efectivo'].'. Digital: S/ '.$plan['digital'].'. Vuelto: S/ '.$plan['vuelto'].'. Solo se liquidarán los productos y el envío revisados.', 'confirmCharge', 'Cobrar S/ '.$plan['total']);
+        $this->showChargeReview = true;
     }
 
-    public function confirmCharge(GestionCobros $gestion): void
+    public function confirmCharge(bool $liberar = false): void
     {
-        $actor = $this->actor();
-        if ($this->datosRevisados === [] || $this->huellaRevisada === '' || $this->clave === '' || $this->turnoRevisado <= 0) {
-            $this->notificar('Vuelve a revisar el cobro antes de confirmar.', 'warning', toast: false);
-
-            return;
+        if ($this->datosRevisados === [] || $this->fiscalRevisado === [] || $this->clave === '' || $this->turnoRevisado !== (int) $this->turnoId || ! hash_equals($this->formularioRevisado, $this->huellaFormulario())) {
+            throw ValidationException::withMessages(['seguridad' => 'Revisa nuevamente el cobro antes de confirmar.']);
         }
-        try {
-            $cobro = $gestion->cobrar($actor, $this->pedidoId, $this->turnoRevisado, $this->clave, $this->huellaRevisada, $this->datosRevisados, $this->seleccionRevisada, $this->pagosRevisados);
-        } catch (ValidationException $error) {
-            $this->notificar($error->validator->errors()->first(), 'error', toast: false);
+        $this->showChargeReview = false;
+        $venta = app(ProcesarVenta::class);
+        $proceso = $venta->registrar($this->actor(), $this->pedidoId, $this->turnoRevisado, $this->clave, $this->huellaRevisada, $this->datosRevisados, $this->seleccionRevisada, $this->pagosRevisados, $this->fiscalRevisado, $liberar);
+        $this->cobroResultado = $proceso->cobro_id;
+        $venta->continuar($this->actor(), $proceso->id);
+        $this->redirectRoute('pos.cobrar', ['pedido' => $this->pedidoId, 'cobro' => $proceso->cobro_id], navigate: true);
+    }
 
-            return;
-        }
-        Alertas::flash('Cobro registrado.');
-        if ($this->documentoRevisado !== 'interno') {
-            $this->redirectRoute('pos.emitir', ['cobro' => $cobro->id, 'documento' => $this->documentoRevisado], navigate: true);
+    private function cobroRegistrado(): Cobro
+    {
+        $cobro = Cobro::with('pagos')->findOrFail($this->cobroResultado);
+        abort_unless($cobro->pedido_id === $this->pedidoId, 404);
+        AccesoPos::pedido($this->actor(), $cobro->pedido);
+        AccesoCajas::turno($this->actor(), $cobro->turnoCaja);
 
-            return;
-        }
-        $this->redirectRoute('pos.cobro', $cobro, navigate: true);
+        return $cobro;
+    }
+
+    public function reintentarProceso(ProcesarVenta $venta): void
+    {
+        $cobro = $this->cobroRegistrado();
+        $proceso = ProcesoCobro::where('cobro_id', $cobro->id)->firstOrFail();
+        $venta->continuar($this->actor(), $proceso->id);
     }
 
     /** @return numeric-string */
@@ -380,6 +476,12 @@ class CobroFormulario extends Component
     {
         $actor = $this->actor();
         $pedido = $this->pedido()->load('detalles');
+        if ($this->cobroResultado > 0) {
+            $cobro = $this->cobroRegistrado();
+            $proceso = ProcesoCobro::where('cobro_id', $cobro->id)->first();
+
+            return view('livewire.cobros.resultado', ['pedido' => $pedido, 'cobro' => $cobro, 'proceso' => $proceso, 'trabajo' => $proceso?->trabajo_impresion_id ? TrabajoImpresion::find($proceso->trabajo_impresion_id) : null, 'comprobante' => $proceso?->comprobante_id ? Comprobante::find($proceso->comprobante_id) : null, 'pagada' => EstadoCuenta::liquidada($pedido)]);
+        }
         $resumen = $this->resumenSeleccion($pedido);
         $clientes = collect();
         if ($actor->can('clientes.ver')) {
@@ -418,8 +520,13 @@ class CobroFormulario extends Component
         $turnosQuery = AccesoCajas::consulta($actor);
         $historial = Cobro::where('pedido_id', $pedido->id)->whereIn('turno_caja_id', (clone $turnosQuery)->select('id'))->latest('id')->get();
 
+        $config = ConfiguracionFacturacion::first();
+
         return view('livewire.cobros.formulario', $resumen + ['pedido' => $pedido,
+            'series' => SerieComprobante::with('tipoComprobante')->where('activo', true)->where('entorno', $config?->entorno->value)->whereHas('tipoComprobante', fn ($q) => $q->where('activo', true)->where('codigo', $this->documento))->orderBy('serie')->get(),
+            'opcionesFiscales' => ReglasFiscales::AFECTACIONES,
+            'tiposCliente' => TipoDocumentoIdentidad::where('activo', true)->whereIn('codigo', ['1', '6'])->get(),
             'motivosBeneficio' => MotivoBeneficio::where('activo', true)->whereIn('tipo', ['descuento', 'ambos'])->orderBy('nombre')->get(), 'medios' => $medios, 'clientes' => $clientes, 'pagosVista' => $pagosVista, 'aplicado' => $aplicado, 'efectivo' => $efectivo, 'vuelto' => $vuelto,
-            'turnos' => $turnosQuery->with('caja')->where('estado', 'abierta')->whereHas('caja', fn ($q) => $q->where('activo', true))->get(), 'historial' => $historial]);
+            'turnos' => $turnosQuery->with('caja.impresora')->where('estado', 'abierta')->whereHas('caja', fn ($q) => $q->where('activo', true))->get(), 'historial' => $historial]);
     }
 }

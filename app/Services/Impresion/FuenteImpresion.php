@@ -10,6 +10,7 @@ use App\Models\Empresa;
 use App\Models\EnvioCocina;
 use App\Models\Pedido;
 use App\Models\PedidoDetalle;
+use App\Models\ProcesoCobro;
 use App\Models\ResolucionDevolucion;
 use App\Models\User;
 use App\Services\Cobros\CalculoBeneficios;
@@ -211,7 +212,7 @@ class FuenteImpresion
         if ($cobro->estado->value !== 'confirmado') {
             throw ValidationException::withMessages(['impresion' => 'Solo se imprimen tickets de cobros confirmados.']);
         }
-        $base['titulo'] = 'TICKET DE COBRO';
+        $base['titulo'] = ProcesoCobro::where('cobro_id', $cobro->id)->where('documento', 'interno')->exists() ? 'NOTA DE VENTA' : 'TICKET DE COBRO';
         $base['referencia'] = $cobro->codigo;
         $base['fecha'] = $cobro->cobrado_at?->timezone('America/Lima')->format('d/m/Y H:i') ?? '';
         $base['datos'][] = 'Caja: '.($cobro->caja_nombre ?? $cobro->turnoCaja->caja->nombre);

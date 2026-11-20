@@ -97,6 +97,11 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('cocina', Cocina::class)->middleware('permission:cocina.ver')->name('cocina.index');
 
+    Route::middleware('permission:pos.ver')->prefix('ventas')->name('ventas.')->group(function () {
+        Route::get('cobros', HistorialCobros::class)->middleware('permission:cobros.crear|devoluciones.crear')->name('cobros');
+        Route::get('cobros/{cobro}', CobroDetallePantalla::class)->middleware('permission:cobros.crear')->name('cobro');
+    });
+
     Route::middleware('permission:pos.ver')->prefix('pos')->name('pos.')->group(function () {
         Route::get('/', Pos::class)->name('index');
         Route::get('atenciones', PedidosAtencion::class)->name('atenciones');

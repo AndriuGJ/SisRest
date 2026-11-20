@@ -1,4 +1,5 @@
-<div class="mx-auto max-w-5xl space-y-5">
+<div class="mx-auto max-w-5xl space-y-5"><flux:button href="{{ route('ventas.cobros') }}" wire:navigate icon="arrow-left">Volver a cobros de Ventas</flux:button>
+@if(\App\Models\ProcesoCobro::where('cobro_id',$cobro->id)->exists())<flux:button href="{{ route('pos.cobrar',['pedido'=>$cobro->pedido_id,'cobro'=>$cobro->id]) }}" wire:navigate>Ver resultado / proceso pendiente</flux:button>@endif
     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><flux:heading level="1" size="xl">Cobro registrado</flux:heading><flux:text class="mt-1">{{ $cobro->codigo }} · {{ $cobro->cobrado_at?->format('d/m/Y H:i') }}</flux:text></div><div class="flex flex-wrap gap-2">@can('impresion.tickets')<flux:button href="{{ route('pos.imprimir-cobro',$cobro) }}" wire:navigate icon="printer">Imprimir ticket</flux:button>@endcan
         @can('comprobantes.ver')
             @if($cobro->comprobante)<flux:button href="{{ route('comprobantes.ver',$cobro->comprobante) }}" wire:navigate>Ver comprobante</flux:button>

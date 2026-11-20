@@ -25,6 +25,7 @@ use App\Services\Cajas\ResumenTurno;
 use App\Services\Cobros\CerrarAtencion;
 use App\Services\Cobros\EstadoCuenta;
 use App\Services\Cobros\GestionCobros;
+use App\Services\Impresion\TransporteEscPos;
 use App\Services\Pos\ConfirmarPedido;
 use App\Services\Pos\GestionEntregas;
 use App\Services\Pos\GestionPedidos;
@@ -42,6 +43,10 @@ beforeEach(function () {
     $this->actor = User::factory()->create();
     $this->actor->assignRole('administrador');
     $this->actingAs($this->actor);
+    foreach (Caja::with('impresora')->get() as $caja) {
+        $caja->impresora->update(['host' => '127.0.0.1', 'puerto' => 19102 + $caja->id, 'activo' => true]);
+    }
+    $this->spy(TransporteEscPos::class);
     $this->turno = app(GestionCajas::class)->abrir($this->actor, Caja::firstOrFail()->id, $this->actor->id, '100', '', (string) Str::uuid());
     $this->chaufa = Producto::where('codigo', 'EJ-CHAUFA')->firstOrFail();
     $this->gaseosa = Producto::where('codigo', 'EJ-GASEOSA')->firstOrFail();
@@ -324,13 +329,15 @@ test('unpaid shipping drafts stale closure and missing release permission preven
     expect(fn () => app(CerrarAtencion::class)->cerrar($actor, $mesaPedido->id, EstadoCuenta::huella($mesaPedido->fresh())))->toThrow(AuthorizationException::class);
 });
 
-test('livewire locks the reviewed collection while subsequent input changes do not alter what was accepted', function () {
+test('livewire requires a new review after input changes and protects locked collection state', function () {
     $pedido = cuentaCobros($this->actor, $this->turno, [$this->gaseosa->id => 2]);
     $id = $pedido->detalles()->first()->id;
     $pantalla = Livewire::test(CobroFormulario::class, ['pedido' => $pedido]);
     $clave = array_key_first($pantalla->get('pagos'));
-    $pantalla->set('cantidades.'.$id, '1')->set('grupoPagador', 'Grupo revisado')->set('pagos.'.$clave, pagoCobros('efectivo', '6', '10'))->call('review')->assertDispatched('app:confirm')
-        ->set('cantidades.'.$id, '2')->set('grupoPagador', 'Cambio posterior')->set('pagos.'.$clave.'.monto', '12')->call('confirmCharge');
+    $pantalla->set('cantidades.'.$id, '1')->set('grupoPagador', 'Grupo revisado')->set('pagos.'.$clave, pagoCobros('efectivo', '6', '10'))->call('review')->assertSet('showChargeReview', true)
+        ->set('cantidades.'.$id, '2')->set('grupoPagador', 'Cambio posterior')->set('pagos.'.$clave.'.monto', '12')->call('confirmCharge')->assertHasErrors('seguridad');
+    expect(Cobro::count())->toBe(0);
+    $pantalla->set('cantidades.'.$id, '1')->set('grupoPagador', 'Grupo revisado')->set('pagos.'.$clave, pagoCobros('efectivo', '6', '10'))->call('review')->assertHasNoErrors()->call('confirmCharge')->assertHasNoErrors();
     $cobro = Cobro::firstOrFail();
     expect($cobro->total)->toBe('6.00')->and($cobro->grupo_pagador)->toBe('Grupo revisado')->and($cobro->pagos()->first()->vuelto)->toBe('4.00');
     expect(fn () => Livewire::test(CobroFormulario::class, ['pedido' => $pedido->fresh()])->set('turnoRevisado', 999))->toThrow(CannotUpdateLockedPropertyException::class);
@@ -400,15 +407,15 @@ test('cashier completes a reviewed partial collection from the second cash box',
     $this->actingAs($cajero);
     $pantalla = Livewire::test(CobroFormulario::class, ['pedido' => $pedido->fresh()]);
     $clave = array_key_first($pantalla->get('pagos'));
-    $pantalla->set('pagos.'.$clave, pagoCobros('efectivo', '6', '10'))->call('review')->assertDispatched('app:confirm')->call('confirmCharge');
+    $pantalla->set('pagos.'.$clave, pagoCobros('efectivo', '6', '10'))->call('review')->assertSet('showChargeReview', true)->call('confirmCharge');
     $cobro = Cobro::latest('id')->firstOrFail();
     expect($cobro->turno_caja_id)->toBe($turnoDos->id)->and($turnoDos->efectivoEsperado())->toBe('26.00');
-    $pantalla->assertRedirect(route('pos.cobro', $cobro));
+    $pantalla->assertRedirect(route('pos.cobrar', ['pedido' => $pedido->id, 'cobro' => $cobro->id]));
 });
 
 test('confirmation without a reviewed state requests another review without writing money', function () {
     $pedido = cuentaCobros($this->actor, $this->turno, [$this->gaseosa->id => 1]);
-    Livewire::test(CobroFormulario::class, ['pedido' => $pedido])->call('confirmCharge')->assertDispatched('app:alert');
+    Livewire::test(CobroFormulario::class, ['pedido' => $pedido])->call('confirmCharge')->assertHasErrors('seguridad');
     expect(Cobro::count())->toBe(0)->and(MovimientoCaja::count())->toBe(0);
 });
 
@@ -472,7 +479,7 @@ test('preloaded mixed checkout records only used methods and accepts empty and z
     expect(count($pantalla->get('pagos')))->toBe(MedioPago::where('activo', true)->count());
     $pantalla->set('pagos.m-'.$cash->id.'.monto', '20')
         ->set('pagos.m-'.$yape->id.'.monto', '6')->set('pagos.m-'.$yape->id.'.referencia', 'OP-MIXTO')
-        ->set('pagos.m-'.$plin->id.'.monto', '0')->call('review')->assertHasNoErrors()->assertDispatched('app:confirm')
+        ->set('pagos.m-'.$plin->id.'.monto', '0')->call('review')->assertHasNoErrors()->assertSet('showChargeReview', true)
         ->call('confirmCharge')->assertHasNoErrors();
     expect(Cobro::firstOrFail()->total)->toBe('26.00')->and(Pago::count())->toBe(2)
         ->and(MovimientoCaja::firstOrFail()->monto)->toBe('20.00')

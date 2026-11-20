@@ -383,7 +383,7 @@ CI añade `tests/Support/pos-adjustments-concurrency.php` en MySQL: anulación f
 
 ## Devoluciones de cobros y productos
 
-En **POS → Historial de cobros** se buscan registros por código de cobro/pedido, grupo, cliente o documento, incluidos turnos y atenciones cerrados, con filtro de devoluciones y alcance de pedidos/cajas. Desde el detalle de un cobro, **Devolver productos / pago** abre `/pos/cobros/{cobro}/devolver`. Requiere `devoluciones.crear`, acceso al pedido, al turno del cobro original y al turno actual. El administrador puede conceder este permiso; el rol cajero no lo recibe automáticamente.
+En **Ventas → Cobros** se buscan registros por código de cobro/pedido, grupo, cliente o documento, incluidos turnos y atenciones cerrados, con filtro de devoluciones y alcance de pedidos/cajas. Desde el detalle de un cobro, **Devolver productos / pago** abre `/pos/cobros/{cobro}/devolver`. Requiere `devoluciones.crear`, acceso al pedido, al turno del cobro original y al turno actual. El administrador puede conceder este permiso; el rol cajero no lo recibe automáticamente.
 
 1. Indicar cantidades enteras del cobro original aún no devueltas. Se calcula su **neto realmente cobrado**, incluidos los descuentos por producto y generales; las devoluciones parciales distribuyen los céntimos restantes sin superar el original. Puede devolverse también el cargo de envío completo restante, incluso sin productos.
 2. Registrar los importes reintegrados por cada **pago original**. Se conserva el medio y su condición histórica de efectivo; cada importe se limita a lo aplicado menos devoluciones anteriores. El vuelto recibido originalmente no es reintegrable. En esta etapa no se cambia de medio. Si la configuración actual exige referencia, registrar la referencia de la nueva devolución, aunque el medio esté inactivo.
@@ -428,7 +428,7 @@ La impresión operativa usa ESC/POS por TCP desde PHP. Funciona con el servidor 
 4. Desde el detalle del cobro, **Imprimir ticket** abre el documento de ese cobro y sus pagos originales. Incluye productos, descuentos/cortesías, envío, total, medios combinados, referencia y efectivo recibido/vuelto. Puede imprimirse con el turno original ya cerrado; no recibe otro pago. La salida puede dirigirse a otra caja activa autorizada.
 5. Revisar el documento, pulsar **Imprimir documento** y aceptar SweetAlert2. Se registra primero la solicitud y luego se envían los bytes fuera de la transacción de base de datos. Cancelar la confirmación no envía nada. Un error de impresión conserva pedido, inventario, cobro y pagos.
 
-Confirmar productos y registrar cobros no imprimen automáticamente. El usuario solicita cada documento revisado. El ticket es **interno**, no una boleta/factura, y no cambia el estado en SUNAT. La cabecera usa los datos disponibles de Empresa; no se inventa un desglose de IGV. Texto ASCII y fuente incorporada en la impresora evitan depender de fuentes del navegador; las tildes se transliteran. La salida física y el corte deben comprobarse en el modelo concreto del restaurante.
+Confirmar productos no imprime automáticamente. El cobro integrado sí imprime el documento elegido tras su revisión; desde el historial también se pueden solicitar documentos y copias revisadas. El ticket es **interno**, no una boleta/factura, y no cambia el estado en SUNAT. La cabecera usa los datos disponibles de Empresa; no se inventa un desglose de IGV. Texto ASCII y fuente incorporada en la impresora evitan depender de fuentes del navegador; las tildes se transliteran. La salida física y el corte deben comprobarse en el modelo concreto del restaurante.
 
 ### Lotes, anulaciones y copias
 
@@ -496,7 +496,7 @@ Tipos: `success`, `error`, `warning`, `info` y `question`. Los textos se muestra
 
 ## Facturación electrónica: boletas y facturas
 
-Se emite desde **POS → detalle del cobro → Emitir boleta / factura**. El historial general está en **Ventas → Comprobantes** (`/comprobantes`). La configuración está en **Config. sistema → Empresa y facturación** (`/configuracion/sistema/facturacion`). No se repite la navegación del sidebar en las cabeceras.
+La emisión habitual se integra en **POS → Cobrar → Revisar y cobrar**. El detalle histórico conserva **Emitir boleta / factura** para cobros internos o emisiones pendientes. El historial general está en **Ventas → Comprobantes** (`/comprobantes`). La configuración está en **Config. sistema → Empresa y facturación** (`/configuracion/sistema/facturacion`). No se repite la navegación del sidebar en las cabeceras.
 
 ### Puesta en marcha
 
@@ -707,11 +707,21 @@ No admite pedidos cerrados ni atenciones con cobros o cantidades entregadas: eso
 
 ## Cobro enfocado del POS
 
-La pantalla de cobro utiliza un layout propio sin sidebar, con Volver al pedido. Conserva la selección de cantidades para dividir cuentas, descuentos autorizados, cargo de delivery de una sola vez, historial y caja autorizada. A la izquierda muestra consumos y resumen; a la derecha documento, búsqueda de cliente, caja y pagos.
+La pantalla de cobro utiliza un layout propio sin sidebar, con Volver al pedido. Conserva la selección de cantidades para dividir cuentas, descuentos autorizados, cargo de delivery de una sola vez, historial y caja autorizada. A la izquierda muestra consumos y resumen; a la derecha documento, búsqueda/alta rápida de cliente y pagos. La caja se confirma en la revisión final.
 
 El medio único permite seleccionar cualquier medio activo. Pago mixto conserva hasta diez filas, una por medio. Completar saldo calcula el importe restante en el servidor; Efectivo rápido completa lo aplicado y establece lo recibido (Exacto, 10, 20, 50, 100 o 200). Solo el efectivo genera vuelto e ingreso físico. Yape y Plin exigen número de operación, además de cualquier otro medio configurado con referencia obligatoria. Cambiar el medio limpia su referencia y efectivo recibido.
 
-Nota de venta registra el cobro interno. Boleta/Factura requieren permiso de emisión, configuración habilitada y serie activa; Factura exige cliente con RUC y dirección antes de cobrar. Tras registrar el pago se abre la revisión fiscal existente con el tipo elegido: no se emite ni envía a SUNAT automáticamente, no se cobra de nuevo y siguen vigentes las validaciones fiscales. El documento elegido no cambia los importes ni el inventario. No requiere migraciones.
+Nota de venta registra e imprime el cobro interno, sin valor tributario; no sustituye a una boleta o factura. Boleta/Factura requieren permiso de emisión, configuración y certificado válidos y serie activa. La boleta admite cliente sin identificar hasta S/ 700 inclusive; por encima exige DNI/RUC y nombre. La factura exige RUC válido, razón social y dirección. Se pueden buscar clientes y crearlos sin salir del cobro mediante el icono de alta; esto crea un cliente, no un usuario del sistema. El estado de envío a SUNAT permanece separado del pago y la impresión.
+
+**Revisar y cobrar** abre una confirmación con total, efectivo, digital y vuelto. La caja abierta elegida recibe el pago y usa su impresora configurada; se revisa otra vez al cambiar la caja. **Cancelar** no registra dinero. **Cobrar y liberar mesa** registra el pago, emite el documento elegido, solicita su impresión y finaliza la atención mediante las reglas existentes, confirmando entregas/stock pendientes sin esperar a Cocina. **Cobrar y liberar después** emite e imprime igualmente y conserva la ocupación; el cierre posterior sigue disponible en el pedido. Si quedan consumos o delivery por pagar, solo se permite conservar la atención.
+
+Se requiere `php artisan migrate`: la migración **000073** crea `procesos_cobro`, con una sola ejecución persistida por cobro y claves estables de emisión/impresión. El pago y el proceso se registran juntos. Si falla después la emisión o impresión, el cobro permanece registrado y la pantalla explica cómo recuperar sin volver a cobrar. Un documento ya firmado se recupera por su identidad original, incluso si cambió el entorno fiscal. Una impresión fallida o incierta no se reenvía automáticamente; se revisa el papel y se solicita una copia con autorización. El fallo de transporte no revierte un cierre completado. Si falla la emisión o el cierre, la mesa permanece ocupada hasta resolverlo.
+
+Después de cobrar se muestra una confirmación breve, sin sidebar. **Ventas → Cobros** conserva el detalle, búsquedas, devoluciones e impresión incluso después de liberar la mesa; **Ventas → Comprobantes** conserva el historial tributario. Las rutas anteriores de cobros siguen disponibles por compatibilidad. El cobro integrado conserva los permisos de cobros, cajas e impresión; emitir y liberar exigen además sus permisos específicos. No agrega dependencias.
+
+Referencias SUNAT: [identificación en boletas superiores a S/ 700](https://orientacion.sunat.gob.pe/01-preguntas-frecuentes-comprobantes-de-pago), [factura electrónica y comprador con RUC](https://cpe.sunat.gob.pe/tipos_de_comprobantes/factura), [documentos sin efectos tributarios](https://cultura.sunat.gob.pe/sites/default/files/2021-04/Libro_CTyA_final_210415.pdf).
+
+Pruebas del flujo integrado: umbral S/ 700 y DNI, factura/RUC y alta rápida, pagos mixtos, selección de caja/impresora, cancelación, ambas opciones de liberación, pago parcial, idempotencia y recuperación tras fallos de emisión/impresión. Se usan certificado efímero beta y transporte simulado; no se envían documentos a SUNAT ni se comprueba la impresora física del negocio.
 
 
 **Pago mixto con medios precargados:** al activarlo se muestran todos los medios activos con nombre fijo y campos de importe, conservando los datos ya ingresados. No hay que agregar ni elegir cada medio. Los importes vacíos o cero sin otros datos se omiten al revisar y confirmar; solo se registran los medios usados. Limpiar conserva el medio y vacía sus datos. Quitar o poner en cero un importe mixto limpia su referencia y efectivo recibido. Se mantiene el máximo de diez medios efectivamente usados por cobro; la lista visible puede incluir más medios configurados.

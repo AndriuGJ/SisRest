@@ -87,9 +87,9 @@ function seleccionCobrosImpresion(Pedido $pedido, ?array $porProducto = null): a
 
     return $filas;
 }
-function pagoCobrosImpresion(string $codigo, string $monto, string $entregado = '', string $referencia = ''): array
+function pagoCobrosImpresion(string $codigo, string $monto, string $entregado = '', ?string $referencia = null): array
 {
-    return ['medioId' => (string) MedioPago::where('codigo', $codigo)->firstOrFail()->id, 'monto' => $monto, 'entregado' => $entregado, 'referencia' => $referencia];
+    return ['medioId' => (string) MedioPago::where('codigo', $codigo)->firstOrFail()->id, 'monto' => $monto, 'entregado' => $entregado, 'referencia' => $referencia ?? (in_array($codigo, ['yape', 'plin'], true) ? 'OP-PRUEBA' : '')];
 }
 function datosCobrosImpresion(array $cambios = []): array
 {

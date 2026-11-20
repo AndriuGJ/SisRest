@@ -38,9 +38,12 @@
                         <flux:sidebar.item icon="user-group" :href="route('clientes.index')" :current="request()->routeIs('clientes.*')" wire:navigate>Clientes</flux:sidebar.item>
                     @endcan
                 </div>
-                @can('comprobantes.ver')
-                    <flux:sidebar.group heading="Ventas" icon="receipt-percent" expandable :expanded="request()->routeIs('comprobantes.*')" class="mt-1"><flux:sidebar.item icon="document-text" :href="route('comprobantes.index')" :current="request()->routeIs('comprobantes.*')" wire:navigate>Comprobantes</flux:sidebar.item></flux:sidebar.group>
-                @endcan
+                @canany(['comprobantes.ver','cobros.crear','devoluciones.crear'])
+                    <flux:sidebar.group heading="Ventas" icon="receipt-percent" expandable :expanded="request()->routeIs('comprobantes.*','ventas.*','pos.cobros','pos.cobro')" class="mt-1">
+                        @canany(['cobros.crear','devoluciones.crear'])<flux:sidebar.item icon="banknotes" :href="route('ventas.cobros')" :current="request()->routeIs('ventas.*','pos.cobros','pos.cobro')" wire:navigate>Cobros</flux:sidebar.item>@endcanany
+                        @can('comprobantes.ver')<flux:sidebar.item icon="document-text" :href="route('comprobantes.index')" :current="request()->routeIs('comprobantes.*')" wire:navigate>Comprobantes</flux:sidebar.item>@endcan
+                    </flux:sidebar.group>
+                @endcanany
                 @canany(['productos.ver', 'inventario.ver', 'preparaciones.ver'])
                     <flux:sidebar.group heading="Inventario" icon="archive-box" expandable :expanded="request()->routeIs('productos.*', 'insumos.*', 'preparaciones.*')" class="mt-1">
                         @can('productos.ver')
