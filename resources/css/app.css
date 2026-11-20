@@ -115,7 +115,7 @@ select:focus[data-flux-control] {
 
 /* Toma de pedido: catálogo y una sola lista, con opciones secundarias bajo demanda. */
 .pedido-workspace { display:grid; min-height:calc(100svh - 11rem); }
-.pedido-productos { display:grid; grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-content:start; }
+.pedido-productos { display:grid; grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-content:start; }
 .pedido-categoria { padding:10px 9px;text-align:left;border-radius:4px;font-size:.8125rem;white-space:nowrap; }
 .pedido-categoria:hover { background:var(--color-zinc-100); }
 .dark .pedido-categoria:hover { background:var(--color-zinc-800); }
@@ -124,7 +124,7 @@ select:focus[data-flux-control] {
 .pedido-producto:not(:disabled):hover { border-color:var(--color-zinc-500); }
 @media(min-width:640px){.pedido-productos{grid-template-columns:repeat(3,minmax(0,1fr));}}
 @media(min-width:1024px){
-.pedido-workspace{grid-template-columns:8.5rem minmax(0,1fr) 23rem;align-items:start;}
+.pedido-workspace{grid-template-columns:8.5rem minmax(0,1fr) clamp(24rem,30vw,30rem);align-items:start;}
 .pedido-categorias{position:sticky;top:1rem;max-height:calc(100svh - 8rem);overflow-y:auto;border-bottom:0;}
 .pedido-categoria{white-space:normal;}
 .pedido-resumen{position:sticky;top:1rem;max-height:calc(100svh - 3rem);border-top:0;border-left:1px solid var(--color-zinc-200);min-height:calc(100svh - 11rem);}
@@ -132,11 +132,11 @@ select:focus[data-flux-control] {
 .pedido-lineas{overflow-y:auto;min-height:0;}
 .pedido-productos{grid-template-columns:repeat(3,minmax(0,1fr));}
 }
-@media(min-width:1536px){.pedido-productos{grid-template-columns:repeat(4,minmax(0,1fr));}}
+@media(min-width:1536px){.pedido-productos{grid-template-columns:repeat(5,minmax(0,1fr));}}
 @media(min-width:1800px){.pedido-productos{grid-template-columns:repeat(6,minmax(0,1fr));}}
 
 /* Tarjetas del catálogo y acciones reconocibles en el pedido. */
-.pedido-producto-foto { aspect-ratio:4/3; }
+.pedido-producto-foto { aspect-ratio:3/2; }
 .pedido-producto-precio { position:absolute;top:0;right:0;padding:2px 6px;background:#334155;color:#ffffff;border-left:1px solid #475569;border-bottom:1px solid #475569;font-size:.8125rem; }
 .pedido-producto-nombre { position:absolute;left:0;right:0;top:42%;display:flex;align-items:center;justify-content:center;padding:3px 5px;background:#fafaf9;color:#292524;border-block:1px solid #d6d3d1;font-size:.8125rem;line-height:1.15;text-align:center;font-weight:600;overflow-wrap:anywhere; }
 .pedido-producto-disponibilidad { position:absolute;bottom:0;right:0;max-width:100%; }
