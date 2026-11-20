@@ -97,8 +97,8 @@ select:focus[data-flux-control] {
 
 /* Plano del restaurante: salones, mesas y apertura sin formularios superpuestos. */
 .pos-workspace { display: grid; min-height: min(72rem, calc(100svh - 12rem)); }
-.pos-mesas { display:grid;grid-template-columns:repeat(auto-fill,minmax(144px,156px));gap:12px;align-content:start;align-items:start; }
-.pos-mesa { min-width:0;width:100%;aspect-ratio:1/1;min-height:144px;padding:8px;gap:3px;border-width:2px;transition:box-shadow .12s ease; }
+.pos-mesas { display:grid;grid-template-columns:repeat(auto-fill,minmax(136px,148px));gap:12px;align-content:start;align-items:start; }
+.pos-mesa { min-width:0;width:100%;aspect-ratio:1/1;min-height:136px;padding:7px;gap:3px;border-width:2px;transition:box-shadow .12s ease; }
 .pos-mesa > span { margin-top:0;max-width:100%;font-size:11px;line-height:14px; }
 .pos-mesa > .pos-mesa-nombre { font-size:12px;line-height:16px; }
 .pos-mesa-icono { width:40px;height:30px;flex-shrink:0;margin-bottom:1px; }
@@ -188,7 +188,7 @@ select:focus[data-flux-control] {
 .pos-palette .pos-salones, .pos-palette .pedido-categorias { background:var(--pos-surface); }
 .pos-palette .pedido-categoria:hover, .pos-palette .pos-salon:hover { background:var(--pos-soft); }
 .pos-palette .pedido-categoria-activa, .pos-palette .pos-salon[aria-pressed="true"] { background:transparent;color:#e95459;box-shadow:none;font-weight:600; }
-.pos-palette .pos-mesa[aria-pressed="true"] { border-color:var(--pos-primary)!important;box-shadow:0 0 0 2px var(--pos-primary); }
+.pos-palette .pos-mesa[aria-pressed="true"] { border-color:rgb(255,215,10)!important;box-shadow:rgb(255,215,10) 0px 0px 0px 3.2px; }
 .pos-mesa-disponible { color:#111111!important; }
 .pos-mesa-disponible > span { opacity:1; }
 .pos-palette .pedido-producto { border-color:var(--pos-border); }
@@ -243,3 +243,10 @@ select:focus[data-flux-control] {
 @media(max-width:1023px) {
     .pos-palette [data-flux-main] { padding:10px; }
 }
+
+/* Ajustes de mesas y apertura de atención. */
+.pos-palette [data-flux-main] .pos-mesa { border-radius:8px!important; }
+.pos-palette .pos-comensales-control { background:#ffefa1!important;color:#443b16!important; }
+.pos-palette .pos-comensales-control:hover { background:#f5e38c!important; }
+.pos-palette .pos-continuar { background:#ea5b5d!important;border-color:#ea5b5d!important;color:#ffffff!important; }
+.pos-palette .pos-continuar:hover { background:#d94e50!important; }
