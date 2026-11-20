@@ -3,6 +3,7 @@
 namespace App\Services\Facturacion;
 
 use App\Models\Comprobante;
+use App\Support\Cantidad;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
@@ -27,9 +28,9 @@ class RepresentacionFiscal
         $empresa = [(string) ($c->emisor['nombre_comercial'] ?: $c->emisor['razon_social']), (string) $c->emisor['razon_social'], 'RUC: '.(string) $c->emisor['ruc'], (string) $c->emisor['direccion']];
         $lineas = [];
         foreach ($c->detalles()->orderBy('id')->get() as $d) {
-            $lineas[] = ['descripcion' => $d->descripcion, 'cantidad' => $d->cantidad, 'nota' => '', 'extra' => ['Afectacion IGV: '.$d->tipo_afectacion_igv], 'precio' => $d->precio_unitario, 'total' => $d->total];
+            $lineas[] = ['descripcion' => $d->descripcion, 'cantidad' => Cantidad::mostrar($d->cantidad), 'nota' => '', 'extra' => ['Afectacion IGV: '.$d->tipo_afectacion_igv], 'precio' => $d->precio_unitario, 'total' => $d->total];
         }
-        $avisos = [XmlFiscal::dato($c, 'leyenda'), 'Representacion impresa del comprobante electronico.', 'SUNAT: '.$c->estado_sunat->value, 'Hash: '.($c->hash_documento ?? '')];
+        $avisos = ['Representacion impresa del comprobante electronico.', 'SUNAT: '.$c->estado_sunat->value, 'Hash: '.($c->hash_documento ?? '')];
         if (bccomp($c->operaciones_gratuitas, '0', 2) > 0) {
             $avisos[] = 'TRANSFERENCIA GRATUITA / SERVICIO PRESTADO GRATUITAMENTE';
         }
@@ -43,8 +44,8 @@ class RepresentacionFiscal
             $marca['tipografia'] = ['fuente' => $tipo['fuente'], 'tamano' => $tipo['tickets'], 'grafica' => $tipo['grafica']];
         }
 
-        return [...$marca, 'version' => 1, 'titulo' => XmlFiscal::dato($c, 'tipo') === '01' ? 'FACTURA ELECTRONICA' : 'BOLETA DE VENTA ELECTRONICA', 'empresa' => $empresa, 'referencia' => XmlFiscal::numero($c), 'fecha' => $c->fecha_emision->format('d/m/Y'),
-            'datos' => [(string) $c->receptor['nombre'], 'Documento: '.(string) $c->receptor['numero'], (string) $c->receptor['direccion']], 'lineas' => $lineas,
+        return [...$marca, 'formato' => 'venta_compacta', 'letras' => XmlFiscal::dato($c, 'leyenda'), 'version' => 1, 'titulo' => XmlFiscal::dato($c, 'tipo') === '01' ? 'FACTURA ELECTRONICA' : 'BOLETA DE VENTA ELECTRONICA', 'empresa' => $empresa, 'referencia' => XmlFiscal::numero($c), 'fecha' => $c->fecha_emision->format('d/m/Y'),
+            'datos' => ['CLIENTE: '.(string) $c->receptor['nombre'], ((string) $c->receptor['tipo'] === '6' ? 'RUC: ' : ((string) $c->receptor['tipo'] === '1' ? 'DNI: ' : 'Documento: ')).(string) $c->receptor['numero'], (string) $c->receptor['direccion']], 'lineas' => $lineas,
             'totales' => [['nombre' => 'Valor venta', 'monto' => $c->valor_venta], ['nombre' => 'IGV / IPM', 'monto' => $c->impuestos], ['nombre' => 'Op. gratuitas (referencial)', 'monto' => $c->operaciones_gratuitas], ['nombre' => 'TOTAL', 'monto' => $c->total]], 'pagos' => [], 'avisos' => $avisos, 'qr' => $this->qr($c)];
     }
 }

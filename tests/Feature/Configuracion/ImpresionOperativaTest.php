@@ -16,6 +16,7 @@ use App\Models\MotivoBeneficio;
 use App\Models\MovimientoCaja;
 use App\Models\MovimientoInventario;
 use App\Models\Pedido;
+use App\Models\ProcesoCobro;
 use App\Models\Producto;
 use App\Models\Salon;
 use App\Models\TrabajoImpresion;
@@ -244,7 +245,7 @@ test('ticket prints original combined payments applied and change without touchi
     $cash = $this->turno->efectivoEsperado();
     $job = imprimirOperativo($this->actor, solicitudImpresion('ticket', $cobro->id, $this->turno->caja_id));
     $texto = app(ImpresionOperativa::class)->texto($job);
-    expect($texto)->toContain('TICKET DE COBRO')->toContain('NO ES BOLETA NI FACTURA')->toContain('vuelto S/ 15.00')->toContain('Yape')->and($job->contenido['pagos'][0]['monto'])->toBe('5.00')->and($job->contenido['pagos'][1]['monto'])->toBe('7.00')->and($cobro->fresh()->toArray())->toBe($antes)->and($this->turno->efectivoEsperado())->toBe($cash)->and(MovimientoInventario::count())->toBe(0);
+    expect($texto)->toContain('TICKET DE COBRO')->toContain('NO ES BOLETA NI FACTURA')->toContain('Vuelto S/ 15.00')->toContain('Yape')->and($job->contenido['pagos'][0]['monto'])->toBe('5.00')->and($job->contenido['pagos'][1]['monto'])->toBe('7.00')->and($cobro->fresh()->toArray())->toBe($antes)->and($this->turno->efectivoEsperado())->toBe($cash)->and(MovimientoInventario::count())->toBe(0);
 });
 
 test('receipt copy preserves company client and payment snapshots despite later configuration changes', function () {
@@ -597,3 +598,49 @@ test('graphical printing centers padded heading by its pixel width', function ()
         unlink($ruta);
     }
 });
+
+test('logo pixels are centered across the full thermal paper width even without printer alignment support', function (int $ancho, int $pixeles) {
+    Storage::fake('local');
+    $logo = imagecreatetruecolor(100, 60);
+    imagefill($logo, 0, 0, 0);
+    ob_start();
+    imagepng($logo);
+    $png = ob_get_clean();
+    imagedestroy($logo);
+    Storage::disk('local')->put('marca/centrado.png', $png);
+    $ruta = app(TicketRaster::class)->logo('marca/centrado.png', $ancho);
+    $imagen = imagecreatefrompng($ruta);
+    try {
+        $izquierda = $pixeles;
+        $derecha = 0;
+        for ($x = 0; $x < imagesx($imagen); $x++) {
+            if ((imagecolorat($imagen, $x, 30) & 0xFF) < 128) {
+                $izquierda = min($izquierda, $x);
+                $derecha = max($derecha, $x);
+            }
+        }
+        expect(imagesx($imagen))->toBe($pixeles)->and($derecha - $izquierda + 1)->toBe(100)
+            ->and(abs(($izquierda + $derecha) / 2 - $pixeles / 2))->toBeLessThan(1);
+        $bytes = app(TicketOperativo::class)->generar('Documento', null, 'marca/centrado.png', null, $ancho);
+        expect(str_contains($bytes, "\x1dv0\x00".pack('v', $pixeles / 8)))->toBeTrue();
+    } finally {
+        imagedestroy($imagen);
+        unlink($ruta);
+    }
+})->with([[58, 384], [80, 576]]);
+
+test('sale note uses the compact receipt layout while retaining payments and change', function (int $ancho, int $columnas) {
+    $cobro = cuentaTicketImpresion($this->actor, $this->turno, $this->gaseosa, recibido: '10');
+    ProcesoCobro::create(['cobro_id' => $cobro->id, 'usuario_id' => $this->actor->id, 'caja_id' => $this->turno->caja_id, 'documento' => 'interno', 'liberar' => false, 'fiscal' => [], 'clave_emision' => (string) Str::uuid(), 'clave_impresion' => (string) Str::uuid()]);
+    $this->cajaPrinter->update(['ancho_mm' => $ancho]);
+    $this->transporte->shouldReceive('enviar')->once();
+    $job = imprimirOperativo($this->actor, solicitudImpresion('ticket', $cobro->id, $this->turno->caja_id));
+    $texto = app(ImpresionOperativa::class)->texto($job);
+    expect(explode("\n", $texto)[0])->toBe(str_pad('Restaurante de prueba', $columnas, ' ', STR_PAD_BOTH))
+        ->and($texto)->toContain('NOTA DE VENTA', 'DETALLE DE CONSUMO', 'P.U.', 'IMP.', 'FORMAS DE PAGO', 'Recibido S/ 10.00', 'Vuelto S/ 4.00', 'SON SEIS CON 00/100 SOLES')->not->toContain('Precio unitario:')
+        ->and(array_key_exists('qr', $job->contenido))->toBeFalse();
+    foreach (explode("\n", $texto) as $linea) {
+        expect(strlen($linea))->toBeLessThanOrEqual($columnas);
+    }
+    expect($cobro->fresh()->total)->toBe('6.00');
+})->with([[58, 32], [80, 48]]);

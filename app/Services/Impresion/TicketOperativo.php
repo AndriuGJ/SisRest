@@ -59,7 +59,7 @@ class TicketOperativo
 
             return implode("\n", $lineas)."\n";
         }
-        if (($contenido['formato'] ?? null) === 'precuenta_compacta') {
+        if (in_array($contenido['formato'] ?? null, ['precuenta_compacta', 'venta_compacta'], true)) {
             $centrar = function (string $texto) use ($agregar, $columnas): void {
                 $limpio = Str::ascii(preg_replace('/[\p{C}]/u', ' ', $texto) ?? '');
                 foreach (explode("\n", wordwrap($limpio, $columnas, "\n", true)) as $linea) {
@@ -75,7 +75,7 @@ class TicketOperativo
             $centrar($contenido['titulo']);
             $centrar($contenido['referencia']);
             $lineas[] = $separador;
-            $agregar('FECHA DEL PEDIDO: '.$contenido['fecha']);
+            $agregar(($contenido['formato'] === 'precuenta_compacta' ? 'FECHA DEL PEDIDO: ' : 'FECHA DE EMISIÓN: ').$contenido['fecha']);
             foreach ($contenido['datos'] as $texto) {
                 $agregar($texto);
             }
@@ -108,17 +108,27 @@ class TicketOperativo
             }
             $lineas[] = $separador;
             foreach ($contenido['totales'] as $fila) {
-                if (bccomp($fila['monto'], '0', 2) === 0 && in_array($fila['nombre'], ['Descuentos pendientes', 'Envío pendiente'], true)) {
+                if (bccomp($fila['monto'], '0', 2) === 0 && in_array($fila['nombre'], ['Descuentos pendientes', 'Envío pendiente', 'Descuentos por producto', 'Descuento general', 'Envío', 'Op. gratuitas (referencial)'], true)) {
                     continue;
                 }
                 $importe(match ($fila['nombre']) {
-                    'Productos pendientes' => 'SUBTOTAL CONSUMOS',
+                    'Productos pendientes', 'Productos' => 'SUBTOTAL CONSUMOS',
                     'Descuentos pendientes' => 'DESCUENTOS',
                     'Envío pendiente' => 'DELIVERY',
                     default => $fila['nombre'],
                 }, $fila['monto']);
             }
             $agregar($contenido['letras'] ?? '');
+            if ($contenido['pagos'] !== []) {
+                $lineas[] = $separador;
+                $agregar('FORMAS DE PAGO');
+                foreach ($contenido['pagos'] as $pago) {
+                    $importe($pago['nombre'], $pago['monto']);
+                    foreach ($pago['extra'] as $texto) {
+                        $agregar($texto);
+                    }
+                }
+            }
             $lineas[] = $separador;
             foreach ($contenido['avisos'] as $texto) {
                 $centrar($texto);
@@ -208,7 +218,7 @@ class TicketOperativo
             $raster = app(TicketRaster::class);
             if ($logo !== null && ($imagenLogo = $raster->logo($logo, $ancho)) !== null) {
                 try {
-                    $impresora->setJustification(Printer::JUSTIFY_CENTER);
+                    $impresora->setJustification(Printer::JUSTIFY_LEFT);
                     $impresora->bitImage(EscposImage::load($imagenLogo, false, ['gd']));
                     $impresora->feed();
                 } finally {

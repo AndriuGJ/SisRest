@@ -218,15 +218,14 @@ class FuenteImpresion
         if ($cobro->estado->value !== 'confirmado') {
             throw ValidationException::withMessages(['impresion' => 'Solo se imprimen tickets de cobros confirmados.']);
         }
+        $base['formato'] = 'venta_compacta';
+        $base['datos'] = [$this->atencion($cobro->pedido), 'CLIENTE: '.($cobro->cliente_nombre ?: 'CLIENTES VARIOS')];
         $base['titulo'] = ProcesoCobro::where('cobro_id', $cobro->id)->where('documento', 'interno')->exists() ? 'NOTA DE VENTA' : 'TICKET DE COBRO';
         $base['referencia'] = $cobro->codigo;
         $base['fecha'] = $cobro->cobrado_at?->timezone('America/Lima')->format('d/m/Y H:i') ?? '';
         $base['datos'][] = 'Caja: '.($cobro->caja_nombre ?? $cobro->turnoCaja->caja->nombre);
         if ($cobro->grupo_pagador) {
             $base['datos'][] = 'Grupo: '.$cobro->grupo_pagador;
-        }
-        if ($cobro->cliente_nombre) {
-            $base['datos'][] = 'Cliente: '.$cobro->cliente_nombre;
         }
         if ($cobro->cliente_numero_documento) {
             $base['datos'][] = ($cobro->cliente_tipo_documento ?? 'Documento').': '.$cobro->cliente_numero_documento;
@@ -238,13 +237,17 @@ class FuenteImpresion
         foreach ($cobro->pagos()->with('medioPago')->orderBy('id')->get() as $pago) {
             $extra = [];
             if ($pago->afecta_efectivo ?? $pago->medioPago->afecta_efectivo) {
-                $extra[] = 'Recibido S/ '.$pago->monto_entregado.' / vuelto S/ '.$pago->vuelto;
+                $extra[] = 'Recibido S/ '.$pago->monto_entregado;
+                $extra[] = 'Vuelto S/ '.$pago->vuelto;
             }
             if ($pago->referencia) {
                 $extra[] = 'Referencia: '.$pago->referencia;
             }
             $base['pagos'][] = ['nombre' => $pago->medio_pago_nombre ?? $pago->medioPago->nombre, 'monto' => $pago->monto, 'extra' => $extra];
         }
+        [$entero, $centimos] = explode('.', $cobro->total);
+        $letras = (new NumberFormatter('es_PE', NumberFormatter::SPELLOUT))->format((int) $entero);
+        $base['letras'] = 'SON '.mb_strtoupper(is_string($letras) ? $letras : $entero).' CON '.$centimos.'/100 SOLES';
         $base['avisos'] = ['Registro interno. NO ES BOLETA NI FACTURA.', 'Las devoluciones se registran por separado.'];
 
         return $base;

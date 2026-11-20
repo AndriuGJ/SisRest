@@ -79,8 +79,10 @@ class TicketRaster
             $factor = min(1, ($ancho === 58 ? 192 : 256) / imagesx($origen), 120 / imagesy($origen));
             $w = max(1, (int) round(imagesx($origen) * $factor));
             $h = max(1, (int) round(imagesy($origen) * $factor));
-            $imagen = $this->lienzo($w, $h);
-            imagecopyresampled($imagen, $origen, 0, 0, 0, 0, $w, $h, imagesx($origen), imagesy($origen));
+            // Algunas térmicas ignoran ESC a para imágenes GS v 0: centrar los píxeles.
+            $papel = $ancho === 58 ? 384 : 576;
+            $imagen = $this->lienzo($papel, $h);
+            imagecopyresampled($imagen, $origen, (int) (($papel - $w) / 2), 0, 0, 0, $w, $h, imagesx($origen), imagesy($origen));
 
             return $this->guardar($imagen);
         } finally {

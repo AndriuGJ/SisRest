@@ -436,3 +436,17 @@ test('XML line discount factor uses SUNAT precision without changing the net pai
     expect($xml)->toContain('<cbc:MultiplierFactorNumeric>0.09994</cbc:MultiplierFactorNumeric>')->and($c->total)->toBe('90.01');
     expect((new SignedXml)->verifyXml($xml))->toBeTrue();
 });
+
+test('fiscal thermal documents share the compact layout without losing fiscal identity totals or QR', function (string $tipo, int $ancho, int $columnas) {
+    $c = emitirFiscal($this->cobro, $this->actor, $tipo);
+    $representacion = app(RepresentacionFiscal::class);
+    $contenido = $representacion->contenido($c);
+    $texto = app(TicketOperativo::class)->texto($contenido, $ancho);
+    expect($texto)->toContain($tipo === '01' ? 'FACTURA ELECTRONICA' : 'BOLETA DE VENTA ELECTRONICA', 'DETALLE DE CONSUMO', 'P.U.', 'IMP.', 'IGV / IPM', 'TOTAL', 'SUNAT:', 'Hash:', 'BETA - PRUEBA SIN VALIDEZ')->not->toContain('Precio unitario:')
+        ->and($contenido['qr'])->toBe($representacion->qr($c))->and($contenido['totales'][3]['monto'])->toBe($c->total);
+    foreach (explode("\n", $texto) as $linea) {
+        expect(strlen($linea))->toBeLessThanOrEqual($columnas);
+    }
+    $bytes = app(TicketOperativo::class)->generar($texto, $contenido['qr'], null, null, $ancho);
+    expect(str_contains($bytes, "\x1d(k"))->toBeTrue();
+})->with(['03', '01'])->with([[58, 32], [80, 48]]);
