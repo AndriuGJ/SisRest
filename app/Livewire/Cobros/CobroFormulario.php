@@ -46,6 +46,9 @@ class CobroFormulario extends Component
 
     public string $clienteSearch = '';
 
+    #[Locked]
+    public bool $pagoMixto = false;
+
     public string $documento = 'interno';
 
     #[Locked]
@@ -155,10 +158,24 @@ class CobroFormulario extends Component
 
     public function mixedPayment(): void
     {
-        $this->addPayment();
-        if (count($this->pagos) === 1) {
-            $this->addPayment();
+        $this->pedido();
+        $actuales = $this->pagosParaVista($this->pagos);
+        $filas = [];
+        foreach (MedioPago::where('activo', true)->orderBy('id')->get() as $medio) {
+            $existente = collect($actuales)->first(fn ($fila) => $fila['medioId'] === (string) $medio->id);
+            $filas['m-'.$medio->id] = $existente ?? ['medioId' => (string) $medio->id, 'monto' => '', 'entregado' => '', 'referencia' => ''];
         }
+        $this->pagos = $filas;
+        $this->pagoMixto = true;
+    }
+
+    public function limpiarPago(string $clave): void
+    {
+        $this->pedido();
+        $fila = $this->pagosParaVista($this->pagos)[$clave] ?? null;
+        abort_unless($fila !== null, 422);
+        $fila['monto'] = $fila['entregado'] = $fila['referencia'] = '';
+        $this->pagos[$clave] = $fila;
     }
 
     public function removePayment(string $clave): void
@@ -179,13 +196,20 @@ class CobroFormulario extends Component
             $fila['entregado'] = $fila['referencia'] = '';
             $this->pagos[$partes[1]] = $fila;
         }
+        if ($this->pagoMixto && preg_match('/^pagos\.([^.]+)\.monto$/', $campo, $partes) && isset($filas[$partes[1]])) {
+            $fila = $filas[$partes[1]];
+            if ($fila['monto'] === '' || preg_match('/^0+(?:[.,]0{1,2})?$/', $fila['monto'])) {
+                $fila['entregado'] = $fila['referencia'] = '';
+                $this->pagos[$partes[1]] = $fila;
+            }
+        }
     }
 
     public function usarMedio(int $id): void
     {
         $pedido = $this->pedido();
         MedioPago::where('activo', true)->findOrFail($id);
-        if (count($this->pagos) > 1) {
+        if ($this->pagoMixto || count($this->pagos) > 1) {
             $this->notificar('Elige los medios en cada fila del pago mixto.', 'info');
 
             return;
@@ -224,7 +248,7 @@ class CobroFormulario extends Component
     public function review(GestionCobros $gestion): void
     {
         $this->resetValidation();
-        $this->validate(['documento' => ['required', 'in:interno,01,03'], 'turnoId' => ['required', 'integer'], 'cantidades' => ['array', 'max:1000'], 'cantidades.*' => ['string', 'max:20']]);
+        $this->validate(['documento' => ['required', 'in:interno,01,03'], 'turnoId' => ['required', 'integer'], 'cantidades' => ['array', 'max:1000'], 'cantidades.*' => ['string', 'max:20'], 'pagos' => ['array'], 'pagos.*' => ['array:medioId,monto,entregado,referencia'], 'pagos.*.medioId' => ['present', 'string', 'max:20'], 'pagos.*.monto' => ['present', 'string', 'max:20'], 'pagos.*.entregado' => ['present', 'string', 'max:20'], 'pagos.*.referencia' => ['present', 'string', 'max:150']]);
         $seleccion = [];
         foreach ($this->cantidades as $id => $cantidad) {
             if ($cantidad !== '' && $cantidad !== '0') {
@@ -232,7 +256,15 @@ class CobroFormulario extends Component
             }
         }
         $datos = ['clienteId' => $this->clienteId, 'grupoPagador' => $this->grupoPagador, 'incluirEnvio' => $this->incluirEnvio, 'descuentoTipo' => $this->descuentoTipo, 'descuentoValor' => $this->descuentoValor, 'motivoId' => $this->motivoId, 'motivoDetalle' => $this->motivoDetalle];
-        $plan = $gestion->previsualizar($this->actor(), $this->pedidoId, (int) $this->turnoId, $datos, $seleccion, $this->pagos);
+        $pagos = [];
+        foreach ($this->pagos as $clave => $fila) {
+            // Los medios visibles sin uso no son pagos ni exigen referencia.
+            if ($fila['entregado'] === '' && trim($fila['referencia']) === '' && ($fila['monto'] === '' || preg_match('/^0+(?:[.,]0{1,2})?$/', $fila['monto']))) {
+                continue;
+            }
+            $pagos[$clave] = $fila;
+        }
+        $plan = $gestion->previsualizar($this->actor(), $this->pedidoId, (int) $this->turnoId, $datos, $seleccion, $pagos);
         if ($this->documento !== 'interno') {
             Gate::forUser($this->actor())->authorize('comprobantes.emitir');
             $config = ConfiguracionFacturacion::firstOrFail();
@@ -249,7 +281,7 @@ class CobroFormulario extends Component
         $this->huellaRevisada = $plan['huella'];
         $this->datosRevisados = $datos;
         $this->seleccionRevisada = $seleccion;
-        $this->pagosRevisados = $this->pagos;
+        $this->pagosRevisados = $pagos;
         $this->turnoRevisado = (int) $this->turnoId;
         $this->confirmar('Registrar cobro', 'Total: S/ '.$plan['total'].'. Efectivo aplicado: S/ '.$plan['efectivo'].'. Digital: S/ '.$plan['digital'].'. Vuelto: S/ '.$plan['vuelto'].'. Solo se liquidarán los productos y el envío revisados.', 'confirmCharge', 'Cobrar S/ '.$plan['total']);
     }
@@ -291,7 +323,7 @@ class CobroFormulario extends Component
             return [];
         }
         $resultado = [];
-        foreach (array_slice($entrada, 0, 10, true) as $clave => $fila) {
+        foreach ($entrada as $clave => $fila) {
             if (! is_string($clave) || ! is_array($fila)) {
                 continue;
             }
