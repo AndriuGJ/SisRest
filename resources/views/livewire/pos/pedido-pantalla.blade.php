@@ -31,12 +31,12 @@
             </div>
             <div class="space-y-3 border-t border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900"><div class="flex items-center justify-between"><span class="text-sm font-medium">Total del pedido</span><strong class="text-xl" data-pos-total>S/ {{ $total }}</strong></div>
                 @if($editable)@can('cobros.crear')<div class="pedido-pago-acciones grid grid-cols-2"><flux:button class="pedido-dividir" wire:click="irCobro" icon="squares-plus">Dividir cuenta</flux:button><flux:button class="pedido-cobrar" variant="primary" wire:click="irCobro" icon="banknotes">Cobrar</flux:button></div>@endcan @endif
+                @if($editable && $cuentaPagada)@can('pedidos.editar')@if(!$pedido->mesa_id || auth()->user()->can('mesas.liberar'))<flux:button class="w-full" variant="primary" icon="check-circle" wire:click="requestClose" wire:loading.attr="disabled">Finalizar y liberar mesa</flux:button>@endif @endcan @endif
                 <details><summary class="cursor-pointer text-xs text-zinc-500">Más opciones</summary><div class="mt-3 space-y-3">
                     @if($editable)<flux:select wire:model="turnoId" label="Caja de operación"><option value="">Seleccionar caja</option>@foreach($turnos as $turno)<option value="{{ $turno->id }}">{{ $turno->caja->nombre }}</option>@endforeach</flux:select>@can('pedidos.editar')<flux:button class="w-full" wire:click="save" wire:loading.attr="disabled">Guardar sin enviar</flux:button>@if($pedido->detalles->where('estado.value','confirmado')->isEmpty() && (!$pedido->mesa_id || auth()->user()->can('mesas.liberar')))<flux:button class="w-full" variant="ghost" wire:click="$set('showDiscard',true)">Descartar borrador</flux:button>@endif @endcan @endif
                     @canany(['impresion.comandas','impresion.precuentas'])<flux:button class="w-full" icon="printer" wire:click="openPrinting">Comandas / precuenta</flux:button>@endcanany
                     @if($pedido->delivery)<p class="text-xs text-zinc-500">{{ $pedido->delivery->destinatario }} · {{ $pedido->delivery->telefono }}<br>{{ $pedido->delivery->direccion }} · Envío: S/ {{ $pedido->delivery->costo_envio }}</p>@endif
                     <p class="text-xs text-zinc-500">{{ $cuentaPagada ? 'Cuenta pagada.' : 'Cuenta pendiente de cobro.' }}</p>
-                    @if($editable && $cuentaPagada && $pedido->estado->value === 'entregado')@can('pedidos.editar')@if(!$pedido->mesa_id || auth()->user()->can('mesas.liberar'))<flux:button class="w-full" variant="primary" wire:click="requestClose">Cerrar atención</flux:button>@endif @endcan @endif
                 </div></details>
             </div>
         </aside>

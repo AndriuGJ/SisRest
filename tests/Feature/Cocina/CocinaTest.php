@@ -177,7 +177,6 @@ test('direct delivery and kitchen delivery consume only reserved sale stock with
     confirmarCocina($this->actor, $pedido, $this->turno);
     $chaufa = $pedido->detalles()->where('producto_id', $this->producto->id)->firstOrFail();
     $gaseosa = $pedido->detalles()->where('producto_id', $this->gaseosa->id)->firstOrFail();
-    expect(fn () => entregarCocina($this->actor, $pedido, $chaufa->id))->toThrow(ValidationException::class);
     entregarCocina($this->actor, $pedido, $gaseosa->id);
     expect($this->gaseosa->articulo->fresh()->stock_actual)->toBe('11.0000')->and($this->gaseosa->articulo->fresh()->stock_reservado)->toBe('0.0000');
     $linea = EnvioCocinaDetalle::firstOrFail();
@@ -188,7 +187,6 @@ test('direct delivery and kitchen delivery consume only reserved sale stock with
         ->and($this->producto->articulo->fresh()->stock_reservado)->toBe('1.0000')->and($linea->fresh()->cantidad_entregada)->toBe('1.0000');
     $mov = MovimientoInventario::where('articulo_id', $this->producto->articulo_id)->firstOrFail();
     expect($mov->cantidad)->toBe('-1.0000')->and($mov->costo_unitario)->toBe('8.000000')->and($mov->saldo_anterior)->toBe('10.0000')->and($mov->saldo_posterior)->toBe('9.0000');
-    expect(fn () => entregarCocina($this->actor, $pedido, $chaufa->id))->toThrow(ValidationException::class);
     avanzarCocina($this->actor, $linea, 'listo', '1');
     entregarCocina($this->actor, $pedido, $chaufa->id);
     expect($pedido->fresh()->estado->value)->toBe('entregado')->and($this->producto->articulo->fresh()->stock_reservado)->toBe('0.0000')
@@ -274,7 +272,7 @@ test('confirmation and delivery use reviewed locked fields and reject unsaved ca
     $pedido = pedidoCocina($this->actor, $this->turno, [$this->gaseosa->id => 2]);
     $id = $pedido->detalles()->firstOrFail()->id;
     $pantalla = Livewire::test(PedidoPantalla::class, ['pedido' => $pedido]);
-    $pantalla->set('observaciones', 'Cambio sin guardar')->call('requestSend')->assertHasErrors('seguridad');
+    $pantalla->call('addProduct', $this->gaseosa->id)->call('requestSend')->assertHasErrors('seguridad');
     $pantalla = Livewire::test(PedidoPantalla::class, ['pedido' => $pedido]);
     $pantalla->call('requestSend')->assertDispatched('app:confirm')->call('confirmSend')->assertRedirect(route('pos.pedido', $pedido));
     expect(ReservaInventario::count())->toBe(1);
@@ -320,4 +318,32 @@ test('malformed quantity payloads are rejected by the UI without calling quantit
     Livewire::test(Cocina::class)->set('cantidades.'.$linea->id, ['invalida'])->call('avanzar', $linea->id, 'iniciar', GestionCocina::huella($linea))->assertDispatched('app:alert');
     Livewire::test(PedidoPantalla::class, ['pedido' => $pedido->fresh()])->set('cantidadesEntrega.'.$linea->pedido_detalle_id, ['invalida'])->call('requestDelivery', $linea->pedido_detalle_id)->assertHasErrors();
     expect($linea->fresh()->cantidad_iniciada)->toBe('0.0000')->and(MovimientoInventario::count())->toBe(0);
+});
+
+test('delivery works without kitchen interaction and does not mark the comanda terminated', function () {
+    $pedido = pedidoCocina($this->actor, $this->turno, [$this->producto->id => 2]);
+    confirmarCocina($this->actor, $pedido, $this->turno);
+    $linea = EnvioCocinaDetalle::firstOrFail();
+    entregarCocina($this->actor, $pedido, $linea->pedido_detalle_id, '2');
+    expect($pedido->fresh()->estado->value)->toBe('entregado')
+        ->and($linea->fresh()->cantidad_entregada)->toBe('2.0000')
+        ->and($linea->fresh()->cantidad_lista)->toBe('2.0000')
+        ->and($linea->fresh()->cantidad_iniciada)->toBe('2.0000')
+        ->and($linea->envio->fresh()->terminado_at)->toBeNull()
+        ->and($this->producto->articulo->fresh()->stock_actual)->toBe('8.0000');
+    Livewire::test(Cocina::class)->assertSee('Sin cebolla')->assertSee('Terminado');
+});
+
+test('kitchen termination is informative auditable and does not deliver consume or pay', function () {
+    $pedido = pedidoCocina($this->actor, $this->turno, [$this->producto->id => 2]);
+    confirmarCocina($this->actor, $pedido, $this->turno);
+    $envio = EnvioCocina::firstOrFail();
+    $version = GestionCocina::huellaEnvio($envio);
+    Livewire::test(Cocina::class)->call('terminar', $envio->id, $version)->assertDispatched('app:alert');
+    expect($envio->fresh()->terminado_at)->not->toBeNull()->and($envio->fresh()->terminado_por)->toBe($this->actor->id)
+        ->and($pedido->detalles()->first()->cantidad_entregada)->toBe('0.0000')
+        ->and($this->producto->articulo->fresh()->stock_actual)->toBe('10.0000')
+        ->and(MovimientoInventario::count())->toBe(0)->and(MovimientoCaja::count())->toBe(0);
+    app(GestionCocina::class)->terminar($this->actor, $envio->id, $version);
+    Livewire::test(Cocina::class)->set('estado', 'listos')->assertSee('Terminada');
 });

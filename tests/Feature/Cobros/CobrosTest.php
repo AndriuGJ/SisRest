@@ -2,10 +2,12 @@
 
 use App\Livewire\Cobros\CobroDetallePantalla;
 use App\Livewire\Cobros\CobroFormulario;
+use App\Livewire\Pos\PedidoPantalla;
 use App\Models\Articulo;
 use App\Models\Caja;
 use App\Models\Cliente;
 use App\Models\Cobro;
+use App\Models\EnvioCocina;
 use App\Models\MedioPago;
 use App\Models\Mesa;
 use App\Models\MovimientoCaja;
@@ -73,9 +75,9 @@ function seleccionCobros(Pedido $pedido, ?array $porProducto = null): array
 
     return $filas;
 }
-function pagoCobros(string $codigo, string $monto, string $entregado = '', string $referencia = ''): array
+function pagoCobros(string $codigo, string $monto, string $entregado = '', ?string $referencia = null): array
 {
-    return ['medioId' => (string) MedioPago::where('codigo', $codigo)->firstOrFail()->id, 'monto' => $monto, 'entregado' => $entregado, 'referencia' => $referencia];
+    return ['medioId' => (string) MedioPago::where('codigo', $codigo)->firstOrFail()->id, 'monto' => $monto, 'entregado' => $entregado, 'referencia' => $referencia ?? (in_array($codigo, ['yape', 'plin'], true) ? 'OP-PRUEBA' : '')];
 }
 function datosCobros(array $cambios = []): array
 {
@@ -192,7 +194,7 @@ test('zero priced products are settled with no fictitious payment or cash moveme
 test('required operation reference is enforced from payment configuration', function () {
     MedioPago::where('codigo', 'yape')->update(['requiere_referencia' => true]);
     $pedido = cuentaCobros($this->actor, $this->turno, [$this->gaseosa->id => 1]);
-    expect(fn () => realizarCobro($this->actor, $pedido, $this->turno, seleccionCobros($pedido), ['a' => pagoCobros('yape', '6')]))->toThrow(ValidationException::class);
+    expect(fn () => realizarCobro($this->actor, $pedido, $this->turno, seleccionCobros($pedido), ['a' => pagoCobros('yape', '6', '', '')]))->toThrow(ValidationException::class);
     $cobro = realizarCobro($this->actor, $pedido, $this->turno, seleccionCobros($pedido), ['a' => pagoCobros('yape', '6', '', 'YAPE-0001')]);
     expect($cobro->pagos()->first()->referencia)->toBe('YAPE-0001');
 });
@@ -291,13 +293,12 @@ test('stock price changes cannot replace saved order prices when collecting', fu
     expect($cobro->total)->toBe('20.00')->and($cobro->detalles()->first()->precio_unitario)->toBe('20.00');
 });
 
-test('a fully paid attention closes manually only after delivery and frees its own table without cash effects', function () {
+test('a manually delivered paid attention frees its own table without cash effects', function () {
     $mesa = Mesa::create(['salon_id' => Salon::firstOrFail()->id, 'codigo' => 'PAGO-1']);
     $pedido = cuentaCobros($this->actor, $this->turno, [$this->gaseosa->id => 1], $mesa);
     $cerrar = app(CerrarAtencion::class);
     expect(fn () => $cerrar->cerrar($this->actor, $pedido->id, EstadoCuenta::huella($pedido->fresh())))->toThrow(ValidationException::class);
     realizarCobro($this->actor, $pedido, $this->turno, seleccionCobros($pedido), ['a' => pagoCobros('yape', '6')]);
-    expect(fn () => $cerrar->cerrar($this->actor, $pedido->id, EstadoCuenta::huella($pedido->fresh())))->toThrow(ValidationException::class);
     $linea = $pedido->detalles()->first();
     app(GestionEntregas::class)->entregar($this->actor, $pedido->id, $linea->id, '1', GestionPedidos::huella($pedido->fresh()));
     $this->turno->update(['estado' => 'cerrada', 'cerrada_at' => now()]);
@@ -409,4 +410,71 @@ test('confirmation without a reviewed state requests another review without writ
     $pedido = cuentaCobros($this->actor, $this->turno, [$this->gaseosa->id => 1]);
     Livewire::test(CobroFormulario::class, ['pedido' => $pedido])->call('confirmCharge')->assertDispatched('app:alert');
     expect(Cobro::count())->toBe(0)->and(MovimientoCaja::count())->toBe(0);
+});
+
+test('paid kitchen-untouched table exposes finalization and releases stock and table exactly once', function () {
+    $mesa = Mesa::create(['salon_id' => Salon::firstOrFail()->id, 'codigo' => 'CIERRE-NUEVO']);
+    $pedido = cuentaCobros($this->actor, $this->turno, [$this->chaufa->id => 1, $this->gaseosa->id => 1], $mesa);
+    realizarCobro($this->actor, $pedido, $this->turno, seleccionCobros($pedido), ['a' => pagoCobros('efectivo', '26')]);
+    expect($pedido->fresh()->estado->value)->toBe('en_preparacion');
+    $pantalla = Livewire::test(PedidoPantalla::class, ['pedido' => $pedido->fresh()]);
+    $pantalla->assertSee('Finalizar y liberar mesa')->call('requestClose')->assertDispatched('app:confirm')->call('confirmClose')->assertRedirect(route('pos.index'));
+    expect($pedido->fresh()->estado->value)->toBe('cerrado')
+        ->and(OcupacionMesa::where('pedido_id', $pedido->id)->exists())->toBeFalse()
+        ->and($this->chaufa->articulo->fresh()->stock_actual)->toBe('19.0000')
+        ->and($this->gaseosa->articulo->fresh()->stock_actual)->toBe('19.0000')
+        ->and($this->chaufa->articulo->fresh()->stock_reservado)->toBe('0.0000')
+        ->and(EnvioCocina::where('pedido_id', $pedido->id)->firstOrFail()->terminado_at)->toBeNull()
+        ->and(Cobro::count())->toBe(1)->and(MovimientoInventario::where('tipo', 'entrega')->count())->toBe(2);
+    app(CerrarAtencion::class)->cerrar($this->actor, $pedido->id, 'reintento');
+    expect(MovimientoInventario::where('tipo', 'entrega')->count())->toBe(2)->and(Cobro::count())->toBe(1);
+});
+
+test('finalization delivers pending combo components without kitchen clicks and leaves prior deliveries untouched', function () {
+    $pedido = cuentaCobros($this->actor, $this->turno, [$this->combo->id => 2]);
+    realizarCobro($this->actor, $pedido, $this->turno, seleccionCobros($pedido), ['a' => pagoCobros('efectivo', '50')]);
+    $raiz = $pedido->detalles()->whereNull('detalle_padre_id')->firstOrFail();
+    $hoja = $raiz->hijos()->firstOrFail();
+    app(GestionEntregas::class)->entregar($this->actor, $pedido->id, $hoja->id, '1', GestionPedidos::huella($pedido->fresh()));
+    app(CerrarAtencion::class)->cerrar($this->actor, $pedido->id, EstadoCuenta::huella($pedido->fresh()));
+    expect($pedido->fresh()->estado->value)->toBe('cerrado')->and($raiz->fresh()->cantidad_entregada)->toBe('2.0000')
+        ->and($this->chaufa->articulo->fresh()->stock_actual)->toBe('18.0000')->and($this->gaseosa->articulo->fresh()->stock_actual)->toBe('18.0000');
+});
+
+test('paid finalization rolls back all deliveries if inventory cannot cover a later item', function () {
+    $pedido = cuentaCobros($this->actor, $this->turno, [$this->chaufa->id => 1, $this->gaseosa->id => 1]);
+    realizarCobro($this->actor, $pedido, $this->turno, seleccionCobros($pedido), ['a' => pagoCobros('efectivo', '26')]);
+    $this->gaseosa->articulo->fresh()->update(['stock_reservado' => '0']);
+    expect($this->gaseosa->articulo->fresh()->stock_reservado)->toBe('0.0000');
+    expect(fn () => app(CerrarAtencion::class)->cerrar($this->actor, $pedido->id, EstadoCuenta::huella($pedido->fresh())))->toThrow(ValidationException::class);
+    expect($pedido->fresh()->estado->value)->not->toBe('cerrado')->and($this->chaufa->articulo->fresh()->stock_actual)->toBe('20.0000')
+        ->and(MovimientoInventario::where('tipo', 'entrega')->count())->toBe(0)->and(Cobro::count())->toBe(1);
+});
+
+test('finalization rejects missing delivery permission and incomplete payment without side effects', function () {
+    $pedido = cuentaCobros($this->actor, $this->turno, [$this->gaseosa->id => 2]);
+    realizarCobro($this->actor, $pedido, $this->turno, seleccionCobros($pedido, [$this->gaseosa->id => 1]), ['a' => pagoCobros('efectivo', '6')]);
+    Livewire::test(PedidoPantalla::class, ['pedido' => $pedido->fresh()])->assertDontSee('Finalizar y liberar mesa');
+    expect(fn () => app(CerrarAtencion::class)->cerrar($this->actor, $pedido->id, EstadoCuenta::huella($pedido->fresh())))->toThrow(ValidationException::class);
+    realizarCobro($this->actor, $pedido, $this->turno, seleccionCobros($pedido), ['a' => pagoCobros('efectivo', '6')]);
+    $sinEntrega = User::factory()->create();
+    $sinEntrega->givePermissionTo(['pos.ver', 'pedidos.ver_todos', 'pedidos.editar']);
+    expect(fn () => app(CerrarAtencion::class)->cerrar($sinEntrega, $pedido->id, EstadoCuenta::huella($pedido->fresh())))->toThrow(AuthorizationException::class);
+    expect(MovimientoInventario::where('tipo', 'entrega')->count())->toBe(0)->and($this->gaseosa->articulo->fresh()->stock_actual)->toBe('20.0000');
+});
+
+test('preloaded mixed checkout records only used methods and accepts empty and zero unused methods', function () {
+    $pedido = cuentaCobros($this->actor, $this->turno, [$this->chaufa->id => 1, $this->gaseosa->id => 1]);
+    $cash = MedioPago::where('codigo', 'efectivo')->firstOrFail();
+    $yape = MedioPago::where('codigo', 'yape')->firstOrFail();
+    $plin = MedioPago::where('codigo', 'plin')->firstOrFail();
+    $pantalla = Livewire::test(CobroFormulario::class, ['pedido' => $pedido])->call('mixedPayment');
+    expect(count($pantalla->get('pagos')))->toBe(MedioPago::where('activo', true)->count());
+    $pantalla->set('pagos.m-'.$cash->id.'.monto', '20')
+        ->set('pagos.m-'.$yape->id.'.monto', '6')->set('pagos.m-'.$yape->id.'.referencia', 'OP-MIXTO')
+        ->set('pagos.m-'.$plin->id.'.monto', '0')->call('review')->assertHasNoErrors()->assertDispatched('app:confirm')
+        ->call('confirmCharge')->assertHasNoErrors();
+    expect(Cobro::firstOrFail()->total)->toBe('26.00')->and(Pago::count())->toBe(2)
+        ->and(MovimientoCaja::firstOrFail()->monto)->toBe('20.00')
+        ->and($this->chaufa->articulo->fresh()->stock_actual)->toBe('20.0000');
 });

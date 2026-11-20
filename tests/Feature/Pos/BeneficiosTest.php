@@ -91,7 +91,7 @@ function cobroBeneficio(User $actor, Pedido $pedido, TurnoCaja $turno, array $ca
     foreach ($cantidades as $id => $q) {
         $seleccion['d-'.$id] = ['detalleId' => (string) $id, 'cantidad' => (string) $q];
     }
-    $pagos = bccomp($importe, '0', 2) > 0 ? ['uno' => ['medioId' => (string) MedioPago::where('codigo', 'yape')->value('id'), 'monto' => $importe, 'entregado' => '', 'referencia' => '']] : [];
+    $pagos = bccomp($importe, '0', 2) > 0 ? ['uno' => ['medioId' => (string) MedioPago::where('codigo', 'yape')->value('id'), 'monto' => $importe, 'entregado' => '', 'referencia' => 'OP-PRUEBA']] : [];
     $servicio = app(GestionCobros::class);
     $plan = $servicio->previsualizar($actor, $pedido->id, $turno->id, $datos, $seleccion, $pagos);
 
@@ -324,7 +324,7 @@ test('courtesy checkout accepts an empty UI payment row and keeps all reviewed g
 test('parent operations require saving draft changes and methods cannot be used by a waiter without action permissions', function () {
     $pedido = pedidoBeneficio($this->actor, $this->turno, [$this->plato->id => 1]);
     $id = $pedido->detalles()->first()->id;
-    Livewire::test(PedidoPantalla::class, ['pedido' => $pedido])->set('observaciones', 'Sin guardar')->call('openCancel', $id)->assertHasErrors('seguridad');
+    Livewire::test(PedidoPantalla::class, ['pedido' => $pedido])->call('addProduct', $this->plato->id)->call('openCancel', $id)->assertHasErrors('seguridad');
     $mozo = User::factory()->create();
     $mozo->assignRole('mozo');
     $pedido->update(['mozo_id' => $mozo->id]);

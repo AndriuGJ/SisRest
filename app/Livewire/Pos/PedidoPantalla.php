@@ -357,7 +357,7 @@ class PedidoPantalla extends Component
             Gate::forUser($this->actor())->authorize('mesas.liberar');
         }
         $this->versionCierre = EstadoCuenta::huella($pedido);
-        $this->confirmar('Cerrar atención', 'Se comprobará que todos los productos estén pagados y entregados. Se cerrará la atención y se liberará únicamente su mesa.', 'confirmClose', 'Cerrar atención');
+        $this->confirmar('Finalizar y liberar mesa', 'Confirma que todos los consumos ya fueron entregados al cliente. Se registrarán las entregas pendientes y su salida de stock, se verificará que todo esté pagado y se liberará únicamente esta mesa. No requiere ninguna marca de Cocina ni genera otro cobro.', 'confirmClose', 'Confirmar entrega y finalizar');
     }
 
     public function confirmClose(CerrarAtencion $gestion): void

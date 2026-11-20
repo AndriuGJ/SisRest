@@ -724,3 +724,10 @@ Cocina/Barra muestra una tarjeta resumida por comanda y destino, con cantidades 
 El mozo puede entregar desde POS sin esperar una marca de Cocina. Se mantienen cantidades máximas, reservas, permisos, bloqueo transaccional y controles de combos; cada entrega descuenta stock una sola vez. La entrega acredita técnicamente la cantidad mínima preparada para conservar la integridad histórica de cantidades, pero **no** marca la comanda como terminada por Cocina. El cierre requiere cuenta pagada y entregas confirmadas por el mozo; no exige `terminado_at`. Cocina no modifica la caja ni libera mesas. Los avances registrados siguen disponibles para la lógica histórica de anulaciones y mermas.
 
 Ejecutar `php artisan migrate` para agregar `terminado_at` y `terminado_por` a `envios_cocina`. No se infieren marcas históricas de terminado ni se modifican pagos existentes.
+
+
+## Finalizar una cuenta pagada sin esperar a Cocina
+
+**Finalizar y liberar mesa** aparece directamente bajo los botones de cobro cuando la cuenta está completamente pagada y el usuario puede editar el pedido/liberar su mesa. Ya no se oculta por el estado `en_preparacion` ni exige abrir Más opciones. La confirmación declara que todos los consumos fueron entregados: registra las entregas pendientes con las reglas existentes (y permiso `entregas.confirmar`), descuenta únicamente el stock pendiente y cierra/libera la atención. No marca la comanda como terminada por Cocina ni crea otro cobro. Si falla el inventario o una validación, se revierten todas las entregas del cierre y se conserva la ocupación. Repetir un cierre ya completado no duplica movimientos.
+
+Pruebas de regresión: botón visible en cuenta pagada sin marcas de Cocina, cierre y stock exactos, combos con entregas parciales, cierre repetido, pago incompleto, permisos, reversión por inventario, marca informativa de Cocina y medios mixtos precargados. Se actualizaron fixtures de pagos digitales para incluir la referencia obligatoria y las expectativas que correspondían a pantallas/reglas anteriores. No requiere nuevas migraciones.

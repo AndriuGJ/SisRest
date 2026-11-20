@@ -80,9 +80,9 @@ function seleccionDevolucion(Pedido $pedido, ?array $porProducto = null): array
 
     return $filas;
 }
-function pagoDevolucion(string $codigo, string $monto, string $entregado = '', string $referencia = ''): array
+function pagoDevolucion(string $codigo, string $monto, string $entregado = '', ?string $referencia = null): array
 {
-    return ['medioId' => (string) MedioPago::where('codigo', $codigo)->firstOrFail()->id, 'monto' => $monto, 'entregado' => $entregado, 'referencia' => $referencia];
+    return ['medioId' => (string) MedioPago::where('codigo', $codigo)->firstOrFail()->id, 'monto' => $monto, 'entregado' => $entregado, 'referencia' => $referencia ?? (in_array($codigo, ['yape', 'plin'], true) ? 'OP-PRUEBA' : '')];
 }
 function datosDevolucion(array $cambios = []): array
 {
@@ -444,7 +444,7 @@ test('searchable receipt history includes closed attentions and respects current
     app(CerrarAtencion::class)->cerrar($this->actor, $cobro->pedido_id, EstadoCuenta::huella($cobro->pedido->fresh()));
     $dev = reintegroDev($this->actor, $cobro, $this->turno);
     $otro = fichaDev($this->actor, $this->turno, $this->gaseosa);
-    $this->get(route('pos.index'))->assertOk()->assertSee('Historial de cobros');
+    $this->get(route('pos.cobros'))->assertOk()->assertSee('Historial de cobros');
     Livewire::test(HistorialCobros::class)->set('search', $cobro->codigo)->assertSee($cobro->codigo)->assertDontSee($otro->codigo)->set('search', '')->set('devolucionFilter', 'con')->assertSee($cobro->codigo)->assertDontSee($otro->codigo);
     $actor = User::factory()->create();
     $actor->assignRole('cajero');

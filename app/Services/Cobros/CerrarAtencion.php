@@ -9,6 +9,8 @@ use App\Models\Pedido;
 use App\Models\ReservaInventario;
 use App\Models\User;
 use App\Services\Pos\AccesoPos;
+use App\Services\Pos\GestionEntregas;
+use App\Services\Pos\GestionPedidos;
 use App\Services\Pos\TransaccionPos;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -31,7 +33,7 @@ class CerrarAtencion
             if ($pedido->estado->value === 'anulado' || ! hash_equals(EstadoCuenta::huella($pedido), $version)) {
                 throw ValidationException::withMessages(['seguridad' => 'La atención cambió. Actualiza y revisa su cierre.']);
             }
-            $detalles = $pedido->detalles()->orderBy('id')->lockForUpdate()->get();
+            $detalles = $pedido->detalles()->with('producto')->orderBy('id')->lockForUpdate()->get();
             $pedido->setRelation('detalles', $detalles);
             if (! EstadoCuenta::liquidada($pedido) || $pedido->cobros()->where('estado', 'borrador')->exists()) {
                 throw ValidationException::withMessages(['seguridad' => 'Quedan productos en borrador, cantidades por cobrar o envío pendiente de pago.']);
@@ -45,6 +47,18 @@ class CerrarAtencion
                     throw ValidationException::withMessages(['seguridad' => 'El historial de cobros no coincide con el pedido.']);
                 }
             }
+            // Confirmar el cierre declara entregados los consumos pendientes.
+            // Las mismas reglas de entrega protegen stock, permisos y componentes.
+            foreach ($detalles->where('estado.value', 'confirmado') as $detalle) {
+                if ($detalle->producto->tipo->value === 'combo') {
+                    continue;
+                }
+                $pendiente = bcsub($detalle->cantidadVigente(), $detalle->cantidad_entregada, 4);
+                if (bccomp($pendiente, '0', 4) > 0) {
+                    app(GestionEntregas::class)->entregar($actor, $pedidoId, $detalle->id, $pendiente, GestionPedidos::huella($pedido->fresh()));
+                }
+            }
+            $detalles = $pedido->detalles()->orderBy('id')->lockForUpdate()->get();
             foreach ($detalles->where('estado.value', 'confirmado') as $detalle) {
                 if (bccomp($detalle->cantidad_entregada, $detalle->cantidadVigente(), 4) !== 0) {
                     throw ValidationException::withMessages(['seguridad' => 'Termina las entregas antes de cerrar la atención.']);
