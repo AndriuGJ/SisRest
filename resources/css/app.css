@@ -115,14 +115,14 @@ select:focus[data-flux-control] {
 
 /* Toma de pedido: catálogo y una sola lista, con opciones secundarias bajo demanda. */
 .pedido-workspace { display:grid; min-height:calc(100svh - 11rem); }
-.pedido-productos { display:grid; grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-content:start; }
-.pedido-categoria { padding:10px 9px;text-align:left;border-radius:4px;font-size:.8125rem;white-space:nowrap; }
+/* Tarjetas de ancho estable: se redistribuyen en hasta seis columnas. */
+.pedido-productos { display:grid;grid-template-columns:repeat(auto-fill,minmax(0,min(100%,148px)));max-width:928px;gap:8px;align-content:start; }
+.pedido-categoria { text-transform:uppercase;padding:10px 9px;text-align:left;border-radius:4px;font-size:.8125rem;white-space:nowrap; }
 .pedido-categoria:hover { background:var(--color-zinc-100); }
 .dark .pedido-categoria:hover { background:var(--color-zinc-800); }
 .pedido-categoria-activa { background:var(--color-zinc-900);color:white;font-weight:600; }
 .dark .pedido-categoria-activa { background:var(--color-zinc-100);color:var(--color-zinc-900); }
 .pedido-producto:not(:disabled):hover { border-color:var(--color-zinc-500); }
-@media(min-width:640px){.pedido-productos{grid-template-columns:repeat(3,minmax(0,1fr));}}
 @media(min-width:1024px){
 .pedido-workspace{grid-template-columns:8.5rem minmax(0,1fr) clamp(24rem,30vw,30rem);align-items:start;}
 .pedido-categorias{position:sticky;top:1rem;max-height:calc(100svh - 8rem);overflow-y:auto;border-bottom:0;}
@@ -130,10 +130,7 @@ select:focus[data-flux-control] {
 .pedido-resumen{position:sticky;top:1rem;max-height:calc(100svh - 3rem);border-top:0;border-left:1px solid var(--color-zinc-200);min-height:calc(100svh - 11rem);}
 .dark .pedido-resumen{border-color:var(--color-zinc-700);}
 .pedido-lineas{overflow-y:auto;min-height:0;}
-.pedido-productos{grid-template-columns:repeat(3,minmax(0,1fr));}
 }
-@media(min-width:1536px){.pedido-productos{grid-template-columns:repeat(5,minmax(0,1fr));}}
-@media(min-width:1800px){.pedido-productos{grid-template-columns:repeat(6,minmax(0,1fr));}}
 
 /* Tarjetas del catálogo y acciones reconocibles en el pedido. */
 .pedido-producto-foto { aspect-ratio:3/2; }
