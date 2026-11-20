@@ -552,7 +552,7 @@ class PedidoPantalla extends Component
                 $lista = bcadd($lista, $envio->cantidad_lista, 4);
                 $iniciada = bcadd($iniciada, $envio->cantidad_iniciada, 4);
             }
-            $progreso[$detalle->id] = ['lista' => $lista, 'iniciada' => $iniciada, 'entregable' => bcsub($lista, $detalle->cantidad_entregada, 4)];
+            $progreso[$detalle->id] = ['lista' => $lista, 'iniciada' => $iniciada, 'entregable' => bcsub($detalle->cantidadVigente(), $detalle->cantidad_entregada, 4)];
         }
 
         return view('livewire.pos.pedido-pantalla', ['pedido' => $pedido, 'productos' => $catalogo->paginate(18), 'seleccionados' => $seleccionados,

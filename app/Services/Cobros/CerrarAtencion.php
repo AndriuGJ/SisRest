@@ -56,7 +56,7 @@ class CerrarAtencion
                 }
             }
             if (EnvioCocina::where('pedido_id', $pedidoId)->whereHas('detalles', fn ($q) => $q->whereRaw('cantidad_entregada + cantidad_anulada < cantidad'))->exists()) {
-                throw ValidationException::withMessages(['seguridad' => 'Hay cantidades pendientes en Cocina.']);
+                throw ValidationException::withMessages(['seguridad' => 'Quedan cantidades pendientes de entrega en la atención.']);
             }
             $pedido->update(['estado' => 'cerrado', 'cerrado_at' => now()]);
             OcupacionMesa::where('pedido_id', $pedidoId)->delete();

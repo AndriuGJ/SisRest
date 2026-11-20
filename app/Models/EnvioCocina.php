@@ -18,6 +18,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $area_preparacion_id
  * @property int $usuario_id
  * @property int $numero_envio
+ * @property CarbonImmutable|null $terminado_at
+ * @property int|null $terminado_por
  * @property CarbonImmutable $enviado_at
  */
 class EnvioCocina extends Model
@@ -30,7 +32,7 @@ class EnvioCocina extends Model
         'area_preparacion_id',
         'usuario_id',
         'numero_envio',
-        'enviado_at',
+        'enviado_at', 'terminado_at', 'terminado_por',
     ];
 
     /** @return array<string, string> */
@@ -38,6 +40,7 @@ class EnvioCocina extends Model
     {
         return [
             'enviado_at' => 'immutable_datetime',
+            'terminado_at' => 'immutable_datetime',
         ];
     }
 

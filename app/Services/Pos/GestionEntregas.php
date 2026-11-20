@@ -34,15 +34,10 @@ class GestionEntregas
                 throw ValidationException::withMessages(['cantidad' => 'La entrega supera la cantidad pendiente.']);
             }
             $envios = EnvioCocinaDetalle::where('pedido_detalle_id', $detalleId)->orderBy('id')->lockForUpdate()->get();
-            if ($detalle->area_preparacion_id) {
-                $lista = '0';
-                foreach ($envios as $envio) {
-                    $lista = bcadd($lista, bcsub($envio->cantidad_lista, $envio->cantidad_entregada, 4), 4);
-                }
-                if (bccomp($valor, $lista, 4) > 0) {
-                    throw ValidationException::withMessages(['cantidad' => 'Cocina todavía no tiene lista esa cantidad.']);
-                }
-            } elseif ($envios->isNotEmpty()) {
+            if ($detalle->area_preparacion_id && $envios->count() !== 1) {
+                throw ValidationException::withMessages(['seguridad' => 'Revisa el envío histórico de este producto.']);
+            }
+            if (! $detalle->area_preparacion_id && $envios->isNotEmpty()) {
                 throw ValidationException::withMessages(['seguridad' => 'La entrega directa contiene un envío inesperado.']);
             }
             $reservas = ReservaInventario::where('pedido_detalle_id', $detalleId)->lockForUpdate()->get();
@@ -63,12 +58,22 @@ class GestionEntregas
             $reserva->update(['cantidad_consumida' => bcadd($reserva->cantidad_consumida, $valor, 4)]);
             $restante = $valor;
             foreach ($envios as $envio) {
-                $disponible = bcsub($envio->cantidad_lista, $envio->cantidad_entregada, 4);
+                $disponible = bcsub(bcsub($envio->cantidad, $envio->cantidad_anulada, 4), $envio->cantidad_entregada, 4);
                 $tomar = bccomp($restante, $disponible, 4) < 0 ? $restante : $disponible;
                 if (bccomp($tomar, '0', 4) > 0) {
-                    $envio->update(['cantidad_entregada' => bcadd($envio->cantidad_entregada, $tomar, 4)]);
+                    $entregada = bcadd($envio->cantidad_entregada, $tomar, 4);
+                    // La entrega física acredita al menos esta cantidad preparada.
+                    // No marca la comanda como terminada por Cocina.
+                    $envio->update([
+                        'cantidad_entregada' => $entregada,
+                        'cantidad_iniciada' => bccomp($envio->cantidad_iniciada, $entregada, 4) < 0 ? $entregada : $envio->cantidad_iniciada,
+                        'cantidad_lista' => bccomp($envio->cantidad_lista, $entregada, 4) < 0 ? $entregada : $envio->cantidad_lista,
+                    ]);
                     $restante = bcsub($restante, $tomar, 4);
                 }
+            }
+            if ($detalle->area_preparacion_id && bccomp($restante, '0', 4) !== 0) {
+                throw ValidationException::withMessages(['seguridad' => 'El envío no cubre la entrega. No se descontaron existencias.']);
             }
             $detalle->update(['cantidad_entregada' => $acumulada]);
             if ($detalle->detalle_padre_id) {
@@ -84,7 +89,7 @@ class GestionEntregas
                 $padre->update(['cantidad_entregada' => $unidades]);
             }
             EstadoAtencion::actualizar($pedido);
-            activity()->causedBy($actor)->performedOn($detalle)->event('producto_entregado')->withProperties(['cantidad' => $valor, 'acumulada' => $acumulada])->log('Entrega y salida de existencias confirmadas');
+            activity()->causedBy($actor)->performedOn($detalle)->event('producto_entregado')->withProperties(['cantidad' => $valor, 'acumulada' => $acumulada, 'requiere_marca_cocina' => false])->log('Entrega y salida de existencias confirmadas');
         });
     }
 }

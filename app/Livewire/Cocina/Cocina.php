@@ -56,6 +56,18 @@ class Cocina extends Component
         $this->resetPage();
     }
 
+    public function terminar(int $id, string $version, GestionCocina $gestion): void
+    {
+        try {
+            $gestion->terminar($this->actor(), $id, $version);
+        } catch (ValidationException $error) {
+            $this->notificar($error->validator->errors()->first(), 'error', toast: false);
+
+            return;
+        }
+        $this->notificar('Comanda terminada.');
+    }
+
     public function avanzar(int $id, string $accion, string $version, GestionCocina $gestion): void
     {
         try {
@@ -74,14 +86,10 @@ class Cocina extends Component
     {
         $this->actor();
         $query = EnvioCocina::with(['pedido', 'areaPreparacion', 'detalles.detallePedido.padre'])->whereHas('pedido', fn ($q) => $q->whereNotIn('estado', ['cerrado', 'anulado']))
-            ->whereHas('detalles', function ($q) {
-                $q->whereRaw('cantidad_entregada + cantidad_anulada < cantidad');
-                if ($this->estado === 'pendientes') {
-                    $q->whereRaw('cantidad_lista + cantidad_anulada < cantidad');
-                } elseif ($this->estado === 'listos') {
-                    $q->whereColumn('cantidad_lista', '>', 'cantidad_entregada');
-                }
-            })->orderBy('enviado_at')->orderBy('id');
+            ->whereHas('detalles', fn ($q) => $q->whereColumn('cantidad_anulada', '<', 'cantidad'))
+            ->when($this->estado === 'pendientes', fn ($q) => $q->whereNull('terminado_at'))
+            ->when($this->estado === 'listos', fn ($q) => $q->whereNotNull('terminado_at'))
+            ->orderBy('enviado_at')->orderBy('id');
         if (ctype_digit($this->areaId)) {
             $query->where('area_preparacion_id', $this->areaId);
         }

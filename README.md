@@ -715,3 +715,12 @@ Nota de venta registra el cobro interno. Boleta/Factura requieren permiso de emi
 
 
 **Pago mixto con medios precargados:** al activarlo se muestran todos los medios activos con nombre fijo y campos de importe, conservando los datos ya ingresados. No hay que agregar ni elegir cada medio. Los importes vacíos o cero sin otros datos se omiten al revisar y confirmar; solo se registran los medios usados. Limpiar conserva el medio y vacía sus datos. Quitar o poner en cero un importe mixto limpia su referencia y efectivo recibido. Se mantiene el máximo de diez medios efectivamente usados por cobro; la lista visible puede incluir más medios configurados.
+
+
+## Cocina informativa y entrega independiente
+
+Cocina/Barra muestra una tarjeta resumida por comanda y destino, con cantidades vigentes, productos, notas destacadas, anulaciones, mozo y tiempo. El botón **Terminado** marca la comanda completa con fecha y usuario (`cocina.marcar_listo`), sin registrar entregas, cobros ni salidas de stock. Los filtros Pendientes/Terminadas usan esta marca informativa, no el avance de la atención. Las nuevas incorporaciones continúan creando sus propios lotes.
+
+El mozo puede entregar desde POS sin esperar una marca de Cocina. Se mantienen cantidades máximas, reservas, permisos, bloqueo transaccional y controles de combos; cada entrega descuenta stock una sola vez. La entrega acredita técnicamente la cantidad mínima preparada para conservar la integridad histórica de cantidades, pero **no** marca la comanda como terminada por Cocina. El cierre requiere cuenta pagada y entregas confirmadas por el mozo; no exige `terminado_at`. Cocina no modifica la caja ni libera mesas. Los avances registrados siguen disponibles para la lógica histórica de anulaciones y mermas.
+
+Ejecutar `php artisan migrate` para agregar `terminado_at` y `terminado_por` a `envios_cocina`. No se infieren marcas históricas de terminado ni se modifican pagos existentes.

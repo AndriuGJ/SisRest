@@ -12,7 +12,7 @@
                     @php($avance = $progreso[$hoja->id] ?? ['lista' => '0', 'iniciada' => '0', 'entregable' => '0'])
                     <div wire:key="entrega-{{ $hoja->id }}" class="space-y-2 {{ $detalle->hijos->isNotEmpty() ? 'border-l-2 border-zinc-200 pl-3 dark:border-zinc-700' : '' }}">
                         @if($detalle->hijos->isNotEmpty())<p class="text-sm">{{ $hoja->descripcion }} × {{ \App\Support\Cantidad::mostrar($hoja->cantidad) }}</p>@endif
-                        <p class="text-xs text-zinc-500">{{ $hoja->area_preparacion_id ? 'Listos' : 'Entrega directa' }}: {{ \App\Support\Cantidad::mostrar($avance['entregable']) }} · Entregados: {{ \App\Support\Cantidad::mostrar($hoja->cantidad_entregada) }}</p>
+                        <p class="text-xs text-zinc-500">Pendiente de entregar: {{ \App\Support\Cantidad::mostrar($avance['entregable']) }} · Entregados: {{ \App\Support\Cantidad::mostrar($hoja->cantidad_entregada) }}</p>
                         @if(!in_array($pedido->estado->value, ['cerrado','anulado'], true) && bccomp($avance['entregable'], '0', 4) > 0)
                             @can('entregas.confirmar')
                                 <div class="flex items-end gap-2"><div class="min-w-0 flex-1"><flux:input wire:model="cantidadesEntrega.{{ $hoja->id }}" label="Cantidad a entregar" placeholder="1" type="number" min="0.0001" step="0.0001" size="sm" /></div><flux:button size="sm" wire:click="requestDelivery({{ $hoja->id }})">Entregar</flux:button></div>
