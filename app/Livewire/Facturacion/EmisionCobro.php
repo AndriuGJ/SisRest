@@ -83,7 +83,7 @@ class EmisionCobro extends Component
         $this->tipo = strlen($this->numero) === 11 ? '6' : (strlen($this->numero) === 8 ? '1' : '0');
         $this->direccion = $cobro->cliente_direccion ?? '';
         $config = ConfiguracionFacturacion::firstOrFail();
-        $this->serieId = (string) (SerieComprobante::where('activo', true)->where('entorno', $config->entorno->value)->whereHas('tipoComprobante', fn ($q) => $q->where('codigo', '03')->where('activo', true))->first()->id ?? '');
+        $this->serieId = (string) (SerieComprobante::where('activo', true)->where('entorno', $config->entorno->value)->whereHas('tipoComprobante', fn ($q) => $q->where('codigo', in_array(request()->query('documento'), ['01', '03'], true) ? request()->query('documento') : '03')->where('activo', true))->first()->id ?? '');
         foreach ($cobro->detalles as $detalle) {
             if (bccomp($detalle->subtotal, '0', 2) > 0) {
                 $this->afectaciones[$detalle->id] = bccomp($detalle->total, '0', 2) > 0 ? '10' : '';

@@ -223,7 +223,7 @@ class GestionCobros
                 throw ValidationException::withMessages(['pagos' => 'El efectivo recibido debe cubrir lo aplicado. Los medios digitales no generan vuelto.']);
             }
             $referencia = trim($fila['referencia']);
-            if ($medio->requiere_referencia && $referencia === '') {
+            if (($medio->requiere_referencia || in_array(mb_strtolower($medio->codigo), ['yape', 'plin'], true)) && $referencia === '') {
                 throw ValidationException::withMessages(['pagos' => 'Registra la referencia de '.$medio->nombre.'.']);
             }
             $cambio = bcsub($entregado, $monto, 2);

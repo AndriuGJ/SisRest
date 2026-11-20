@@ -703,3 +703,12 @@ Se retiran de esta pantalla los controles de cliente, comensales y observación 
 El icono de anulación junto a **Añadir** solicita motivo y confirmación mediante las alertas compartidas. Requiere `pedidos.anular_enviados` y, si hay mesa, `mesas.liberar`. Anula todos los productos y borradores y libera únicamente la ocupación de ese pedido, en una sola transacción. Conserva el historial y registra usuario, motivo y fecha. Reutiliza la anulación individual para liberar reservas, actualizar Cocina/Barra y registrar merma cuando ya se inició la preparación; en ese caso también exige `inventario.registrar_merma`.
 
 No admite pedidos cerrados ni atenciones con cobros o cantidades entregadas: esos casos mantienen sus operaciones de cobro/devolución. La confirmación revalida el pedido y el avance de Cocina; si cambiaron desde la revisión, exige revisar de nuevo. Los borradores locales sin guardar se descartan al completar la anulación. No se agregan tablas ni migraciones.
+
+
+## Cobro enfocado del POS
+
+La pantalla de cobro utiliza un layout propio sin sidebar, con Volver al pedido. Conserva la selección de cantidades para dividir cuentas, descuentos autorizados, cargo de delivery de una sola vez, historial y caja autorizada. A la izquierda muestra consumos y resumen; a la derecha documento, búsqueda de cliente, caja y pagos.
+
+El medio único permite seleccionar cualquier medio activo. Pago mixto conserva hasta diez filas, una por medio. Completar saldo calcula el importe restante en el servidor; Efectivo rápido completa lo aplicado y establece lo recibido (Exacto, 10, 20, 50, 100 o 200). Solo el efectivo genera vuelto e ingreso físico. Yape y Plin exigen número de operación, además de cualquier otro medio configurado con referencia obligatoria. Cambiar el medio limpia su referencia y efectivo recibido.
+
+Nota de venta registra el cobro interno. Boleta/Factura requieren permiso de emisión, configuración habilitada y serie activa; Factura exige cliente con RUC y dirección antes de cobrar. Tras registrar el pago se abre la revisión fiscal existente con el tipo elegido: no se emite ni envía a SUNAT automáticamente, no se cobra de nuevo y siguen vigentes las validaciones fiscales. El documento elegido no cambia los importes ni el inventario. No requiere migraciones.

@@ -5,9 +5,12 @@ namespace App\Livewire\Cobros;
 use App\Concerns\ConAlertas;
 use App\Models\Cliente;
 use App\Models\Cobro;
+use App\Models\ConfiguracionFacturacion;
 use App\Models\MedioPago;
 use App\Models\MotivoBeneficio;
 use App\Models\Pedido;
+use App\Models\PedidoDetalle;
+use App\Models\SerieComprobante;
 use App\Models\User;
 use App\Services\Cajas\AccesoCajas;
 use App\Services\Cobros\CalculoBeneficios;
@@ -18,6 +21,7 @@ use App\Services\Pos\AccesoPos;
 use App\Support\Alertas;
 use App\Support\Cantidad;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
@@ -27,7 +31,7 @@ use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
-#[Layout('layouts.app')]
+#[Layout('layouts.cobro')]
 #[Title('Cobrar y dividir cuenta')]
 class CobroFormulario extends Component
 {
@@ -41,6 +45,11 @@ class CobroFormulario extends Component
     public string $clienteId = '';
 
     public string $clienteSearch = '';
+
+    public string $documento = 'interno';
+
+    #[Locked]
+    public string $documentoRevisado = 'interno';
 
     public string $grupoPagador = '';
 
@@ -112,7 +121,10 @@ class CobroFormulario extends Component
         $this->turnoId = (string) (AccesoCajas::consulta($this->actor())->where('estado', 'abierta')->whereHas('caja', fn ($q) => $q->where('activo', true))->orderBy('id')->value('id') ?? '');
         $this->incluirEnvio = bccomp(EstadoCuenta::envioPendiente($pedido), '0', 2) > 0;
         $this->selectPending();
-        $this->addPayment();
+        $medio = MedioPago::where('activo', true)->where('afecta_efectivo', true)->first();
+        if ($medio && bccomp($this->resumenSeleccion($pedido)['total'], '0', 2) > 0) {
+            $this->usarMedio($medio->id);
+        }
     }
 
     public function selectPending(): void
@@ -141,6 +153,14 @@ class CobroFormulario extends Component
         }
     }
 
+    public function mixedPayment(): void
+    {
+        $this->addPayment();
+        if (count($this->pagos) === 1) {
+            $this->addPayment();
+        }
+    }
+
     public function removePayment(string $clave): void
     {
         $this->pedido();
@@ -153,15 +173,58 @@ class CobroFormulario extends Component
             $this->descuentoValor = '0';
             $this->motivoId = $this->motivoDetalle = '';
         }
-        if (preg_match('/^pagos\.([^.]+)\.medioId$/', $campo, $partes) && isset($this->pagosParaVista($this->pagos)[$partes[1]])) {
-            $this->pagos[$partes[1]]['entregado'] = '';
+        $filas = $this->pagosParaVista($this->pagos);
+        if (preg_match('/^pagos\.([^.]+)\.medioId$/', $campo, $partes) && isset($filas[$partes[1]])) {
+            $fila = $filas[$partes[1]];
+            $fila['entregado'] = $fila['referencia'] = '';
+            $this->pagos[$partes[1]] = $fila;
         }
+    }
+
+    public function usarMedio(int $id): void
+    {
+        $pedido = $this->pedido();
+        MedioPago::where('activo', true)->findOrFail($id);
+        if (count($this->pagos) > 1) {
+            $this->notificar('Elige los medios en cada fila del pago mixto.', 'info');
+
+            return;
+        }
+        $clave = array_key_first($this->pagos) ?? 'p-'.Str::uuid();
+        $this->pagos[$clave] = ['medioId' => (string) $id, 'monto' => $this->resumenSeleccion($pedido)['total'], 'entregado' => '', 'referencia' => ''];
+    }
+
+    public function completarPago(string $clave): void
+    {
+        $pedido = $this->pedido();
+        $filas = $this->pagosParaVista($this->pagos);
+        abort_unless(isset($filas[$clave]), 422);
+        $restante = $this->resumenSeleccion($pedido)['total'];
+        foreach ($filas as $otra => $fila) {
+            if ($otra !== $clave && $fila['monto'] !== '') {
+                $restante = bcsub($restante, ImportesCompra::importe($fila['monto'], 'pagos'), 2);
+            }
+        }
+        $fila = $filas[$clave];
+        $fila['monto'] = bccomp($restante, '0', 2) > 0 ? $restante : '0.00';
+        $fila['entregado'] = '';
+        $this->pagos[$clave] = $fila;
+    }
+
+    public function efectivoRapido(string $clave, string $valor): void
+    {
+        $this->pedido();
+        $fila = $this->pagosParaVista($this->pagos)[$clave] ?? null;
+        abort_unless($fila !== null && in_array($valor, ['exacto', '10', '20', '50', '100', '200'], true), 422);
+        abort_unless(MedioPago::where('activo', true)->where('afecta_efectivo', true)->whereKey($fila['medioId'])->exists(), 422);
+        $this->completarPago($clave);
+        $this->pagos[$clave]['entregado'] = $valor === 'exacto' ? $this->pagos[$clave]['monto'] : $valor;
     }
 
     public function review(GestionCobros $gestion): void
     {
         $this->resetValidation();
-        $this->validate(['turnoId' => ['required', 'integer'], 'cantidades' => ['array', 'max:1000'], 'cantidades.*' => ['string', 'max:20']]);
+        $this->validate(['documento' => ['required', 'in:interno,01,03'], 'turnoId' => ['required', 'integer'], 'cantidades' => ['array', 'max:1000'], 'cantidades.*' => ['string', 'max:20']]);
         $seleccion = [];
         foreach ($this->cantidades as $id => $cantidad) {
             if ($cantidad !== '' && $cantidad !== '0') {
@@ -170,6 +233,17 @@ class CobroFormulario extends Component
         }
         $datos = ['clienteId' => $this->clienteId, 'grupoPagador' => $this->grupoPagador, 'incluirEnvio' => $this->incluirEnvio, 'descuentoTipo' => $this->descuentoTipo, 'descuentoValor' => $this->descuentoValor, 'motivoId' => $this->motivoId, 'motivoDetalle' => $this->motivoDetalle];
         $plan = $gestion->previsualizar($this->actor(), $this->pedidoId, (int) $this->turnoId, $datos, $seleccion, $this->pagos);
+        if ($this->documento !== 'interno') {
+            Gate::forUser($this->actor())->authorize('comprobantes.emitir');
+            $config = ConfiguracionFacturacion::firstOrFail();
+            if (! $config->habilitada || ! SerieComprobante::where('activo', true)->where('entorno', $config->entorno->value)->whereHas('tipoComprobante', fn ($q) => $q->where('activo', true)->where('codigo', $this->documento))->exists()) {
+                throw ValidationException::withMessages(['documento' => 'Habilita la facturación y una serie del documento elegido antes de cobrar, o elige Nota de venta.']);
+            }
+            if ($this->documento === '01' && (! preg_match('/^[0-9]{11}$/', $plan['cliente']['documento'] ?? '') || trim($plan['cliente']['direccion'] ?? '') === '')) {
+                throw ValidationException::withMessages(['clienteId' => 'Para factura selecciona un cliente con RUC y dirección.']);
+            }
+        }
+        $this->documentoRevisado = $this->documento;
         $this->revision = $plan;
         $this->clave = (string) Str::uuid();
         $this->huellaRevisada = $plan['huella'];
@@ -196,6 +270,11 @@ class CobroFormulario extends Component
             return;
         }
         Alertas::flash('Cobro registrado.');
+        if ($this->documentoRevisado !== 'interno') {
+            $this->redirectRoute('pos.emitir', ['cobro' => $cobro->id, 'documento' => $this->documentoRevisado], navigate: true);
+
+            return;
+        }
         $this->redirectRoute('pos.cobro', $cobro, navigate: true);
     }
 
@@ -227,10 +306,10 @@ class CobroFormulario extends Component
         return $resultado;
     }
 
-    public function render(): View
+    /** @return array{lineas:Collection<int,PedidoDetalle>,cantidadesVista:array<int,numeric-string>,subtotal:numeric-string,total:numeric-string,envioPendiente:numeric-string,descuentoProductos:numeric-string,descuentoGeneral:numeric-string,puedeGeneral:bool,lineasImportes:array<int,array{bruto:numeric-string,beneficio:numeric-string,total:numeric-string}>} */
+    private function resumenSeleccion(Pedido $pedido): array
     {
-        $actor = $this->actor();
-        $pedido = $this->pedido()->load('detalles');
+        $pedido->loadMissing('detalles');
         $lineas = $pedido->detalles->whereNull('detalle_padre_id')->where('estado.value', 'confirmado');
         $subtotal = $descuentoProductos = $descuentoGeneral = '0.00';
         $lineasImportes = [];
@@ -261,6 +340,15 @@ class CobroFormulario extends Component
             }
         }
         $total = bcadd(bcsub(bcsub($subtotal, $descuentoProductos, 2), $descuentoGeneral, 2), $this->incluirEnvio ? $envioPendiente : '0', 2);
+
+        return compact('lineas', 'cantidadesVista', 'subtotal', 'total', 'envioPendiente', 'descuentoProductos', 'descuentoGeneral', 'puedeGeneral', 'lineasImportes');
+    }
+
+    public function render(): View
+    {
+        $actor = $this->actor();
+        $pedido = $this->pedido()->load('detalles');
+        $resumen = $this->resumenSeleccion($pedido);
         $clientes = collect();
         if ($actor->can('clientes.ver')) {
             $query = Cliente::where('activo', true)->orderBy('nombre');
@@ -298,8 +386,7 @@ class CobroFormulario extends Component
         $turnosQuery = AccesoCajas::consulta($actor);
         $historial = Cobro::where('pedido_id', $pedido->id)->whereIn('turno_caja_id', (clone $turnosQuery)->select('id'))->latest('id')->get();
 
-        return view('livewire.cobros.formulario', ['pedido' => $pedido, 'lineas' => $lineas, 'cantidadesVista' => $cantidadesVista, 'subtotal' => $subtotal, 'total' => $total,
-            'envioPendiente' => $envioPendiente, 'descuentoProductos' => $descuentoProductos, 'descuentoGeneral' => $descuentoGeneral, 'puedeGeneral' => $puedeGeneral, 'lineasImportes' => $lineasImportes,
+        return view('livewire.cobros.formulario', $resumen + ['pedido' => $pedido,
             'motivosBeneficio' => MotivoBeneficio::where('activo', true)->whereIn('tipo', ['descuento', 'ambos'])->orderBy('nombre')->get(), 'medios' => $medios, 'clientes' => $clientes, 'pagosVista' => $pagosVista, 'aplicado' => $aplicado, 'efectivo' => $efectivo, 'vuelto' => $vuelto,
             'turnos' => $turnosQuery->with('caja')->where('estado', 'abierta')->whereHas('caja', fn ($q) => $q->where('activo', true))->get(), 'historial' => $historial]);
     }
