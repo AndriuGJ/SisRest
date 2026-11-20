@@ -98,7 +98,7 @@ select:focus[data-flux-control] {
 /* Plano del restaurante: salones, mesas y apertura sin formularios superpuestos. */
 .pos-workspace { display: grid; min-height: min(72rem, calc(100svh - 12rem)); }
 .pos-mesas { display:grid;grid-template-columns:repeat(auto-fill,minmax(144px,156px));gap:12px;align-content:start;align-items:start; }
-.pos-mesa { min-width:0;width:100%;aspect-ratio:1/1;min-height:144px;padding:8px;gap:3px;transition:box-shadow .12s ease; }
+.pos-mesa { min-width:0;width:100%;aspect-ratio:1/1;min-height:144px;padding:8px;gap:3px;border-width:2px;transition:box-shadow .12s ease; }
 .pos-mesa > span { margin-top:0;max-width:100%;font-size:11px;line-height:14px; }
 .pos-mesa > .pos-mesa-nombre { font-size:12px;line-height:16px; }
 .pos-mesa-icono { width:40px;height:30px;flex-shrink:0;margin-bottom:1px; }
@@ -106,7 +106,7 @@ select:focus[data-flux-control] {
 .pos-mesa:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 .pos-mesa:disabled { cursor: wait; }
 @media (min-width: 1024px) {
-    .pos-workspace { grid-template-columns: 8.5rem minmax(0, 1fr) 19rem; }
+    .pos-workspace { grid-template-columns:8.5rem minmax(0,1fr) clamp(22rem,28vw,26rem); }
     .pos-salones { border-bottom: 0; border-right: 1px solid var(--color-zinc-200); }
     .pos-seleccion { border-top: 0; border-left: 1px solid var(--color-zinc-200); }
     .dark .pos-salones, .dark .pos-seleccion { border-color: var(--color-zinc-700); }
@@ -188,7 +188,9 @@ select:focus[data-flux-control] {
 .pos-palette .pos-salones, .pos-palette .pedido-categorias { background:var(--pos-surface); }
 .pos-palette .pedido-categoria:hover, .pos-palette .pos-salon:hover { background:var(--pos-soft); }
 .pos-palette .pedido-categoria-activa, .pos-palette .pos-salon[aria-pressed="true"] { background:transparent;color:#e95459;box-shadow:none;font-weight:600; }
-.pos-palette .pos-mesa[aria-pressed="true"] { --tw-ring-color:var(--pos-primary); }
+.pos-palette .pos-mesa[aria-pressed="true"] { border-color:var(--pos-primary)!important;box-shadow:0 0 0 2px var(--pos-primary); }
+.pos-mesa-disponible { color:#111111!important; }
+.pos-mesa-disponible > span { opacity:1; }
 .pos-palette .pedido-producto { border-color:var(--pos-border); }
 .pos-palette .pedido-producto:not(:disabled):hover { border-color:var(--pos-primary);box-shadow:0 0 0 1px var(--pos-primary); }
 .pos-palette .pedido-producto-nombre { left:auto;right:4px;top:34%;width:max-content;max-width:calc(100% - 8px);padding:3px 5px;background:#7b7cde;color:#ffffff;border:0;font-weight:400;text-transform:uppercase;text-align:right;justify-content:flex-end; }
