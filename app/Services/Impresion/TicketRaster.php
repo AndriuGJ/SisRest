@@ -5,6 +5,7 @@ namespace App\Services\Impresion;
 use App\Services\Configuracion\IdentidadVisual;
 use GdImage;
 use RuntimeException;
+use Throwable;
 
 class TicketRaster
 {
@@ -106,11 +107,25 @@ class TicketRaster
     {
         $ruta = tempnam(sys_get_temp_dir(), 'sisrest-ticket-');
         try {
-            if ($ruta === false || ! imagepng($imagen, $ruta)) {
+            if ($ruta === false) {
+                throw new RuntimeException('No se pudo crear el archivo temporal del ticket.');
+            }
+            // GD de escpos-php selecciona el formato por la extensión del archivo.
+            $png = $ruta.'.png';
+            if (! rename($ruta, $png)) {
+                throw new RuntimeException('No se pudo preparar la imagen PNG del ticket.');
+            }
+            $ruta = $png;
+            if (! imagepng($imagen, $ruta)) {
                 throw new RuntimeException('No se pudo generar la imagen del ticket.');
             }
 
             return $ruta;
+        } catch (Throwable $error) {
+            if ($ruta !== false) {
+                @unlink($ruta);
+            }
+            throw $error;
         } finally {
             imagedestroy($imagen);
         }

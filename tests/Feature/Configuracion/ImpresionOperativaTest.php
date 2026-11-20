@@ -36,7 +36,9 @@ use App\Services\Pos\GestionPedidos;
 use Database\Seeders\EjemploInventarioSeeder;
 use Database\Seeders\RolesPermisosSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
@@ -517,3 +519,24 @@ test('request identity compares typed JSON fields independently of object key or
     $otraCaja['caja'] = $this->turno->caja_id;
     expect(fn () => $g->imprimir($this->actor, $otraCaja, 0, '', $clave, $plan['huella']))->toThrow(HttpException::class);
 });
+
+test('graphical tickets generate ESC POS bytes with each configured font and paper width', function (string $fuente, int $ancho) {
+    $bytes = app(TicketOperativo::class)->generar("PRECUENTA\nProducto    S/ 6.00\n", null, null, ['fuente' => $fuente, 'tamano' => 12, 'grafica' => true], $ancho);
+    expect(strlen($bytes))->toBeGreaterThan(100)->and(str_contains($bytes, "\x1dv0"))->toBeTrue();
+})->with(['poppins', 'inter', 'roboto'])->with([58, 80]);
+
+test('prebill with branding generates and sends the document instead of failing before transport', function (bool $logo, bool $grafica) {
+    Storage::fake('local');
+    if ($logo) {
+        Storage::disk('local')->put('marca/prueba.png', UploadedFile::fake()->image('logo.png', 120, 60)->get());
+    }
+    Empresa::firstOrFail()->update(['logo_ruta' => $logo ? 'marca/prueba.png' : null, 'apariencia' => ['fuente' => 'poppins', 'grafica' => $grafica]]);
+    $pedido = cuentaCobrosImpresion($this->actor, $this->turno, [$this->gaseosa->id => 1]);
+    $solicitud = solicitudImpresion('precuenta', $pedido->id, $this->turno->caja_id);
+    $impresion = app(ImpresionOperativa::class);
+    $plan = $impresion->previsualizar($this->actor, $solicitud);
+    $this->transporte->shouldReceive('enviar')->once()->with('127.0.0.1', 19102, Mockery::on(fn ($bytes) => str_contains($bytes, "\x1dv0") && strlen($bytes) > 100));
+    $trabajo = $impresion->imprimir($this->actor, $solicitud, 0, '', (string) Str::uuid(), $plan['huella']);
+    expect($trabajo->estado->value)->toBe('enviado')->and($trabajo->ultimo_error)->toBeNull()
+        ->and($pedido->fresh()->estado->value)->not->toBe('cerrado')->and(Cobro::count())->toBe(0);
+})->with([[true, false], [false, true], [true, true]]);
