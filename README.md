@@ -696,3 +696,10 @@ La pantalla del pedido organiza categorías, catálogo fotográfico y un único 
 **Añadir** guarda el borrador y solicita confirmación para reservar y enviar únicamente las líneas nuevas. Si se cancela esa confirmación, las líneas quedan guardadas en borrador y pueden editarse o añadirse después. Los lotes enviados no se modifican retroactivamente: sus acciones permanecen dentro de **Entrega y opciones**. **Más opciones** conserva caja de operación, guardar sin enviar, descarte, comandas/precuenta y cierre. Los accesos Cobrar/Dividir verifican que no haya cambios sin guardar ni líneas pendientes de confirmar.
 
 Se retiran de esta pantalla los controles de cliente, comensales y observación general, conservando sus datos existentes; la selección del cliente sigue en Cobros. Las notas por producto permanecen disponibles. No cambia el esquema de datos ni exige migración.
+
+
+## POS: anulación completa de la atención
+
+El icono de anulación junto a **Añadir** solicita motivo y confirmación mediante las alertas compartidas. Requiere `pedidos.anular_enviados` y, si hay mesa, `mesas.liberar`. Anula todos los productos y borradores y libera únicamente la ocupación de ese pedido, en una sola transacción. Conserva el historial y registra usuario, motivo y fecha. Reutiliza la anulación individual para liberar reservas, actualizar Cocina/Barra y registrar merma cuando ya se inició la preparación; en ese caso también exige `inventario.registrar_merma`.
+
+No admite pedidos cerrados ni atenciones con cobros o cantidades entregadas: esos casos mantienen sus operaciones de cobro/devolución. La confirmación revalida el pedido y el avance de Cocina; si cambiaron desde la revisión, exige revisar de nuevo. Los borradores locales sin guardar se descartan al completar la anulación. No se agregan tablas ni migraciones.

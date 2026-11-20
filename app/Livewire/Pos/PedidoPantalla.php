@@ -15,6 +15,7 @@ use App\Services\Cobros\CerrarAtencion;
 use App\Services\Cobros\EstadoCuenta;
 use App\Services\Inventario\CalculoProduccion;
 use App\Services\Pos\AccesoPos;
+use App\Services\Pos\AnularPedido;
 use App\Services\Pos\CatalogoPos;
 use App\Services\Pos\ConfirmarPedido;
 use App\Services\Pos\GestionEntregas;
@@ -101,6 +102,16 @@ class PedidoPantalla extends Component
     public bool $showNote = false;
 
     public bool $showDiscard = false;
+
+    public bool $showCancelOrder = false;
+
+    public string $motivoAnulacionTotal = '';
+
+    #[Locked]
+    public string $motivoTotalRevisado = '';
+
+    #[Locked]
+    public string $huellaAnulacionTotal = '';
 
     public string $motivo = '';
 
@@ -359,6 +370,51 @@ class PedidoPantalla extends Component
             return;
         }
         Alertas::flash('Atención cerrada y mesa liberada.');
+        $this->redirectRoute('pos.index', navigate: true);
+    }
+
+    public function openCancelOrder(): void
+    {
+        Gate::forUser($this->actor())->authorize('pedidos.anular_enviados');
+        $pedido = $this->pedido();
+        if ($pedido->mesa_id) {
+            Gate::forUser($this->actor())->authorize('mesas.liberar');
+        }
+        $this->resetValidation();
+        $this->motivoAnulacionTotal = $this->motivoTotalRevisado = $this->huellaAnulacionTotal = '';
+        $this->showCancelOrder = true;
+    }
+
+    public function reviewCancelOrder(AnularPedido $gestion): void
+    {
+        $this->resetValidation();
+        $plan = $gestion->previsualizar($this->actor(), $this->pedidoId, $this->motivoAnulacionTotal);
+        $this->motivoTotalRevisado = trim($this->motivoAnulacionTotal);
+        $this->huellaAnulacionTotal = $plan['huella'];
+        $this->showCancelOrder = false;
+        $texto = 'Se anulará todo el pedido, incluidos los borradores, y se liberará la mesa. Los productos todavía sin preparar liberarán sus reservas.';
+        if ($plan['mermas'] > 0) {
+            $texto .= ' Hay productos en preparación o listos: se registrarán como merma y no volverán al stock disponible.';
+        }
+        $this->confirmar('Anular pedido completo', $texto.' No se devolverá dinero. Esta operación no se puede deshacer.', 'confirmCancelOrder', 'Anular todo', peligro: true);
+    }
+
+    public function confirmCancelOrder(AnularPedido $gestion): void
+    {
+        if ($this->huellaAnulacionTotal === '' || $this->motivoTotalRevisado === '') {
+            $this->notificar('Revisa la anulación antes de confirmar.', 'warning', toast: false);
+
+            return;
+        }
+        try {
+            $gestion->anular($this->actor(), $this->pedidoId, $this->motivoTotalRevisado, $this->huellaAnulacionTotal);
+        } catch (ValidationException $error) {
+            $this->huellaAnulacionTotal = '';
+            $this->notificar($error->validator->errors()->first(), 'error', toast: false);
+
+            return;
+        }
+        Alertas::flash('Pedido anulado y mesa liberada.');
         $this->redirectRoute('pos.index', navigate: true);
     }
 
