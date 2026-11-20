@@ -230,3 +230,14 @@ select:focus[data-flux-control] {
 .pos-palette .pedido-accion-nota { background:#edfcff!important;color:#00b8d4!important; }
 .dark .pos-palette .pedido-producto-categoria { color:#b8b8c2; }
 .dark .pos-palette .pedido-lineas > article :is(h3,strong) { color:#d4dde4; }
+
+/* Menú compacto: Flux conserva los accesos y despliega grupos desde sus iconos. */
+[data-flux-sidebar][data-flux-sidebar-collapsed-desktop] .sidebar-section-label { display:none; }
+[data-flux-sidebar][data-flux-sidebar-collapsed-desktop] .sidebar-compact-toggle { width:100%; }
+@media(min-width:1024px) {
+    .pos-palette [data-flux-main] { padding:12px; }
+    .pos-palette [data-flux-sidebar] { gap:10px; }
+}
+@media(max-width:1023px) {
+    .pos-palette [data-flux-main] { padding:10px; }
+}

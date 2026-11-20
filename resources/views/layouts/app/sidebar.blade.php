@@ -4,14 +4,24 @@
         @include('partials.head')
     </head>
     <body class="min-h-screen bg-white dark:bg-zinc-800 {{ request()->routeIs('pos.*') ? 'pos-palette' : '' }}">
-        <flux:sidebar sticky collapsible="mobile" class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
+        <flux:sidebar sticky collapsible persist="false" class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
             <flux:sidebar.header>
                 <x-app-logo :sidebar="true" href="{{ route('dashboard') }}" wire:navigate />
                 <flux:sidebar.collapse class="lg:hidden" />
             </flux:sidebar.header>
 
+            <div class="hidden justify-end lg:flex" x-data="sidebarControl">
+                <button type="button" class="sidebar-compact-toggle flex size-8 items-center justify-center border border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    x-on:click="$dispatch('flux-sidebar-toggle')"
+                    x-bind:aria-expanded="!collapsed"
+                    x-bind:aria-label="collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'"
+                    x-bind:title="collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'">
+                    <flux:icon.chevron-right class="size-4" x-bind:class="collapsed ? '' : 'rotate-180'" />
+                </button>
+            </div>
+
             <flux:sidebar.nav>
-                <flux:sidebar.group heading="Restaurante" class="grid">
+                <div class="grid"><p class="sidebar-section-label px-3 py-2 text-sm font-medium text-zinc-400">Restaurante</p>
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
@@ -27,7 +37,7 @@
                     @can('clientes.ver')
                         <flux:sidebar.item icon="user-group" :href="route('clientes.index')" :current="request()->routeIs('clientes.*')" wire:navigate>Clientes</flux:sidebar.item>
                     @endcan
-                </flux:sidebar.group>
+                </div>
                 @can('comprobantes.ver')
                     <flux:sidebar.group heading="Ventas" icon="receipt-percent" expandable :expanded="request()->routeIs('comprobantes.*')" class="mt-1"><flux:sidebar.item icon="document-text" :href="route('comprobantes.index')" :current="request()->routeIs('comprobantes.*')" wire:navigate>Comprobantes</flux:sidebar.item></flux:sidebar.group>
                 @endcan
