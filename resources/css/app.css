@@ -247,3 +247,6 @@ select:focus[data-flux-control] {
 .pos-palette .pos-comensales-control:hover { background:#f5e38c!important; }
 .pos-palette .pos-continuar { background:#ea5b5d!important;border-color:#ea5b5d!important;color:#ffffff!important; }
 .pos-palette .pos-continuar:hover { background:#d94e50!important; }
+
+.pos-palette .pedido-anular-total { background:#ea5b5d!important;color:#ffffff!important;border:1px solid #ea5b5d; }
+.pos-palette .pedido-anular-total:hover { background:#d94e50!important; }
