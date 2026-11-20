@@ -23,7 +23,7 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * @phpstan-type Linea array{descripcion:string,cantidad:string,nota:string,extra:list<string>,precio?:numeric-string,descuento?:numeric-string,total?:numeric-string}
- * @phpstan-type Contenido array{version:int,titulo:string,empresa:list<string>,referencia:string,fecha:string,datos:list<string>,lineas:list<Linea>,totales:list<array{nombre:string,monto:numeric-string}>,pagos:list<array{nombre:string,monto:numeric-string,extra:list<string>}>,avisos:list<string>,qr?:string,logo?:string|null,tipografia?:array{fuente:string,tamano:int,grafica:bool}}
+ * @phpstan-type Contenido array{formato?:string,revision?:string,version:int,titulo:string,empresa:list<string>,referencia:string,fecha:string,datos:list<string>,lineas:list<Linea>,totales:list<array{nombre:string,monto:numeric-string}>,pagos:list<array{nombre:string,monto:numeric-string,extra:list<string>}>,avisos:list<string>,qr?:string,logo?:string|null,tipografia?:array{fuente:string,tamano:int,grafica:bool}}
  * @phpstan-type Identidad array{pedido:Pedido,modelo:class-string,id:int,tipo:string,area:int}
  */
 class FuenteImpresion
@@ -126,10 +126,18 @@ class FuenteImpresion
     private function comanda(array $base, int $id): array
     {
         $envio = EnvioCocina::with(['detalles.detallePedido.padre', 'areaPreparacion', 'pedido'])->findOrFail($id);
+        $base['formato'] = 'comanda_simple';
+        $base['revision'] = hash('sha256', json_encode($envio->detalles->map(fn ($detalle) => $detalle->getAttributes())->all(), JSON_THROW_ON_ERROR));
+        $base['logo'] = null;
+        $base['empresa'] = [];
         $base['titulo'] = 'COMANDA';
-        $base['referencia'] .= ' / lote '.$envio->numero_envio;
+        $base['referencia'] .= ' / LOTE '.$envio->numero_envio;
         $base['fecha'] = $envio->enviado_at->timezone('America/Lima')->format('d/m/Y H:i');
-        $base['datos'][] = 'Destino: '.($envio->area_nombre ?? $envio->areaPreparacion->nombre);
+        $base['datos'] = [match ($envio->pedido->modalidad->value) {
+            'mesa' => 'MESA: '.($envio->pedido->mesa_codigo ?? ($envio->pedido->mesa_id ? $envio->pedido->mesa->codigo : '')),
+            'rapida' => 'PARA LLEVAR',
+            default => 'DELIVERY',
+        }];
         foreach ($envio->detalles as $d) {
             $cantidad = bcsub($d->cantidad, $d->cantidad_anulada, 4);
             if (bccomp($cantidad, '0', 4) <= 0) {
@@ -139,20 +147,11 @@ class FuenteImpresion
             if ($d->detallePedido->padre) {
                 $extra[] = 'Combo: '.$d->detallePedido->padre->descripcion;
             }
-            $extra[] = 'Sin iniciar: '.Cantidad::mostrar(bcsub($cantidad, $d->cantidad_iniciada, 4)).' / preparando: '.Cantidad::mostrar(bcsub($d->cantidad_iniciada, $d->cantidad_lista, 4));
-            $extra[] = 'Listos: '.Cantidad::mostrar(bcsub($d->cantidad_lista, $d->cantidad_entregada, 4)).' / entregados: '.Cantidad::mostrar($d->cantidad_entregada);
-            if (bccomp($d->cantidad_anulada, '0', 4) > 0) {
-                $extra[] = 'Ya anulados: '.Cantidad::mostrar($d->cantidad_anulada);
-            }
             $base['lineas'][] = ['descripcion' => $d->descripcion, 'cantidad' => Cantidad::mostrar($cantidad), 'nota' => $d->nota ?? '', 'extra' => $extra];
         }
         if ($base['lineas'] === []) {
             throw ValidationException::withMessages(['impresion' => 'Este envío no tiene cantidades vigentes que imprimir. Consulta sus avisos de anulación.']);
         }
-        if ($envio->pedido->observaciones) {
-            $base['datos'][] = 'Observación: '.$envio->pedido->observaciones;
-        }
-        $base['avisos'] = ['Verificar lote y avance antes de preparar.', 'Los nuevos pedidos llevan otro número de lote.'];
 
         return $base;
     }

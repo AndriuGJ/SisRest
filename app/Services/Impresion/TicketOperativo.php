@@ -31,6 +31,34 @@ class TicketOperativo
             $lineas[] = $nombre.str_repeat(' ', max(1, $columnas - strlen($nombre) - strlen($monto))).$monto;
         };
         $separador = str_repeat('-', $columnas);
+        if (($contenido['formato'] ?? null) === 'comanda_simple') {
+            if ($copia) {
+                $agregar('*** COPIA / REIMPRESIÓN ***');
+                $agregar('NO DUPLICAR PREPARACIÓN');
+            }
+            $agregar(str_pad('COMANDA', $columnas, ' ', STR_PAD_BOTH));
+            $lineas[] = $separador;
+            $agregar($contenido['referencia']);
+            $agregar('FECHA: '.$contenido['fecha']);
+            foreach ($contenido['datos'] as $texto) {
+                $agregar($texto);
+            }
+            $lineas[] = $separador;
+            $agregar(str_pad('PLATOS E INSUMOS', $columnas, ' ', STR_PAD_BOTH));
+            $lineas[] = $separador;
+            foreach ($contenido['lineas'] as $fila) {
+                $agregar($fila['cantidad'].' x '.$fila['descripcion']);
+                if ($fila['nota'] !== '') {
+                    $agregar('  NOTA: '.$fila['nota']);
+                }
+                foreach ($fila['extra'] as $texto) {
+                    $agregar('  '.$texto);
+                }
+                $agregar('');
+            }
+
+            return implode("\n", $lineas)."\n";
+        }
         if ($copia) {
             $agregar('*** COPIA / REIMPRESIÓN ***');
             $agregar('NO DUPLICAR PREPARACIÓN NI COBRO');

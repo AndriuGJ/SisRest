@@ -17,6 +17,7 @@ use App\Models\MovimientoCaja;
 use App\Models\MovimientoInventario;
 use App\Models\Pedido;
 use App\Models\Producto;
+use App\Models\Salon;
 use App\Models\TrabajoImpresion;
 use App\Models\TurnoCaja;
 use App\Models\User;
@@ -167,7 +168,7 @@ test('each new kitchen lot prints only that lot and a combo uses its historical 
     app(GestionPedidos::class)->guardar($this->actor, $pedido->id, $this->turno->id, GestionPedidos::huella($pedido->fresh()), ['clienteId' => '', 'comensales' => '', 'observaciones' => ''], ['n' => ['detalleId' => '', 'productoId' => (string) $this->chaufa->id, 'cantidad' => '2', 'nota' => 'Segundo lote']]);
     app(ConfirmarPedido::class)->confirmar($this->actor, $pedido->id, $this->turno->id, GestionPedidos::huella($pedido->fresh()), (string) Str::uuid());
     $dos = imprimirOperativo($this->actor, solicitudImpresion('comanda', EnvioCocina::latest('id')->first()->id));
-    expect(app(ImpresionOperativa::class)->texto($dos))->toContain('lote 2')->toContain('2 x Chaufa')->toContain('Segundo lote')->not->toContain('Sin cebolla');
+    expect(app(ImpresionOperativa::class)->texto($dos))->toContain('LOTE 2')->toContain('2 x Chaufa')->toContain('Segundo lote')->not->toContain('Sin cebolla');
 });
 
 test('cancellation notice prints canceled quantities without applying cancellation a second time', function () {
@@ -180,7 +181,7 @@ test('cancellation notice prints canceled quantities without applying cancellati
     $stock = $this->chaufa->articulo->fresh()->toArray();
     $comanda = imprimirOperativo($this->actor, solicitudImpresion('comanda', EnvioCocina::first()->id));
     $aviso = imprimirOperativo($this->actor, solicitudImpresion('anulacion', $anulacion->id, 0, $detalle->area_preparacion_id));
-    expect(app(ImpresionOperativa::class)->texto($comanda))->toContain('2 x Chaufa')->toContain('Ya anulados: 1')->and(app(ImpresionOperativa::class)->texto($aviso))->toContain('ANULACION DE COMANDA')->toContain('1 x Chaufa')->not->toContain('S/')->and($this->chaufa->articulo->fresh()->toArray())->toBe($stock);
+    expect(app(ImpresionOperativa::class)->texto($comanda))->toContain('2 x Chaufa')->not->toContain('Ya anulados:')->and(app(ImpresionOperativa::class)->texto($aviso))->toContain('ANULACION DE COMANDA')->toContain('1 x Chaufa')->not->toContain('S/')->and($this->chaufa->articulo->fresh()->toArray())->toBe($stock);
     expect(fn () => imprimirOperativo($this->actor, solicitudImpresion('anulacion', $anulacion->id, 0, 999)))->toThrow(ValidationException::class);
 });
 
@@ -540,3 +541,20 @@ test('prebill with branding generates and sends the document instead of failing 
     expect($trabajo->estado->value)->toBe('enviado')->and($trabajo->ultimo_error)->toBeNull()
         ->and($pedido->fresh()->estado->value)->not->toBe('cerrado')->and(Cobro::count())->toBe(0);
 })->with([[true, false], [false, true], [true, true]]);
+
+test('kitchen command prints only its concise header and consumption without company branding or operational footer', function (int $ancho) {
+    Empresa::firstOrFail()->update(['logo_ruta' => 'marca/logo.png', 'telefono' => '999888777']);
+    $mesa = Mesa::create(['salon_id' => Salon::firstOrFail()->id, 'codigo' => 'MESA 1']);
+    $pedido = cuentaCobrosImpresion($this->actor, $this->turno, [$this->chaufa->id => 1], $mesa);
+    $envio = EnvioCocina::firstOrFail();
+    $envio->detalles()->update(['nota' => 'Sin cebolla']);
+    $this->cocinaPrinter->update(['ancho_mm' => $ancho]);
+    $this->transporte->shouldReceive('enviar')->once()->withArgs(fn ($host, $port, $bytes) => str_contains($bytes, 'COMANDA') && ! str_contains($bytes, 'Restaurante de prueba'));
+    $job = imprimirOperativo($this->actor, solicitudImpresion('comanda', $envio->id));
+    $texto = app(ImpresionOperativa::class)->texto($job);
+    expect($job->contenido['logo'])->toBeNull()->and($job->contenido['empresa'])->toBe([])
+        ->and($texto)->toContain('COMANDA', $pedido->codigo, 'LOTE 1', 'FECHA: '.$envio->enviado_at->timezone('America/Lima')->format('d/m/Y H:i'), 'MESA: MESA 1', 'PLATOS E INSUMOS', '1 x Chaufa', 'NOTA: Sin cebolla')
+        ->not->toContain('Restaurante de prueba', 'RUC:', 'Av. Prueba', 'Tel:', 'Mozo:', 'Comensales:', 'Destino:', 'Sin iniciar:', 'Listos:', 'Origen:', 'Generado:', 'Impresion:', 'Por:', 'Verificar lote');
+    $copia = app(TicketOperativo::class)->texto($job->contenido, $ancho, true);
+    expect($copia)->toContain('COPIA / REIMPRESION', 'NO DUPLICAR PREPARACION', 'Sin cebolla')->not->toContain('Restaurante de prueba');
+})->with([58, 80]);
