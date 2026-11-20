@@ -20,10 +20,11 @@ use App\Services\Facturacion\AccesoFacturacion;
 use App\Services\Facturacion\RepresentacionFiscal;
 use App\Support\Cantidad;
 use Illuminate\Validation\ValidationException;
+use NumberFormatter;
 
 /**
  * @phpstan-type Linea array{descripcion:string,cantidad:string,nota:string,extra:list<string>,precio?:numeric-string,descuento?:numeric-string,total?:numeric-string}
- * @phpstan-type Contenido array{formato?:string,revision?:string,version:int,titulo:string,empresa:list<string>,referencia:string,fecha:string,datos:list<string>,lineas:list<Linea>,totales:list<array{nombre:string,monto:numeric-string}>,pagos:list<array{nombre:string,monto:numeric-string,extra:list<string>}>,avisos:list<string>,qr?:string,logo?:string|null,tipografia?:array{fuente:string,tamano:int,grafica:bool}}
+ * @phpstan-type Contenido array{formato?:string,revision?:string,letras?:string,version:int,titulo:string,empresa:list<string>,referencia:string,fecha:string,datos:list<string>,lineas:list<Linea>,totales:list<array{nombre:string,monto:numeric-string}>,pagos:list<array{nombre:string,monto:numeric-string,extra:list<string>}>,avisos:list<string>,qr?:string,logo?:string|null,tipografia?:array{fuente:string,tamano:int,grafica:bool}}
  * @phpstan-type Identidad array{pedido:Pedido,modelo:class-string,id:int,tipo:string,area:int}
  */
 class FuenteImpresion
@@ -165,7 +166,9 @@ class FuenteImpresion
         if ($pedido->estado->value === 'anulado' || $pedido->detalles()->where('estado', 'borrador')->exists()) {
             throw ValidationException::withMessages(['impresion' => 'Confirma los productos en borrador antes de imprimir la precuenta. No se imprimen atenciones anuladas.']);
         }
+        $base['formato'] = 'precuenta_compacta';
         $base['titulo'] = 'PRECUENTA';
+        $base['datos'] = ['TIPO DE ATENCIÓN: '.$this->atencion($pedido), 'CLIENTE: '.($pedido->cliente_id ? $pedido->cliente->nombre : 'CLIENTES VARIOS')];
         $bruto = $descuento = '0.00';
         $raices = $pedido->detalles()->whereNull('detalle_padre_id')->where('estado', 'confirmado')->orderBy('id')->get();
         if ($raices->isEmpty()) {
@@ -197,7 +200,11 @@ class FuenteImpresion
             throw ValidationException::withMessages(['impresion' => 'El cargo de envío requiere conciliación.']);
         }
         $base['totales'] = [['nombre' => 'Productos pendientes', 'monto' => $bruto], ['nombre' => 'Descuentos pendientes', 'monto' => bcsub('0', $descuento, 2)], ['nombre' => 'Envío pendiente', 'monto' => $envio], ['nombre' => 'TOTAL PENDIENTE', 'monto' => bcadd(bcsub($bruto, $descuento, 2), $envio, 2)]];
-        $base['avisos'] = ['Solo cantidades confirmadas sin cobrar.', 'No acredita pago. Sin valor tributario.', 'Los descuentos generales se aplican al cobrar.'];
+        $total = $base['totales'][3]['monto'];
+        [$entero, $centimos] = explode('.', $total);
+        $letras = (new NumberFormatter('es_PE', NumberFormatter::SPELLOUT))->format((int) $entero);
+        $base['letras'] = 'SON '.mb_strtoupper(is_string($letras) ? $letras : $entero).' CON '.$centimos.'/100 SOLES';
+        $base['avisos'] = ['ESTE DOCUMENTO NO ES UN COMPROBANTE DE PAGO', 'No acredita pago. Sin valor tributario.', 'Solo consumos pendientes. Descuentos generales al cobrar.', '¡Gracias por su visita!'];
 
         return $base;
     }

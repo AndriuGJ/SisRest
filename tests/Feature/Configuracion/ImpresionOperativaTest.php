@@ -29,6 +29,7 @@ use App\Services\Devoluciones\GestionDevoluciones;
 use App\Services\Devoluciones\ResolverProductosDevueltos;
 use App\Services\Impresion\ImpresionOperativa;
 use App\Services\Impresion\TicketOperativo;
+use App\Services\Impresion\TicketRaster;
 use App\Services\Impresion\TransporteEscPos;
 use App\Services\Pos\ConfirmarPedido;
 use App\Services\Pos\GestionAnulaciones;
@@ -558,3 +559,41 @@ test('kitchen command prints only its concise header and consumption without com
     $copia = app(TicketOperativo::class)->texto($job->contenido, $ancho, true);
     expect($copia)->toContain('COPIA / REIMPRESION', 'NO DUPLICAR PREPARACION', 'Sin cebolla')->not->toContain('Restaurante de prueba');
 })->with([58, 80]);
+
+test('compact prebill centers its company heading and prints aligned consumption without inventing tax or a fiscal QR', function (int $ancho, int $columnas) {
+    $pedido = cuentaCobrosImpresion($this->actor, $this->turno, [$this->gaseosa->id => 2], envio: '5');
+    $this->cajaPrinter->update(['ancho_mm' => $ancho]);
+    $this->transporte->shouldReceive('enviar')->once();
+    $job = imprimirOperativo($this->actor, solicitudImpresion('precuenta', $pedido->id, $this->turno->caja_id));
+    $texto = app(ImpresionOperativa::class)->texto($job);
+    $lineas = explode("\n", $texto);
+    expect($lineas[0])->toBe(str_pad('Restaurante de prueba', $columnas, ' ', STR_PAD_BOTH))
+        ->and($texto)->toContain('PRECUENTA', 'CLIENTE: CLIENTES VARIOS', 'DETALLE DE CONSUMO', 'P.U.', 'IMP.', '6.00', '12.00', 'DELIVERY', '17.00', 'DIECISIETE CON 00/100 SOLES')
+        ->not->toContain('IGV', 'Precio unitario:', 'Generado:', 'Por:')
+        ->and(array_key_exists('qr', $job->contenido))->toBeFalse();
+    foreach ($lineas as $linea) {
+        expect(strlen($linea))->toBeLessThanOrEqual($columnas);
+    }
+    expect($job->contenido['totales'][3]['monto'])->toBe('17.00')->and(Cobro::count())->toBe(0);
+})->with([[58, 32], [80, 48]]);
+
+test('graphical printing centers padded heading by its pixel width', function () {
+    $ruta = app(TicketRaster::class)->texto(str_pad('RUC: 20123456789', 48, ' ', STR_PAD_BOTH)."\n", ['fuente' => 'poppins', 'tamano' => 12, 'grafica' => true], 80);
+    $imagen = imagecreatefrompng($ruta);
+    try {
+        $minimo = imagesx($imagen);
+        $maximo = 0;
+        for ($y = 0; $y < imagesy($imagen); $y++) {
+            for ($x = 0; $x < imagesx($imagen); $x++) {
+                if ((imagecolorat($imagen, $x, $y) & 0xFF) < 128) {
+                    $minimo = min($minimo, $x);
+                    $maximo = max($maximo, $x);
+                }
+            }
+        }
+        expect($maximo)->toBeGreaterThan($minimo)->and(abs(($minimo + $maximo) / 2 - imagesx($imagen) / 2))->toBeLessThan(4);
+    } finally {
+        imagedestroy($imagen);
+        unlink($ruta);
+    }
+});

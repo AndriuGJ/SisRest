@@ -18,9 +18,14 @@ class TicketRaster
         $margen = 8;
         $anchoTexto = $pixeles - 2 * $margen;
         $lineas = [];
-        foreach (explode("\n", rtrim($texto)) as $linea) {
+        foreach (explode("\n", rtrim($texto, "\r\n")) as $linea) {
             if (preg_match('/^-{8,}$/', $linea)) {
                 $lineas[] = ['regla' => true, 'texto' => ''];
+
+                continue;
+            }
+            if (preg_match('/^ {2,}(.+?) {2,}$/', $linea, $centrada)) {
+                $lineas[] = ['texto' => $centrada[1], 'centrado' => true];
 
                 continue;
             }
@@ -48,7 +53,8 @@ class TicketRaster
             if ($linea['regla'] ?? false) {
                 imageline($imagen, $margen, $y - 7, $pixeles - $margen, $y - 7, $negro);
             } else {
-                imagettftext($imagen, $tamano, 0, $margen, $y, $negro, $fuente, $linea['texto']);
+                $x = ($linea['centrado'] ?? false) ? max($margen, (int) (($pixeles - $this->ancho($linea['texto'], $fuente, $tamano)) / 2)) : $margen;
+                imagettftext($imagen, $tamano, 0, $x, $y, $negro, $fuente, $linea['texto']);
                 if (isset($linea['derecha'])) {
                     imagettftext($imagen, $tamano, 0, $pixeles - $margen - $this->ancho($linea['derecha'], $fuente, $tamano), $y, $negro, $fuente, $linea['derecha']);
                 }

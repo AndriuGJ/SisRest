@@ -59,6 +59,73 @@ class TicketOperativo
 
             return implode("\n", $lineas)."\n";
         }
+        if (($contenido['formato'] ?? null) === 'precuenta_compacta') {
+            $centrar = function (string $texto) use ($agregar, $columnas): void {
+                $limpio = Str::ascii(preg_replace('/[\p{C}]/u', ' ', $texto) ?? '');
+                foreach (explode("\n", wordwrap($limpio, $columnas, "\n", true)) as $linea) {
+                    $agregar(str_pad($linea, $columnas, ' ', STR_PAD_BOTH));
+                }
+            };
+            if ($copia) {
+                $centrar('*** COPIA / REIMPRESIÓN ***');
+            }
+            foreach ($contenido['empresa'] as $texto) {
+                $centrar($texto);
+            }
+            $centrar($contenido['titulo']);
+            $centrar($contenido['referencia']);
+            $lineas[] = $separador;
+            $agregar('FECHA DEL PEDIDO: '.$contenido['fecha']);
+            foreach ($contenido['datos'] as $texto) {
+                $agregar($texto);
+            }
+            $lineas[] = $separador;
+            $agregar('DETALLE DE CONSUMO');
+            $descripcionAncho = $columnas - 24;
+            $lineas[] = str_pad('CANT', 4).' '.str_pad('PRODUCTO', $descripcionAncho).' '.str_pad('P.U.', 8, ' ', STR_PAD_LEFT).' '.str_pad('IMP.', 9, ' ', STR_PAD_LEFT);
+            $lineas[] = $separador;
+            foreach ($contenido['lineas'] as $fila) {
+                $precio = $fila['precio'] ?? '0.00';
+                $total = $fila['total'] ?? '0.00';
+                if (strlen($fila['cantidad']) > 4 || strlen($precio) > 8 || strlen($total) > 9) {
+                    $agregar($fila['cantidad'].' x '.$fila['descripcion']);
+                    $importe('P.U.', $precio);
+                    $importe('Importe', $total);
+                } else {
+                    $descripcion = Str::ascii(preg_replace('/[\p{C}]/u', ' ', $fila['descripcion']) ?? '');
+                    $partes = explode("\n", wordwrap($descripcion, $descripcionAncho, "\n", true));
+                    $lineas[] = str_pad($fila['cantidad'], 4).' '.str_pad(array_shift($partes), $descripcionAncho).' '.str_pad($precio, 8, ' ', STR_PAD_LEFT).' '.str_pad($total, 9, ' ', STR_PAD_LEFT);
+                    foreach ($partes as $parte) {
+                        $agregar('     '.$parte);
+                    }
+                }
+                if (isset($fila['descuento']) && bccomp($fila['descuento'], '0', 2) > 0) {
+                    $importe('  Descuento', '-'.$fila['descuento']);
+                }
+                foreach ($fila['extra'] as $texto) {
+                    $agregar('  '.$texto);
+                }
+            }
+            $lineas[] = $separador;
+            foreach ($contenido['totales'] as $fila) {
+                if (bccomp($fila['monto'], '0', 2) === 0 && in_array($fila['nombre'], ['Descuentos pendientes', 'Envío pendiente'], true)) {
+                    continue;
+                }
+                $importe(match ($fila['nombre']) {
+                    'Productos pendientes' => 'SUBTOTAL CONSUMOS',
+                    'Descuentos pendientes' => 'DESCUENTOS',
+                    'Envío pendiente' => 'DELIVERY',
+                    default => $fila['nombre'],
+                }, $fila['monto']);
+            }
+            $agregar($contenido['letras'] ?? '');
+            $lineas[] = $separador;
+            foreach ($contenido['avisos'] as $texto) {
+                $centrar($texto);
+            }
+
+            return implode("\n", $lineas)."\n";
+        }
         if ($copia) {
             $agregar('*** COPIA / REIMPRESIÓN ***');
             $agregar('NO DUPLICAR PREPARACIÓN NI COBRO');
