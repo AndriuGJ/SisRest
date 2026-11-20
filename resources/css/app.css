@@ -115,8 +115,8 @@ select:focus[data-flux-control] {
 
 /* Toma de pedido: catálogo y una sola lista, con opciones secundarias bajo demanda. */
 .pedido-workspace { display:grid; min-height:calc(100svh - 11rem); }
-/* Tarjetas de ancho estable: se redistribuyen en hasta seis columnas. */
-.pedido-productos { display:grid;grid-template-columns:repeat(auto-fill,minmax(0,min(100%,148px)));max-width:928px;gap:8px;align-content:start; }
+/* Tarjetas de ancho estable: tantas columnas como permita el catálogo. */
+.pedido-productos { display:grid;grid-template-columns:repeat(auto-fill,minmax(0,min(100%,148px)));gap:8px;align-content:start; }
 .pedido-categoria { text-transform:uppercase;padding:10px 9px;text-align:left;border-radius:4px;font-size:.8125rem;white-space:nowrap; }
 .pedido-categoria:hover { background:var(--color-zinc-100); }
 .dark .pedido-categoria:hover { background:var(--color-zinc-800); }
