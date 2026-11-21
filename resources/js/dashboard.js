@@ -3,12 +3,12 @@ const graficos = new Map();
 let version = 0;
 
 const colores = [
-    '#2478A0',
-    '#387F68',
-    '#C28A37',
-    '#7460EE',
-    '#B45D61',
-    '#64748B'
+    '#008CFF', // Azul intenso
+    '#00C878', // Verde brillante
+    '#FFAD0D', // Naranja
+    '#8454FF', // Violeta
+    '#FF4D72', // Rosa coral
+    '#00C9D7'  // Turquesa
 ];
 
 function moneda(valor) {
@@ -31,9 +31,11 @@ function configurarGrafico(tipo, serie) {
                     label: 'Cobros netos',
                     data: valores,
                     borderColor: colores[0],
-                    backgroundColor: 'rgba(36,120,160,0.10)',
-                    borderWidth: 2,
-                    pointRadius: 3,
+                    backgroundColor: 'rgba(0,140,255,0.18)',
+                    borderWidth: 3,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: colores[0],
                     tension: 0.3,
                     fill: true
                 }]
@@ -68,7 +70,9 @@ function configurarGrafico(tipo, serie) {
                 datasets: [{
                     label: 'Unidades cobradas',
                     data: valores,
-                    backgroundColor: colores[0],
+                    backgroundColor: labels.map(
+                        (_, i) => colores[i % colores.length]
+                    ),
                     borderRadius: 3,
                     maxBarThickness: 32
                 }]
