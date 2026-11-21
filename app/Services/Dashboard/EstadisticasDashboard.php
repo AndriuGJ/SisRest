@@ -12,6 +12,8 @@ use App\Models\User;
 use App\Services\Cajas\AccesoCajas;
 use App\Services\Pos\AccesoPos;
 use Carbon\CarbonImmutable;
+use App\Models\CobroDetalle;
+use App\Models\Pago;
 
 class EstadisticasDashboard
 {
@@ -20,6 +22,11 @@ class EstadisticasDashboard
         $hoy = CarbonImmutable::now(config('app.timezone'));
         $inicio = $hoy->startOfDay();
         $fin = $hoy->endOfDay();
+        $seleccion = request()->query('periodo', '7');
+
+        $periodo = in_array($seleccion, ['7', '30'], true)
+            ? (int) $seleccion
+            : 7;
 
         $verCobros = $actor->can('reportes.ver_todos')
             || (
@@ -46,12 +53,26 @@ class EstadisticasDashboard
             'verPedidos' => $verPedidos,
             'verCajas' => $verCajas,
             'verInventario' => $verInventario,
+
+            'periodo' => $periodo,
+
             'cobrosNetosHoy' => '0.00',
             'cantidadCobros' => 0,
             'pedidosActivos' => 0,
             'cajasAbiertas' => 0,
             'stockBajo' => 0,
+
             'grafico' => [
+                'etiquetas' => [],
+                'valores' => [],
+            ],
+
+            'productosMasCobrados' => [
+                'etiquetas' => [],
+                'valores' => [],
+            ],
+
+            'mediosPago' => [
                 'etiquetas' => [],
                 'valores' => [],
             ],
@@ -125,7 +146,7 @@ class EstadisticasDashboard
             ->count();
 
         // Gráfico de los últimos siete días.
-        $primerDia = $hoy->subDays(6)->startOfDay();
+        $primerDia = $hoy->subDays($periodo - 1)->startOfDay();
 
         $ventasPorDia = (clone $cobros)
             ->whereBetween('cobrado_at', [$primerDia, $fin])
@@ -143,7 +164,7 @@ class EstadisticasDashboard
             ->groupByRaw('DATE(devuelta_at)')
             ->pluck('importe', 'dia');
 
-        for ($i = 0; $i < 7; $i++) {
+        for ($i = 0; $i < $periodo; $i++) {
             $dia = $primerDia->addDays($i);
             $fecha = $dia->format('Y-m-d');
 
@@ -159,6 +180,89 @@ class EstadisticasDashboard
             $datos['grafico']['valores'][] =
                 (float) $neto;
         }
+
+        // ==========================================
+        // TOP 5 PRODUCTOS COBRADOS
+        // ==========================================
+
+        $productos = CobroDetalle::query()
+            ->join(
+                'cobros as c',
+                'c.id',
+                '=',
+                'cobro_detalles.cobro_id'
+            )
+            ->join(
+                'pedido_detalles as pd',
+                'pd.id',
+                '=',
+                'cobro_detalles.pedido_detalle_id'
+            )
+            ->where('c.estado', EstadoCobro::CONFIRMADO->value)
+            ->whereBetween('c.cobrado_at', [$primerDia, $fin])
+            ->whereNull('pd.detalle_padre_id')
+            ->when(
+                ! $actor->can('reportes.ver_todos'),
+                fn ($q) => $q->whereIn(
+                    'c.turno_caja_id',
+                    AccesoCajas::consulta($actor)->select('id')
+                )
+            )
+            ->selectRaw(
+                'pd.producto_id,
+                 MAX(cobro_detalles.descripcion) AS nombre,
+                 SUM(cobro_detalles.cantidad) AS unidades'
+            )
+            ->groupBy('pd.producto_id')
+            ->orderByDesc('unidades')
+            ->limit(5)
+            ->get();
+
+        foreach ($productos as $producto) {
+            $datos['productosMasCobrados']['etiquetas'][] =
+                $producto->nombre;
+
+            $datos['productosMasCobrados']['valores'][] =
+                (float) $producto->unidades;
+        }
+
+        // ==========================================
+        // PAGOS RECIBIDOS POR MEDIO
+        // ==========================================
+
+        $pagos = Pago::query()
+            ->join(
+                'cobros as c',
+                'c.id',
+                '=',
+                'pagos.cobro_id'
+            )
+            ->where('c.estado', EstadoCobro::CONFIRMADO->value)
+            ->whereBetween('c.cobrado_at', [$primerDia, $fin])
+            ->when(
+                ! $actor->can('reportes.ver_todos'),
+                fn ($q) => $q->whereIn(
+                    'c.turno_caja_id',
+                    AccesoCajas::consulta($actor)->select('id')
+                )
+            )
+            ->selectRaw(
+                'pagos.medio_pago_id,
+                 MAX(pagos.medio_pago_nombre) AS nombre,
+                 SUM(pagos.monto) AS total'
+            )
+            ->groupBy('pagos.medio_pago_id')
+            ->orderByDesc('total')
+            ->get();
+
+        foreach ($pagos as $pago) {
+            $datos['mediosPago']['etiquetas'][] =
+                $pago->nombre ?: 'Medio de pago #'.$pago->medio_pago_id;
+
+            $datos['mediosPago']['valores'][] =
+                (float) $pago->total;
+        }
+
 
         return $datos;
     }

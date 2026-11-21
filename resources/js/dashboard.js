@@ -1,87 +1,182 @@
 
-let grafico = null;
+const graficos = new Map();
 let version = 0;
 
-async function mostrarDashboard() {
-    const canvas = document.querySelector(
-        '[data-dashboard-ventas]'
-    );
+const colores = [
+    '#2478A0',
+    '#387F68',
+    '#C28A37',
+    '#7460EE',
+    '#B45D61',
+    '#64748B'
+];
 
-    if (!canvas) return;
+function moneda(valor) {
+    return 'S/ ' + Number(valor).toLocaleString('es-PE', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
 
-    if (grafico?.canvas === canvas) return;
+function configurarGrafico(tipo, serie) {
+    const labels = serie.etiquetas || [];
+    const valores = serie.valores || [];
 
-    const actual = ++version;
-
-    try {
-        // Cargar Chart.js solamente cuando se necesita.
-        const { default: Chart } = await import('./charts.js');
-
-        if (actual !== version || !canvas.isConnected) {
-            return;
-        }
-
-        grafico?.destroy();
-
-        const serie = JSON.parse(
-            canvas.dataset.serie || '{}'
-        );
-
-        grafico = new Chart(canvas, {
+    if (tipo === 'ventas') {
+        return {
             type: 'line',
-
             data: {
-                labels: serie.etiquetas || [],
+                labels,
                 datasets: [{
                     label: 'Cobros netos',
-                    data: serie.valores || [],
-                    borderColor: '#2478A0',
-                    backgroundColor: 'rgba(36, 120, 160, 0.10)',
+                    data: valores,
+                    borderColor: colores[0],
+                    backgroundColor: 'rgba(36,120,160,0.10)',
                     borderWidth: 2,
-                    pointRadius: 4,
+                    pointRadius: 3,
                     tension: 0.3,
                     fill: true
                 }]
             },
-
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-
                 plugins: {
-                    legend: {
-                        display: false
-                    },
-
+                    legend: { display: false },
                     tooltip: {
                         callbacks: {
-                            label(context) {
-                                return 'S/ ' + Number(
-                                    context.parsed.y
-                                ).toLocaleString('es-PE', {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2
-                                });
-                            }
+                            label: c => moneda(c.parsed.y)
                         }
                     }
                 },
-
                 scales: {
                     y: {
                         ticks: {
-                            callback(value) {
-                                return 'S/ ' + value;
-                            }
+                            callback: valor => moneda(valor)
                         }
                     }
                 }
             }
-        });
+        };
+    }
+
+    if (tipo === 'productos') {
+        return {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Unidades cobradas',
+                    data: valores,
+                    backgroundColor: colores[0],
+                    borderRadius: 3,
+                    maxBarThickness: 32
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: c => Number(c.parsed.x)
+                                .toLocaleString('es-PE', {
+                                    maximumFractionDigits: 4
+                                }) + ' unidades'
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        };
+    }
+
+    if (tipo === 'medios') {
+        return {
+            type: 'doughnut',
+            data: {
+                labels,
+                datasets: [{
+                    data: valores,
+                    backgroundColor: labels.map(
+                        (_, i) => colores[i % colores.length]
+                    ),
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '62%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            boxWidth: 12,
+                            padding: 12
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: c => c.label + ': ' +
+                                moneda(c.parsed)
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    return null;
+}
+
+async function mostrarDashboard() {
+    const canvases = document.querySelectorAll(
+        '[data-dashboard-chart]'
+    );
+
+    if (!canvases.length) return;
+
+    const actual = ++version;
+
+    try {
+        const { default: Chart } = await import('./charts.js');
+
+        if (actual !== version) return;
+
+        for (const canvas of canvases) {
+            if (!canvas.isConnected || graficos.has(canvas)) {
+                continue;
+            }
+
+            const serie = JSON.parse(
+                canvas.dataset.serie || '{}'
+            );
+
+            const configuracion = configurarGrafico(
+                canvas.dataset.dashboardChart,
+                serie
+            );
+
+            if (!configuracion) continue;
+
+            const grafico = new Chart(
+                canvas,
+                configuracion
+            );
+
+            graficos.set(canvas, grafico);
+        }
 
     } catch (error) {
         console.error(
-            'No se pudo mostrar el gráfico del Dashboard.',
+            'Error al mostrar los gráficos del Dashboard.',
             error
         );
     }
@@ -90,11 +185,13 @@ async function mostrarDashboard() {
 function destruirDashboard() {
     version++;
 
-    grafico?.destroy();
-    grafico = null;
+    for (const grafico of graficos.values()) {
+        grafico.destroy();
+    }
+
+    graficos.clear();
 }
 
-// Carga inicial.
 if (document.readyState === 'loading') {
     document.addEventListener(
         'DOMContentLoaded',
@@ -105,7 +202,6 @@ if (document.readyState === 'loading') {
     void mostrarDashboard();
 }
 
-// Compatible con la navegación de Livewire.
 document.addEventListener(
     'livewire:navigated',
     mostrarDashboard
