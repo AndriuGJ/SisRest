@@ -32,6 +32,10 @@ use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithPagination;
+use App\Models\EnvioCocina;
+use App\Models\TrabajoImpresion;
+use App\Services\Impresion\ImpresionOperativa;
+use Throwable;
 
 #[Layout('layouts.app')]
 #[Title('Pedido POS')]
@@ -290,20 +294,190 @@ class PedidoPantalla extends Component
         $this->versionEnvio = $this->version;
         $this->claveEnvio = (string) Str::uuid();
         $this->turnoEnvio = (int) $this->turnoId;
-        $this->confirmar('Añadir productos al pedido', 'Se reservarán las existencias de '.$lineas.' líneas nuevas. Los productos con destino se enviarán a Cocina o Barra; los de entrega directa quedarán disponibles para entregar.', 'confirmSend', 'Confirmar y enviar');
+        $this->confirmar(
+            'Añadir productos al pedido',
+            'Se reservarán las existencias de '.$lineas.' líneas nuevas. '
+            .'Los productos se enviarán a Cocina o Barra y se intentará imprimir '
+            .'automáticamente una comanda por destino. '
+            .'Los productos de entrega directa quedarán disponibles para entregar.',
+            'confirmSend',
+            'Confirmar y enviar'
+        );
     }
 
-    public function confirmSend(ConfirmarPedido $servicio): void
-    {
+
+    public function confirmSend(
+        ConfirmarPedido $servicio,
+        ImpresionOperativa $impresion
+    ): void {
+        $actor = $this->actor();
+
+        // 1. Confirmar el pedido y reservar las existencias.
         try {
-            $servicio->confirmar($this->actor(), $this->pedidoId, $this->turnoEnvio, $this->versionEnvio, $this->claveEnvio);
+            $lote = $servicio->confirmar(
+                $actor,
+                $this->pedidoId,
+                $this->turnoEnvio,
+                $this->versionEnvio,
+                $this->claveEnvio
+            );
         } catch (ValidationException $error) {
-            $this->notificar($error->validator->errors()->first(), 'error', toast: false);
+            $this->notificar(
+                $error->validator->errors()->first(),
+                'error',
+                toast: false
+            );
 
             return;
         }
-        Alertas::flash('Productos confirmados. Existencias reservadas y envíos registrados.');
-        $this->redirectRoute('pos.pedido', $this->pedidoId, navigate: true);
+
+        // 2. Buscar únicamente los envíos del lote confirmado.
+        $envios = EnvioCocina::query()
+            ->where('confirmacion_pedido_id', $lote->id)
+            ->where('pedido_id', $this->pedidoId)
+            ->orderBy('id')
+            ->get();
+
+        // 3. Si todo es entrega directa, no imprimir comandas.
+        if ($envios->isEmpty()) {
+            Alertas::flash(
+                'Productos confirmados y existencias reservadas. '
+                .'No se requiere comanda para entrega directa.'
+            );
+
+            $this->redirectRoute(
+                'pos.pedido',
+                $this->pedidoId,
+                navigate: true
+            );
+
+            return;
+        }
+
+        // 4. Comprobar permisos de impresión.
+        if (! $actor->can('impresion.comandas')) {
+            Alertas::flash(
+                'Productos confirmados y enviados a preparación, '
+                .'pero el usuario no tiene permiso para imprimir comandas.',
+                'warning',
+                false
+            );
+
+            $this->redirectRoute(
+                'pos.pedido',
+                $this->pedidoId,
+                navigate: true
+            );
+
+            return;
+        }
+
+        $enviadas = 0;
+        $yaEnviadas = 0;
+        $incidencias = [];
+
+        // 5. Procesar una comanda independiente por destino.
+        foreach ($envios as $envio) {
+            $destino = $envio->area_nombre
+                ?: 'Destino '.$envio->area_preparacion_id;
+
+            $solicitud = [
+                'tipo' => 'comanda',
+                'id' => $envio->id,
+                'caja' => 0,
+                'area' => $envio->area_preparacion_id,
+            ];
+
+            try {
+                // Reutilizar el servicio de impresión existente.
+                $plan = $impresion->previsualizar(
+                    $actor,
+                    $solicitud
+                );
+
+                // Evitar imprimir nuevamente una comanda registrada.
+                if ($plan['existenteId'] !== null) {
+                    $anterior = TrabajoImpresion::find(
+                        $plan['existenteId']
+                    );
+
+                    if ($anterior?->estado?->value === 'enviado') {
+                        $yaEnviadas++;
+                    } else {
+                        $incidencias[] = $destino
+                            .': ya existe un trabajo de impresión '
+                            .'sin envío confirmado. Revisa su estado.';
+                    }
+
+                    continue;
+                }
+
+                // Enviar a la impresora asignada al destino.
+                $trabajo = $impresion->imprimir(
+                    $actor,
+                    $solicitud,
+                    0,
+                    '',
+                    (string) Str::uuid(),
+                    $plan['huella']
+                );
+
+                // Comprobar el resultado.
+                if ($trabajo->estado->value === 'enviado') {
+                    $enviadas++;
+                } elseif (
+                    $trabajo->estado->value === 'resultado_incierto'
+                ) {
+                    $incidencias[] = $destino
+                        .': resultado incierto. Revisa el papel '
+                        .'antes de solicitar una copia.';
+                } else {
+                    $incidencias[] = $destino
+                        .': no se pudo enviar la comanda. '
+                        .'Revisa el historial de impresión.';
+                }
+
+            } catch (ValidationException $error) {
+                $incidencias[] = $destino.': '
+                    .$error->validator->errors()->first();
+
+            } catch (Throwable $error) {
+                report($error);
+
+                $incidencias[] = $destino
+                    .': ocurrió un error de impresión. '
+                    .'Consulta el historial.';
+            }
+        }
+
+        // 6. Mostrar el resultado sin alterar el pedido.
+        $mensaje = 'Productos confirmados y existencias reservadas.';
+
+        if ($enviadas > 0) {
+            $mensaje .= ' Comandas enviadas a impresora: '
+                .$enviadas.'.';
+        }
+
+        if ($yaEnviadas > 0) {
+            $mensaje .= ' Comandas previamente enviadas: '
+                .$yaEnviadas.'.';
+        }
+
+        if ($incidencias !== []) {
+            $mensaje .= ' Atención: '
+                .implode(' | ', $incidencias);
+
+            Alertas::flash($mensaje, 'warning', false);
+        } else {
+            Alertas::flash($mensaje, 'success');
+        }
+
+        // 7. Regresar al pedido.
+        $this->redirectRoute(
+            'pos.pedido',
+            $this->pedidoId,
+            navigate: true
+        );
     }
 
     public function requestDelivery(int $id): void

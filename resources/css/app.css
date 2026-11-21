@@ -230,9 +230,171 @@ select:focus[data-flux-control] {
 .dark .pos-palette .pedido-producto-categoria { color:#b8b8c2; }
 .dark .pos-palette .pedido-lineas > article :is(h3,strong) { color:#d4dde4; }
 
-/* Menú compacto: Flux conserva los accesos y despliega grupos desde sus iconos. */
-[data-flux-sidebar][data-flux-sidebar-collapsed-desktop] .sidebar-section-label { display:none; }
-[data-flux-sidebar][data-flux-sidebar-collapsed-desktop] .sidebar-compact-toggle { width:100%; }
+
+/* ==========================================
+   SIDEBAR - ENCABEZADO Y MODO COMPACTO
+========================================== */
+
+/* Encabezado */
+.sidebar-brand-custom {
+    text-decoration: none;
+}
+
+.sidebar-brand-image {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+}
+
+/* ==========================================
+   SIDEBAR CONTRAÍDO - ESCRITORIO
+========================================== */
+
+@media (min-width: 1024px) {
+
+    /* Ancho del sidebar */
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop] {
+        width: 80px !important;
+        min-width: 80px !important;
+    }
+
+    /* Ocultar nombre y etiquetas */
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    .sidebar-brand-name,
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    .sidebar-section-label {
+        display: none !important;
+    }
+
+    /* Logo compacto */
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    .sidebar-brand-custom {
+        gap: 0;
+        align-items: center;
+    }
+
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    .sidebar-brand-image {
+        width: 42px !important;
+        height: 42px !important;
+    }
+
+    /* Navegación */
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    [data-flux-sidebar-nav] {
+        width: 100% !important;
+        align-items: stretch !important;
+    }
+
+    /* ACCESOS INDIVIDUALES:
+       Dashboard, Cocina, Clientes, etc. */
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    [data-flux-sidebar-item]:not(
+        [data-flux-sidebar-group-dropdown] [data-flux-sidebar-item]
+    ) {
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        width: 48px !important;
+        min-width: 48px !important;
+        height: 48px !important;
+        padding: 0 !important;
+        margin: 2px auto !important;
+    }
+
+    /* Iconos de los accesos individuales */
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    [data-flux-sidebar-item]:not(
+        [data-flux-sidebar-group-dropdown] [data-flux-sidebar-item]
+    ) svg {
+        width: 26px !important;
+        height: 26px !important;
+        min-width: 26px !important;
+        flex-shrink: 0 !important;
+    }
+
+    /* GRUPOS DESPLEGABLES:
+       POS, Ventas, Inventario, Compras, etc. */
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    [data-flux-sidebar-group-dropdown] {
+        display: flex !important;
+        justify-content: center !important;
+        width: 100% !important;
+    }
+
+    /* Botón de cada grupo */
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    [data-flux-sidebar-group-dropdown] > button {
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+
+        width: 48px !important;
+        min-width: 48px !important;
+        height: 48px !important;
+
+        padding: 0 !important;
+        margin: 2px auto !important;
+        gap: 0 !important;
+    }
+
+    /* Contenedor del icono del grupo */
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    [data-flux-sidebar-group-dropdown] > button > div.relative {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    /* Iconos de los grupos desplegables */
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    [data-flux-sidebar-group-dropdown] > button > div.relative > svg {
+        width: 26px !important;
+        height: 26px !important;
+        min-width: 26px !important;
+        flex-shrink: 0 !important;
+    }
+
+    /* Botón para expandir el sidebar */
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    .sidebar-toggle-wrapper {
+        width: 100% !important;
+        justify-content: center !important;
+    }
+
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    .sidebar-compact-toggle {
+        width: 36px !important;
+        height: 36px !important;
+    }
+
+    /* Centrar el perfil en el sidebar contraído */
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    [data-flux-sidebar-profile] {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+
+        width: 48px !important;
+        height: 48px !important;
+
+        padding: 0 !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+    }
+
+    /* Tamaño del avatar */
+    [data-flux-sidebar][data-flux-sidebar-collapsed-desktop]
+    [data-flux-sidebar-profile] [data-flux-avatar] {
+        width: 40px !important;
+        height: 40px !important;
+    }
+
+}
+
+
+
+
 @media(min-width:1024px) {
     .pos-palette [data-flux-main] { padding:12px; }
     .pos-palette [data-flux-sidebar] { gap:10px; }

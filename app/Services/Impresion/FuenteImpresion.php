@@ -139,6 +139,11 @@ class FuenteImpresion
             'rapida' => 'PARA LLEVAR',
             default => 'DELIVERY',
         }];
+
+        // Mostrar el mozo que atiende el pedido.
+        if ($envio->pedido->mozo_nombre) {
+            $base['datos'][] = 'MOZO: '.$envio->pedido->mozo_nombre;
+        }
         foreach ($envio->detalles as $d) {
             $cantidad = bcsub($d->cantidad, $d->cantidad_anulada, 4);
             if (bccomp($cantidad, '0', 4) <= 0) {

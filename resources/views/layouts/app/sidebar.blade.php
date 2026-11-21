@@ -5,20 +5,58 @@
     </head>
     <body class="min-h-screen bg-white dark:bg-zinc-800 {{ request()->routeIs('pos.*') ? 'pos-palette' : '' }}">
         <flux:sidebar sticky collapsible persist="false" class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
-            <flux:sidebar.header>
-                <x-app-logo :sidebar="true" href="{{ route('dashboard') }}" wire:navigate />
+
+            <flux:sidebar.header
+                class="!flex !flex-col !items-center !gap-3 !px-3 !pt-5 !pb-3"
+            >
+                @php
+                    $nombreRestaurante = app(
+                        \App\Services\Configuracion\IdentidadVisual::class
+                    )->nombre();
+                @endphp
+
+                {{-- Logo y nombre del restaurante --}}
+                <a
+                    href="{{ route('dashboard') }}"
+                    wire:navigate
+                    class="sidebar-brand-custom flex w-full min-w-0 flex-col items-center gap-2 text-center"
+                    title="{{ $nombreRestaurante }}"
+                >
+                    <x-app-logo-icon
+                        class="sidebar-brand-image size-20 shrink-0 object-contain text-zinc-800 dark:text-zinc-100"
+                    />
+
+                    <span
+                        class="sidebar-brand-name max-w-full break-words px-1 text-sm font-semibold leading-snug text-zinc-800 dark:text-zinc-100"
+                    >
+                        {{ $nombreRestaurante }}
+                    </span>
+                </a>
+
+                {{-- Botón de contraer / expandir --}}
+                <div
+                    class="sidebar-toggle-wrapper hidden w-full justify-center lg:flex"
+                    x-data="sidebarControl"
+                >
+                    <button
+                        type="button"
+                        class="sidebar-compact-toggle flex size-8 items-center justify-center border border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        x-on:click="$dispatch('flux-sidebar-toggle')"
+                        x-bind:aria-expanded="!collapsed"
+                        x-bind:aria-label="collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'"
+                        x-bind:title="collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'"
+                    >
+                        <flux:icon.chevron-right
+                            class="size-4"
+                            x-bind:class="collapsed ? '' : 'rotate-180'"
+                        />
+                    </button>
+                </div>
+
+                {{-- Botón de cierre en móviles --}}
                 <flux:sidebar.collapse class="lg:hidden" />
             </flux:sidebar.header>
 
-            <div class="hidden justify-end lg:flex" x-data="sidebarControl">
-                <button type="button" class="sidebar-compact-toggle flex size-8 items-center justify-center border border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                    x-on:click="$dispatch('flux-sidebar-toggle')"
-                    x-bind:aria-expanded="!collapsed"
-                    x-bind:aria-label="collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'"
-                    x-bind:title="collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'">
-                    <flux:icon.chevron-right class="size-4" x-bind:class="collapsed ? '' : 'rotate-180'" />
-                </button>
-            </div>
 
             <flux:sidebar.nav>
                 <div class="grid"><p class="sidebar-section-label px-3 py-2 text-sm font-medium text-zinc-400">Restaurante</p>
