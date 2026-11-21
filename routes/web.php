@@ -44,13 +44,14 @@ use App\Livewire\Pos\PedidoPantalla;
 use App\Livewire\Pos\PedidosAtencion;
 use App\Livewire\Pos\Pos;
 use Illuminate\Support\Facades\Route;
+use App\Livewire\Dashboard\PanelDashboard;
 
 Route::get('marca/logo/{archivo}', LogoEmpresaController::class)->name('marca.logo');
 
 Route::view('/', 'welcome')->name('home');
 
 Route::middleware(['auth'])->group(function () {
-    Route::view('dashboard', 'dashboard')->name('dashboard');
+    Route::get('dashboard', PanelDashboard::class)->name('dashboard');
 
     Route::middleware('permission:inventario.ver')->prefix('inventario/insumos')->name('insumos.')->group(function () {
         Route::get('/', Insumos::class)->name('index');
