@@ -45,6 +45,7 @@ use App\Livewire\Pos\PedidosAtencion;
 use App\Livewire\Pos\Pos;
 use Illuminate\Support\Facades\Route;
 use App\Livewire\Dashboard\PanelDashboard;
+use App\Livewire\Reportes\VentasCobros;
 
 Route::get('marca/logo/{archivo}', LogoEmpresaController::class)->name('marca.logo');
 
@@ -88,6 +89,15 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware('permission:cajas.ver_propias|cajas.ver_todas')->prefix('cajas')->name('cajas.')->group(function () {
         Route::get('/', Cajas::class)->name('index');
         Route::get('turnos/{turno}', TurnoDetalle::class)->name('turno');
+    });
+    Route::middleware('permission:reportes.ver_propios|reportes.ver_todos')
+    ->prefix('reportes')
+    ->name('reportes.')
+    ->group(function () {
+
+        Route::get('ventas', VentasCobros::class)
+            ->name('ventas');
+
     });
 
     Route::middleware('permission:clientes.ver')->prefix('clientes')->name('clientes.')->group(function () {

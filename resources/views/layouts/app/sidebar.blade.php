@@ -124,8 +124,11 @@
                 </flux:sidebar.group>
             @endcanany
             @canany(['reportes.ver_propios', 'reportes.ver_todos'])
-                <flux:sidebar.group heading="Reportes" icon="chart-bar" expandable class="mt-1">
-                    <flux:sidebar.item icon="banknotes">
+                <flux:sidebar.group heading="Reportes" icon="chart-bar" expandable
+                    :expanded="request()->routeIs('reportes.*')" class="mt-1">
+
+                    <flux:sidebar.item icon="banknotes" :href="route('reportes.ventas')"
+                        :current="request()->routeIs('reportes.ventas')" wire:navigate>
                         Ventas y cobros
                     </flux:sidebar.item>
 
