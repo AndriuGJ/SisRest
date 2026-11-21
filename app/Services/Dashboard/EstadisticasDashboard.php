@@ -217,7 +217,7 @@ class EstadisticasDashboard
             ->count();
 
         $ventasPorDia = (clone $cobros)
-            ->whereBetween('cobrado_at', [[$primerDia, $finRango]])
+            ->whereBetween('cobrado_at', [$primerDia, $finRango])
             ->selectRaw(
                 'DATE(cobrado_at) AS dia, SUM(total) AS importe'
             )
@@ -225,7 +225,7 @@ class EstadisticasDashboard
             ->pluck('importe', 'dia');
 
         $devolucionesPorDia = (clone $devoluciones)
-            ->whereBetween('devuelta_at', [[$primerDia, $finRango]])
+            ->whereBetween('devuelta_at', [$primerDia, $finRango])
             ->selectRaw(
                 'DATE(devuelta_at) AS dia, SUM(total) AS importe'
             )
@@ -267,7 +267,7 @@ class EstadisticasDashboard
                 'cobro_detalles.pedido_detalle_id'
             )
             ->where('c.estado', EstadoCobro::CONFIRMADO->value)
-            ->whereBetween('c.cobrado_at', [[$primerDia, $finRango]])
+            ->whereBetween('c.cobrado_at', [$primerDia, $finRango])
             ->whereNull('pd.detalle_padre_id')
             ->when(
                 ! $actor->can('reportes.ver_todos'),
@@ -306,7 +306,7 @@ class EstadisticasDashboard
                 'pagos.cobro_id'
             )
             ->where('c.estado', EstadoCobro::CONFIRMADO->value)
-            ->whereBetween('c.cobrado_at', [[$primerDia, $finRango]])
+            ->whereBetween('c.cobrado_at', [$primerDia, $finRango])
             ->when(
                 ! $actor->can('reportes.ver_todos'),
                 fn ($q) => $q->whereIn(

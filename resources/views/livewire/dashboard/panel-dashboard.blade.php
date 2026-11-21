@@ -186,7 +186,7 @@
                     </h2>
 
                     <p class="text-xs text-zinc-500">
-                        Top 5 por unidades en los últimos {{ $periodo }} días.
+                        Top 5 por unidades {{ $etiquetaPeriodo }}.
                         No descuenta devoluciones.
                     </p>
                 </div>
@@ -212,7 +212,7 @@
                     </h2>
 
                     <p class="text-xs text-zinc-500">
-                        Importes recibidos en los últimos {{ $periodo }} días.
+                        Importes recibidos {{ $etiquetaPeriodo }}.
                         No descuenta devoluciones.
                     </p>
                 </div>
