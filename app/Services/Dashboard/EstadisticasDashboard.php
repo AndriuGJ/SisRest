@@ -6,14 +6,14 @@ use App\Enums\EstadoCobro;
 use App\Enums\EstadoDevolucion;
 use App\Models\Articulo;
 use App\Models\Cobro;
+use App\Models\CobroDetalle;
 use App\Models\Devolucion;
-use App\Models\TurnoCaja;
+use App\Models\Pago;
 use App\Models\User;
 use App\Services\Cajas\AccesoCajas;
 use App\Services\Pos\AccesoPos;
 use Carbon\CarbonImmutable;
-use App\Models\CobroDetalle;
-use App\Models\Pago;
+use Illuminate\Support\Facades\Validator;
 
 class EstadisticasDashboard
 {
@@ -22,11 +22,63 @@ class EstadisticasDashboard
         $hoy = CarbonImmutable::now(config('app.timezone'));
         $inicio = $hoy->startOfDay();
         $fin = $hoy->endOfDay();
+
         $seleccion = request()->query('periodo', '7');
 
         $periodo = in_array($seleccion, ['7', '30'], true)
             ? (int) $seleccion
             : 7;
+
+        $desdeParametro = request()->query('desde');
+        $hastaParametro = request()->query('hasta');
+
+        $personalizado = false;
+        $errorFechas = null;
+
+        $primerDia = $hoy->subDays($periodo - 1)->startOfDay();
+        $finRango = $fin;
+
+        if ($desdeParametro !== null || $hastaParametro !== null) {
+            $filtro = [
+                'desde' => is_string($desdeParametro) ? $desdeParametro : '',
+                'hasta' => is_string($hastaParametro) ? $hastaParametro : '',
+            ];
+
+            $validador = Validator::make($filtro, [
+                'desde' => ['required', 'date_format:Y-m-d'],
+                'hasta' => [
+                    'required',
+                    'date_format:Y-m-d',
+                    'after_or_equal:desde',
+                    'before_or_equal:today',
+                ],
+            ]);
+
+            if ($validador->passes()) {
+                $desdeFecha = CarbonImmutable::parse(
+                    $filtro['desde'],
+                    config('app.timezone')
+                )->startOfDay();
+
+                $hastaFecha = CarbonImmutable::parse(
+                    $filtro['hasta'],
+                    config('app.timezone')
+                )->startOfDay();
+
+                $dias = (int) $desdeFecha->diffInDays($hastaFecha) + 1;
+
+                if ($dias <= 90) {
+                    $personalizado = true;
+                    $periodo = $dias;
+                    $primerDia = $desdeFecha;
+                    $finRango = $hastaFecha->endOfDay();
+                } else {
+                    $errorFechas = 'Selecciona un rango de máximo 90 días.';
+                }
+            } else {
+                $errorFechas = 'Selecciona fechas válidas, en orden y sin incluir días futuros.';
+            }
+        }
 
         $verCobros = $actor->can('reportes.ver_todos')
             || (
@@ -55,6 +107,25 @@ class EstadisticasDashboard
             'verInventario' => $verInventario,
 
             'periodo' => $periodo,
+
+            'personalizado' => $personalizado,
+            'desde' => $personalizado ? $primerDia->toDateString() : '',
+            'hasta' => $personalizado ? $finRango->toDateString() : '',
+            'errorFechas' => $errorFechas,
+
+            'etiquetaPeriodo' => $personalizado
+                ? 'del '.$primerDia->format('d/m/Y').' al '.$finRango->format('d/m/Y')
+                : 'de los últimos '.$periodo.' días',
+
+            'comparacion' => [
+                'actual' => '0.00',
+                'anterior' => '0.00',
+                'diferencia' => '0.00',
+            ],
+
+            'periodoAnterior' => '',
+
+            'ultimosCobros' => [],
 
             'cobrosNetosHoy' => '0.00',
             'cantidadCobros' => 0,
@@ -145,11 +216,8 @@ class EstadisticasDashboard
             ->whereBetween('cobrado_at', [$inicio, $fin])
             ->count();
 
-        // Gráfico de los últimos siete días.
-        $primerDia = $hoy->subDays($periodo - 1)->startOfDay();
-
         $ventasPorDia = (clone $cobros)
-            ->whereBetween('cobrado_at', [$primerDia, $fin])
+            ->whereBetween('cobrado_at', [[$primerDia, $finRango]])
             ->selectRaw(
                 'DATE(cobrado_at) AS dia, SUM(total) AS importe'
             )
@@ -157,7 +225,7 @@ class EstadisticasDashboard
             ->pluck('importe', 'dia');
 
         $devolucionesPorDia = (clone $devoluciones)
-            ->whereBetween('devuelta_at', [$primerDia, $fin])
+            ->whereBetween('devuelta_at', [[$primerDia, $finRango]])
             ->selectRaw(
                 'DATE(devuelta_at) AS dia, SUM(total) AS importe'
             )
@@ -199,7 +267,7 @@ class EstadisticasDashboard
                 'cobro_detalles.pedido_detalle_id'
             )
             ->where('c.estado', EstadoCobro::CONFIRMADO->value)
-            ->whereBetween('c.cobrado_at', [$primerDia, $fin])
+            ->whereBetween('c.cobrado_at', [[$primerDia, $finRango]])
             ->whereNull('pd.detalle_padre_id')
             ->when(
                 ! $actor->can('reportes.ver_todos'),
@@ -238,7 +306,7 @@ class EstadisticasDashboard
                 'pagos.cobro_id'
             )
             ->where('c.estado', EstadoCobro::CONFIRMADO->value)
-            ->whereBetween('c.cobrado_at', [$primerDia, $fin])
+            ->whereBetween('c.cobrado_at', [[$primerDia, $finRango]])
             ->when(
                 ! $actor->can('reportes.ver_todos'),
                 fn ($q) => $q->whereIn(
@@ -263,6 +331,67 @@ class EstadisticasDashboard
                 (float) $pago->total;
         }
 
+        // ==========================================
+        // COMPARACIÓN CON EL PERÍODO ANTERIOR
+        // ==========================================
+
+        $inicioAnterior = $primerDia->subDays($periodo);
+        $finAnterior = $primerDia->subSecond();
+
+        $cobradoPeriodo = (string) (clone $cobros)
+            ->whereBetween('cobrado_at', [$primerDia, $finRango])
+            ->sum('total');
+
+        $devueltoPeriodo = (string) (clone $devoluciones)
+            ->whereBetween('devuelta_at', [$primerDia, $finRango])
+            ->sum('total');
+
+        $cobradoAnterior = (string) (clone $cobros)
+            ->whereBetween('cobrado_at', [$inicioAnterior, $finAnterior])
+            ->sum('total');
+
+        $devueltoAnterior = (string) (clone $devoluciones)
+            ->whereBetween('devuelta_at', [$inicioAnterior, $finAnterior])
+            ->sum('total');
+
+        $netoActual = bcsub($cobradoPeriodo, $devueltoPeriodo, 2);
+        $netoAnterior = bcsub($cobradoAnterior, $devueltoAnterior, 2);
+
+        $datos['comparacion'] = [
+            'actual' => $netoActual,
+            'anterior' => $netoAnterior,
+            'diferencia' => bcsub($netoActual, $netoAnterior, 2),
+        ];
+
+        $datos['periodoAnterior'] =
+            $inicioAnterior->format('d/m/Y')
+            .' al '.
+            $finAnterior->format('d/m/Y');
+
+        // ==========================================
+        // ÚLTIMOS CINCO COBROS DEL PERÍODO
+        // ==========================================
+
+        $datos['ultimosCobros'] = (clone $cobros)
+            ->whereBetween('cobrado_at', [$primerDia, $finRango])
+            ->orderByDesc('cobrado_at')
+            ->orderByDesc('id')
+            ->limit(5)
+            ->get([
+                'codigo',
+                'cobrado_at',
+                'caja_nombre',
+                'cliente_nombre',
+                'total',
+            ])
+            ->map(fn (Cobro $cobro): array => [
+                'codigo' => $cobro->codigo,
+                'fecha' => $cobro->cobrado_at?->format('d/m/Y H:i') ?? '—',
+                'caja' => $cobro->caja_nombre ?: '—',
+                'cliente' => $cobro->cliente_nombre ?: 'Sin identificar',
+                'total' => $cobro->total,
+            ])
+            ->all();
 
         return $datos;
     }
