@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Reportes;
 
+use App\Exports\VentasCobrosExport;
 use App\Models\User;
 use App\Services\Configuracion\IdentidadVisual;
 use App\Services\Reportes\ReporteVentas;
@@ -15,6 +16,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 #[Layout('layouts.app')]
@@ -235,6 +237,118 @@ class VentasCobros extends Component
             $nombreArchivo,
             [
                 'Content-Type' => 'application/pdf',
+                'Cache-Control' => 'private, no-store',
+            ]
+        );
+    }
+
+    public function exportarExcel(
+        ReporteVentas $reporte,
+        IdentidadVisual $identidad
+    ): ?StreamedResponse {
+
+        $actor = Auth::user();
+
+        abort_unless($actor instanceof User, 403);
+
+        $reporte->autorizar($actor);
+
+        abort_unless(
+            $actor->can('reportes.exportar'),
+            403
+        );
+
+        $this->resetValidation('exportacion');
+
+        try {
+
+            $filtros = $reporte->validarFiltros(
+                $actor,
+                $this->filtrosActuales()
+            );
+
+        } catch (ValidationException $error) {
+
+            $this->addError(
+                'exportacion',
+                $error->validator->errors()->first()
+            );
+
+            return null;
+        }
+
+        $operaciones = $reporte->consulta($actor, $filtros)
+            ->orderByDesc('fecha')
+            ->orderBy('tipo')
+            ->orderByDesc('operacion_id')
+            ->limit(5001)
+            ->get();
+
+        if ($operaciones->count() > 5000) {
+
+            $this->addError(
+                'exportacion',
+                'El Excel admite hasta 5000 operaciones. Reduce el período o aplica más filtros.'
+            );
+
+            return null;
+        }
+
+        $modalidades = $this->modalidades();
+
+        $tipos = [
+            'cobro' => 'Cobros',
+            'devolucion' => 'Devoluciones',
+        ];
+
+        $cajaNombre = empty($filtros['caja'])
+            ? 'Todas las autorizadas'
+            : ($reporte->cajas($actor)
+                ->firstWhere('id', $filtros['caja'])
+                ?->nombre ?? 'Caja seleccionada');
+
+        $datos = [
+            'empresa' => $identidad->nombre(),
+
+            'ruc' => $identidad->empresa()?->ruc ?? '—',
+
+            'periodo' => $filtros['inicio']->format('d/m/Y')
+                .' al '.$filtros['fin']->format('d/m/Y'),
+
+            'caja' => $cajaNombre,
+
+            'modalidad' => $modalidades[$filtros['modalidad'] ?? '']
+                ?? 'Todas',
+
+            'tipo' => $tipos[$filtros['tipo'] ?? '']
+                ?? 'Todas',
+
+            'buscar' => $filtros['buscar'] ?: 'Sin filtro',
+
+            'usuario' => $actor->name,
+
+            'fecha' => now()->format('d/m/Y H:i'),
+        ];
+
+        $contenido = Excel::raw(
+            new VentasCobrosExport(
+                $operaciones,
+                $datos,
+                $modalidades
+            ),
+            \Maatwebsite\Excel\Excel::XLSX
+        );
+
+        $nombreArchivo = 'ventas-cobros-'.$filtros['desde']
+            .'_'.$filtros['hasta'].'.xlsx';
+
+        return response()->streamDownload(
+            function () use ($contenido) {
+                echo $contenido;
+            },
+            $nombreArchivo,
+            [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 'Cache-Control' => 'private, no-store',
             ]
         );
