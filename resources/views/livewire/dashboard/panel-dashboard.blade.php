@@ -158,7 +158,7 @@
 
             <div class="mb-4">
                 <h2 class="font-semibold">
-                   Cobros netos {{ $etiquetaPeriodo }}
+                    Cobros netos {{ $etiquetaPeriodo }}
                 </h2>
 
                 <p class="text-xs text-zinc-500">
@@ -229,6 +229,67 @@
                 @endif
             </section>
         </div>
+
+
+        {{-- Gráficos de cajas y modalidades --}}
+        <div class="grid gap-3 lg:grid-cols-2">
+
+            {{-- Cobros netos por caja --}}
+            <section class="min-w-0 border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
+
+                <div class="mb-4">
+                    <h2 class="font-semibold">
+                        Cobros netos por caja
+                    </h2>
+
+                    <p class="text-xs text-zinc-500">
+                        Cobros menos devoluciones {{ $etiquetaPeriodo }}.
+                    </p>
+                </div>
+
+                @if (count($cobrosPorCaja['etiquetas']) > 0)
+                    <div wire:ignore class="relative h-72 w-full">
+                        <canvas data-dashboard-chart="cajas" data-serie='@json($cobrosPorCaja)' role="img"
+                            aria-label="Cobros netos por caja"></canvas>
+                    </div>
+                @else
+                    <div class="flex h-72 items-center justify-center text-sm text-zinc-500">
+                        Sin operaciones registradas en este período.
+                    </div>
+                @endif
+
+            </section>
+
+            {{-- Cobros por modalidad --}}
+            <section class="min-w-0 border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
+
+                <div class="mb-4">
+                    <h2 class="font-semibold">
+                        Cobros por modalidad de atención
+                    </h2>
+
+                    <p class="text-xs text-zinc-500">
+                        Importes cobrados {{ $etiquetaPeriodo }}.
+                        No descuenta devoluciones.
+                    </p>
+                </div>
+
+                @if (count($cobrosPorModalidad['etiquetas']) > 0)
+                    <div wire:ignore class="relative h-72 w-full">
+                        <canvas data-dashboard-chart="modalidades" data-serie='@json($cobrosPorModalidad)'
+                            role="img" aria-label="Cobros por modalidad de atención"></canvas>
+                    </div>
+                @else
+                    <div class="flex h-72 items-center justify-center text-sm text-zinc-500">
+                        Sin importes cobrados en este período.
+                    </div>
+                @endif
+
+            </section>
+
+        </div>
+
+
         {{-- Comparación de períodos --}}
         <section class="border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
             <h2 class="font-semibold">Comparación de cobros netos</h2>

@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Cajas\AccesoCajas;
 use App\Services\Pos\AccesoPos;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class EstadisticasDashboard
@@ -144,6 +145,16 @@ class EstadisticasDashboard
             ],
 
             'mediosPago' => [
+                'etiquetas' => [],
+                'valores' => [],
+            ],
+
+            'cobrosPorCaja' => [
+                'etiquetas' => [],
+                'valores' => [],
+            ],
+
+            'cobrosPorModalidad' => [
                 'etiquetas' => [],
                 'valores' => [],
             ],
@@ -392,6 +403,91 @@ class EstadisticasDashboard
                 'total' => $cobro->total,
             ])
             ->all();
+
+        // ==========================================
+        // COBROS NETOS POR CAJA
+        // ==========================================
+
+        $operacionesCaja = (clone $cobros)
+            ->whereBetween('cobrado_at', [$primerDia, $finRango])
+            ->selectRaw('turno_caja_id, total AS importe')
+            ->toBase()
+            ->unionAll(
+                (clone $devoluciones)
+                    ->whereBetween('devuelta_at', [$primerDia, $finRango])
+                    ->selectRaw('turno_caja_id, -total AS importe')
+                    ->toBase()
+            );
+
+        $resumenCajas = DB::query()
+            ->fromSub($operacionesCaja, 'operaciones')
+            ->join(
+                'turnos_caja as t',
+                't.id',
+                '=',
+                'operaciones.turno_caja_id'
+            )
+            ->join(
+                'cajas as caja',
+                'caja.id',
+                '=',
+                't.caja_id'
+            )
+            ->selectRaw(
+                'caja.id,
+         caja.nombre,
+         SUM(operaciones.importe) AS total'
+            )
+            ->groupBy('caja.id', 'caja.nombre')
+            ->orderByDesc('total')
+            ->get();
+
+        foreach ($resumenCajas as $caja) {
+            $datos['cobrosPorCaja']['etiquetas'][] =
+                $caja->nombre;
+
+            $datos['cobrosPorCaja']['valores'][] =
+                (float) $caja->total;
+        }
+
+        // ==========================================
+        // COBROS POR MODALIDAD DE ATENCIÓN
+        // ==========================================
+
+        $cobrosDelPeriodo = (clone $cobros)
+            ->whereBetween('cobrado_at', [$primerDia, $finRango])
+            ->select(['pedido_id', 'total']);
+
+        $resumenModalidades = DB::query()
+            ->fromSub($cobrosDelPeriodo, 'c')
+            ->join(
+                'pedidos as p',
+                'p.id',
+                '=',
+                'c.pedido_id'
+            )
+            ->selectRaw(
+                'p.modalidad, SUM(c.total) AS total'
+            )
+            ->groupBy('p.modalidad')
+            ->havingRaw('SUM(c.total) > 0')
+            ->orderByDesc('total')
+            ->get();
+
+        foreach ($resumenModalidades as $modalidad) {
+            $nombre = match ($modalidad->modalidad) {
+                'mesa' => 'Mesas',
+                'rapida' => 'Venta rápida',
+                'delivery' => 'Delivery',
+                default => 'Otros',
+            };
+
+            $datos['cobrosPorModalidad']['etiquetas'][] =
+                $nombre;
+
+            $datos['cobrosPorModalidad']['valores'][] =
+                (float) $modalidad->total;
+        }
 
         return $datos;
     }

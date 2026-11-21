@@ -101,7 +101,64 @@ function configurarGrafico(tipo, serie) {
         };
     }
 
-    if (tipo === 'medios') {
+
+    // Cobros netos por caja.
+    if (tipo === 'cajas') {
+        return {
+            type: 'bar',
+
+            data: {
+                labels,
+
+                datasets: [{
+                    label: 'Cobros netos',
+                    data: valores,
+
+                    backgroundColor: labels.map(
+                        (_, i) => colores[i % colores.length]
+                    ),
+
+                    borderRadius: 4,
+                    maxBarThickness: 50
+                }]
+            },
+
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+
+                    tooltip: {
+                        callbacks: {
+                            label: c => moneda(c.parsed.y)
+                        }
+                    }
+                },
+
+                scales: {
+                    y: {
+                        beginAtZero: true,
+
+                        ticks: {
+                            callback: valor => moneda(valor)
+                        }
+                    },
+
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    if (tipo === 'medios' || tipo === 'modalidades') {
         return {
             type: 'doughnut',
             data: {
