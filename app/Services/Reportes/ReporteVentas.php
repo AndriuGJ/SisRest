@@ -11,6 +11,10 @@ use App\Models\Devolucion;
 use App\Services\Cajas\AccesoCajas;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ReporteVentas
 {
@@ -47,6 +51,78 @@ class ReporteVentas
             ->orderBy('nombre')
             ->get(['id', 'nombre']);
     }
+
+
+
+public function validarFiltros(User $actor, array $filtros): array
+{
+    $this->autorizar($actor);
+
+    $hoy = CarbonImmutable::now(config('app.timezone'));
+
+    $cajas = $this->cajas($actor);
+
+    $validados = Validator::make($filtros, [
+        'desde' => [
+            'required',
+            'date_format:Y-m-d',
+        ],
+
+        'hasta' => [
+            'required',
+            'date_format:Y-m-d',
+            'after_or_equal:desde',
+            'before_or_equal:'.$hoy->toDateString(),
+        ],
+
+        'caja' => [
+            'nullable',
+            'integer',
+            Rule::in($cajas->pluck('id')->all()),
+        ],
+
+        'modalidad' => [
+            'nullable',
+            Rule::in(['mesa', 'rapida', 'delivery']),
+        ],
+
+        'tipo' => [
+            'nullable',
+            Rule::in(['cobro', 'devolucion']),
+        ],
+
+        'buscar' => [
+            'nullable',
+            'string',
+        ],
+
+    ])->validate();
+
+    $inicio = CarbonImmutable::parse(
+        $validados['desde'],
+        config('app.timezone')
+    )->startOfDay();
+
+    $hasta = CarbonImmutable::parse(
+        $validados['hasta'],
+        config('app.timezone')
+    )->startOfDay();
+
+    if ($inicio->diffInDays($hasta) >= 90) {
+        throw ValidationException::withMessages([
+            'fechas' => 'Selecciona un período máximo de 90 días.',
+        ]);
+    }
+
+    $validados['inicio'] = $inicio;
+    $validados['fin'] = $hasta->endOfDay();
+
+    $validados['buscar'] = trim(
+        mb_substr($validados['buscar'] ?? '', 0, 100)
+    );
+
+    return $validados;
+}
 
 
 public function consulta(User $actor, array $filtros): Builder
