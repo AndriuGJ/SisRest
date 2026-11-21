@@ -366,6 +366,87 @@
         </section>
     @endif
 
+    {{-- Alertas de inventario --}}
+    @if ($verInventario)
+
+        <section class="overflow-hidden border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+            <div
+                class="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+                <div>
+                    <h2 class="font-semibold">
+                        Alertas de inventario
+                    </h2>
+                    <p class="mt-1 text-xs text-zinc-500">
+                        {{ $stockBajo }} artículos requieren atención.
+                        Se muestran hasta 8 artículos prioritarios.
+                    </p>
+                </div>
+                <a href="{{ route('insumos.index') }}" wire:navigate
+                    class="border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
+                    Ver inventario
+                </a>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-zinc-50 text-xs text-zinc-500 dark:bg-zinc-800">
+                        <tr>
+                            <th class="px-4 py-3">Código</th>
+                            <th class="px-4 py-3">Artículo</th>
+                            <th class="px-4 py-3">Tipo</th>
+                            <th class="px-4 py-3 text-right">Disponible</th>
+                            <th class="px-4 py-3 text-right">Stock mínimo</th>
+                            <th class="px-4 py-3">Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                        @forelse ($articulosStockBajo as $articulo)
+                            <tr class="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                                <td class="px-4 py-3 text-zinc-500">
+                                    {{ $articulo['codigo'] }}
+                                </td>
+                                <td class="px-4 py-3 font-medium">
+                                    {{ $articulo['nombre'] }}
+                                </td>
+                                <td class="px-4 py-3">
+                                    {{ $articulo['tipo'] }}
+                                </td>
+                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                    {{ rtrim(rtrim(number_format((float) $articulo['disponible'], 4, '.', ''), '0'), '.') }}
+                                    {{ $articulo['unidad'] }}
+                                </td>
+                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                    {{ rtrim(rtrim(number_format((float) $articulo['minimo'], 4, '.', ''), '0'), '.') }}
+                                    {{ $articulo['unidad'] }}
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap">
+                                    @if ($articulo['agotado'])
+                                        <span
+                                            class="inline-flex border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+                                            Sin disponible
+                                        </span>
+                                    @else
+                                        <span
+                                            class="inline-flex border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                                            Stock bajo
+                                        </span>
+                                    @endif
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="6"
+                                    class="px-4 py-8 text-center text-emerald-600 dark:text-emerald-400">
+                                    No hay artículos con existencias bajas.
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    @endif
+
     @if (!$verCobros && !$verPedidos && !$verCajas && !$verInventario)
         <section class="border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
             <h2 class="font-semibold">

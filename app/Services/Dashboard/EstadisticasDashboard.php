@@ -133,6 +133,7 @@ class EstadisticasDashboard
             'pedidosActivos' => 0,
             'cajasAbiertas' => 0,
             'stockBajo' => 0,
+            'articulosStockBajo' => [],
 
             'grafico' => [
                 'etiquetas' => [],
@@ -176,13 +177,50 @@ class EstadisticasDashboard
 
         // Artículos activos con existencias bajas.
         if ($verInventario) {
-            $datos['stockBajo'] = Articulo::query()
+
+            $consultaStockBajo = Articulo::query()
                 ->where('activo', true)
                 ->where('stock_minimo', '>', 0)
                 ->whereRaw(
                     'stock_actual - stock_reservado <= stock_minimo'
-                )
+                );
+
+            // Cantidad total de artículos con stock bajo.
+            $datos['stockBajo'] = (clone $consultaStockBajo)
                 ->count();
+
+            // Artículos que requieren mayor atención.
+            $datos['articulosStockBajo'] = (clone $consultaStockBajo)
+                ->with('unidadMedida')
+                ->orderByRaw(
+                    '(stock_actual - stock_reservado) / stock_minimo ASC'
+                )
+                ->orderBy('nombre')
+                ->limit(8)
+                ->get()
+                ->map(fn (Articulo $articulo): array => [
+                    'codigo' => $articulo->codigo,
+                    'nombre' => $articulo->nombre,
+
+                    'tipo' => match ($articulo->tipo->value) {
+                        'insumo' => 'Insumo',
+                        'preparado' => 'Preparado',
+                        'reventa' => 'Reventa',
+                        default => 'Otro',
+                    },
+
+                    'unidad' => $articulo->unidadMedida?->codigo ?? '',
+
+                    'disponible' => $articulo->disponible,
+                    'minimo' => $articulo->stock_minimo,
+
+                    'agotado' => bccomp(
+                        $articulo->disponible,
+                        '0',
+                        4
+                    ) <= 0,
+                ])
+                ->all();
         }
 
         // No consultar importes si el usuario no tiene permiso.
