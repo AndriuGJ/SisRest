@@ -1,28 +1,38 @@
-
 <div class="space-y-6">
 
     @php
-        $cantidad = fn ($valor) =>
-            \App\Support\Cantidad::mostrar((string) $valor);
+        $cantidad = fn($valor) => \App\Support\Cantidad::mostrar((string) $valor);
 
-        $moneda = fn ($valor) =>
-            'S/ '.number_format((float) $valor, 2, '.', ',');
+        $moneda = fn($valor) => 'S/ ' . number_format((float) $valor, 2, '.', ',');
     @endphp
 
     {{-- Encabezado --}}
-    <div>
-        <p class="text-xs uppercase tracking-wide text-zinc-500">
-            Reportes
-        </p>
+    <div class="flex flex-wrap items-center justify-between gap-4">
 
-        <flux:heading size="xl" level="1">
-            Inventario y Kardex
-        </flux:heading>
+        <div>
+            <p class="text-xs uppercase tracking-wide text-zinc-500">
+                Reportes
+            </p>
 
-        <flux:text class="mt-1">
-            Consulta las existencias y los movimientos registrados.
-        </flux:text>
+            <flux:heading size="xl" level="1">
+                Inventario y Kardex
+            </flux:heading>
+
+            <flux:text class="mt-1">
+                Consulta las existencias y los movimientos registrados.
+            </flux:text>
+        </div>
+
+        @include('livewire.reportes.partials.botones-exportacion')
+
     </div>
+
+    @error('exportacion')
+        <p class="text-sm text-red-600 dark:text-red-400">
+            {{ $message }}
+        </p>
+    @enderror
+
 
     {{-- Contenedor --}}
     <div class="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">
@@ -30,38 +40,26 @@
         {{-- Selección de sección --}}
         <div class="flex flex-wrap gap-2 border-b border-zinc-200 p-4 dark:border-zinc-700">
 
-            <flux:button
-                wire:click="$set('vista', 'existencias')"
-                :variant="$vista === 'existencias' ? 'primary' : 'outline'"
-                icon="archive-box"
-            >
+            <flux:button wire:click="$set('vista', 'existencias')"
+                :variant="$vista === 'existencias' ? 'primary' : 'outline'" icon="archive-box">
                 Existencias
             </flux:button>
 
-            <flux:button
-                wire:click="$set('vista', 'kardex')"
-                :variant="$vista === 'kardex' ? 'primary' : 'outline'"
-                icon="arrows-right-left"
-            >
+            <flux:button wire:click="$set('vista', 'kardex')" :variant="$vista === 'kardex' ? 'primary' : 'outline'"
+                icon="arrows-right-left">
                 Kardex
             </flux:button>
 
         </div>
 
         {{-- Filtros --}}
-        <div class="grid items-end gap-4 border-b border-zinc-200 p-4 sm:grid-cols-2 xl:grid-cols-4 dark:border-zinc-700">
+        <div
+            class="grid items-end gap-4 border-b border-zinc-200 p-4 sm:grid-cols-2 xl:grid-cols-4 dark:border-zinc-700">
 
-            <flux:input
-                wire:model.live.debounce.300ms="search"
-                label="Buscar artículo"
-                placeholder="Nombre o código"
-                maxlength="100"
-            />
+            <flux:input wire:model.live.debounce.300ms="search" label="Buscar artículo" placeholder="Nombre o código"
+                maxlength="100" />
 
-            <flux:select
-                wire:model.live="tipoArticulo"
-                label="Tipo de artículo"
-            >
+            <flux:select wire:model.live="tipoArticulo" label="Tipo de artículo">
                 <option value="">Todos</option>
 
                 @foreach ($tiposArticulo as $valor => $nombre)
@@ -73,22 +71,14 @@
 
             @if ($vista === 'existencias')
 
-                <flux:select
-                    wire:model.live="stockFilter"
-                    label="Disponibilidad"
-                >
+                <flux:select wire:model.live="stockFilter" label="Disponibilidad">
                     <option value="">Todas</option>
                     <option value="con_stock">Con disponible</option>
                     <option value="bajo">Bajo el mínimo</option>
                     <option value="agotado">Sin disponible</option>
                 </flux:select>
-
             @else
-
-                <flux:select
-                    wire:model.live="movimientoFilter"
-                    label="Tipo de movimiento"
-                >
+                <flux:select wire:model.live="movimientoFilter" label="Tipo de movimiento">
                     <option value="">Todos</option>
 
                     @foreach ($tiposMovimiento as $valor => $nombre)
@@ -98,26 +88,13 @@
                     @endforeach
                 </flux:select>
 
-                <flux:input
-                    type="date"
-                    wire:model.live="from"
-                    label="Desde"
-                    max="{{ now()->toDateString() }}"
-                />
+                <flux:input type="date" wire:model.live="from" label="Desde" max="{{ now()->toDateString() }}" />
 
-                <flux:input
-                    type="date"
-                    wire:model.live="to"
-                    label="Hasta"
-                    max="{{ now()->toDateString() }}"
-                />
+                <flux:input type="date" wire:model.live="to" label="Hasta" max="{{ now()->toDateString() }}" />
 
             @endif
 
-            <flux:button
-                wire:click="clearFilters"
-                variant="ghost"
-            >
+            <flux:button wire:click="clearFilters" variant="ghost">
                 Limpiar
             </flux:button>
 
@@ -128,9 +105,7 @@
             <p class="p-4 text-sm text-red-600 dark:text-red-400">
                 {{ $errorFiltros }}
             </p>
-
         @else
-
             {{-- Resumen --}}
             <div class="grid grid-cols-2 gap-4 border-b border-zinc-200 p-4 lg:grid-cols-4 dark:border-zinc-700">
 
@@ -167,9 +142,7 @@
                             </p>
                         </div>
                     @endif
-
                 @else
-
                     <div>
                         <p class="text-xs text-zinc-500">Movimientos</p>
                         <p class="mt-1 text-lg font-semibold tabular-nums">
@@ -228,23 +201,12 @@
                         <tbody class="divide-y divide-zinc-100 dark:divide-zinc-700">
 
                             @forelse ($registros as $articulo)
-
                                 @php
-                                    $bajo = bccomp(
-                                        $articulo->stock_minimo,
-                                        '0',
-                                        4
-                                    ) > 0 && bccomp(
-                                        $articulo->disponible,
-                                        $articulo->stock_minimo,
-                                        4
-                                    ) <= 0;
+                                    $bajo =
+                                        bccomp($articulo->stock_minimo, '0', 4) > 0 &&
+                                        bccomp($articulo->disponible, $articulo->stock_minimo, 4) <= 0;
 
-                                    $sinDisponible = bccomp(
-                                        $articulo->disponible,
-                                        '0',
-                                        4
-                                    ) <= 0;
+                                    $sinDisponible = bccomp($articulo->disponible, '0', 4) <= 0;
                                 @endphp
 
                                 <tr wire:key="inventario-articulo-{{ $articulo->id }}">
@@ -273,7 +235,8 @@
                                         {{ $cantidad($articulo->stock_reservado) }}
                                     </td>
 
-                                    <td class="px-4 py-3 text-right font-medium tabular-nums {{ $sinDisponible ? 'text-red-600 dark:text-red-400' : '' }}">
+                                    <td
+                                        class="px-4 py-3 text-right font-medium tabular-nums {{ $sinDisponible ? 'text-red-600 dark:text-red-400' : '' }}">
                                         {{ $cantidad($articulo->disponible) }}
                                     </td>
 
@@ -283,11 +246,7 @@
 
                                     @if ($verCostos)
                                         <td class="px-4 py-3 text-right tabular-nums">
-                                            {{ $moneda(bcmul(
-                                                $articulo->stock_actual,
-                                                $articulo->costo_promedio,
-                                                6
-                                            )) }}
+                                            {{ $moneda(bcmul($articulo->stock_actual, $articulo->costo_promedio, 6)) }}
                                         </td>
                                     @endif
 
@@ -308,22 +267,17 @@
                             @empty
 
                                 <tr>
-                                    <td
-                                        colspan="{{ $verCostos ? 8 : 7 }}"
-                                        class="px-4 py-10 text-center text-zinc-500"
-                                    >
+                                    <td colspan="{{ $verCostos ? 8 : 7 }}"
+                                        class="px-4 py-10 text-center text-zinc-500">
                                         No hay artículos con estos filtros.
                                     </td>
                                 </tr>
-
                             @endforelse
 
                         </tbody>
                     </table>
                 </div>
-
             @else
-
                 {{-- Tabla de Kardex --}}
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
@@ -348,13 +302,8 @@
                         <tbody class="divide-y divide-zinc-100 dark:divide-zinc-700">
 
                             @forelse ($registros as $movimiento)
-
                                 @php
-                                    $entrada = bccomp(
-                                        (string) $movimiento->cantidad,
-                                        '0',
-                                        4
-                                    ) > 0;
+                                    $entrada = bccomp((string) $movimiento->cantidad, '0', 4) > 0;
 
                                     $magnitud = $entrada
                                         ? (string) $movimiento->cantidad
@@ -410,11 +359,13 @@
                                         @endif
                                     </td>
 
-                                    <td class="whitespace-nowrap px-4 py-3 text-right tabular-nums text-emerald-700 dark:text-emerald-400">
+                                    <td
+                                        class="whitespace-nowrap px-4 py-3 text-right tabular-nums text-emerald-700 dark:text-emerald-400">
                                         {{ $entrada ? $cantidad($magnitud) : '—' }}
                                     </td>
 
-                                    <td class="whitespace-nowrap px-4 py-3 text-right tabular-nums text-red-600 dark:text-red-400">
+                                    <td
+                                        class="whitespace-nowrap px-4 py-3 text-right tabular-nums text-red-600 dark:text-red-400">
                                         {{ $entrada ? '—' : $cantidad($magnitud) }}
                                     </td>
 
@@ -428,12 +379,7 @@
 
                                     @if ($verCostos)
                                         <td class="whitespace-nowrap px-4 py-3 text-right tabular-nums">
-                                            {{ number_format(
-                                                (float) $movimiento->costo_unitario,
-                                                6,
-                                                '.',
-                                                ','
-                                            ) }}
+                                            {{ number_format((float) $movimiento->costo_unitario, 6, '.', ',') }}
                                         </td>
                                     @endif
 
@@ -442,14 +388,11 @@
                             @empty
 
                                 <tr>
-                                    <td
-                                        colspan="{{ $verCostos ? 9 : 8 }}"
-                                        class="px-4 py-10 text-center text-zinc-500"
-                                    >
+                                    <td colspan="{{ $verCostos ? 9 : 8 }}"
+                                        class="px-4 py-10 text-center text-zinc-500">
                                         No hay movimientos con estos filtros.
                                     </td>
                                 </tr>
-
                             @endforelse
 
                         </tbody>
