@@ -137,7 +137,8 @@
                         Productos vendidos
                     </flux:sidebar.item>
 
-                    <flux:sidebar.item icon="calculator">
+                    <flux:sidebar.item icon="calculator" :href="route('reportes.cajas')"
+                        :current="request()->routeIs('reportes.cajas')" wire:navigate>
                         Cajas y arqueos
                     </flux:sidebar.item>
 

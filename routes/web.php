@@ -47,6 +47,7 @@ use Illuminate\Support\Facades\Route;
 use App\Livewire\Dashboard\PanelDashboard;
 use App\Livewire\Reportes\VentasCobros;
 use App\Livewire\Reportes\ProductosVendidos;
+use App\Livewire\Reportes\CajasArqueos;
 
 Route::get('marca/logo/{archivo}', LogoEmpresaController::class)->name('marca.logo');
 
@@ -99,6 +100,8 @@ Route::middleware(['auth'])->group(function () {
             ->name('ventas');
         Route::get('productos', ProductosVendidos::class)
             ->name('productos');
+        Route::get('cajas', CajasArqueos::class)
+             ->name('cajas');
     });
 
     Route::middleware('permission:clientes.ver')->prefix('clientes')->name('clientes.')->group(function () {
