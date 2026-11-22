@@ -160,9 +160,14 @@
                         @endcan
                     @endcan
 
-                    <flux:sidebar.item icon="document-text">
-                        Comprobantes
-                    </flux:sidebar.item>
+                    @can('reportes.ver_todos')
+                        @can('comprobantes.ver')
+                            <flux:sidebar.item icon="document-text" :href="route('reportes.comprobantes')"
+                                :current="request()->routeIs('reportes.comprobantes')" wire:navigate>
+                                Comprobantes
+                            </flux:sidebar.item>
+                        @endcan
+                    @endcan
                 </flux:sidebar.group>
             @endcanany
             @canany(['usuarios.gestionar', 'roles.gestionar'])

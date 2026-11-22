@@ -50,6 +50,7 @@ use App\Livewire\Reportes\ProductosVendidos;
 use App\Livewire\Reportes\CajasArqueos;
 use App\Livewire\Reportes\InventarioKardex;
 use App\Livewire\Reportes\ComprasReporte;
+use App\Livewire\Reportes\ComprobantesReporte;
 
 Route::get('marca/logo/{archivo}', LogoEmpresaController::class)->name('marca.logo');
 
@@ -110,6 +111,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('compras', ComprasReporte::class)
             ->middleware('permission:compras.ver')
             ->name('compras');
+        Route::get('comprobantes', ComprobantesReporte::class)
+            ->middleware('permission:comprobantes.ver')
+            ->name('comprobantes');
     });
 
     Route::middleware('permission:clientes.ver')->prefix('clientes')->name('clientes.')->group(function () {
