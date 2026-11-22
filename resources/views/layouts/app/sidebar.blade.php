@@ -142,9 +142,14 @@
                         Cajas y arqueos
                     </flux:sidebar.item>
 
-                    <flux:sidebar.item icon="archive-box">
-                        Inventario y Kardex
-                    </flux:sidebar.item>
+                    @can('reportes.ver_todos')
+                        @can('inventario.ver')
+                            <flux:sidebar.item icon="archive-box" :href="route('reportes.inventario')"
+                                :current="request()->routeIs('reportes.inventario')" wire:navigate>
+                                Inventario y Kardex
+                            </flux:sidebar.item>
+                        @endcan
+                    @endcan
 
                     <flux:sidebar.item icon="shopping-cart">
                         Compras
