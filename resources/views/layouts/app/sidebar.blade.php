@@ -132,7 +132,8 @@
                         Ventas y cobros
                     </flux:sidebar.item>
 
-                    <flux:sidebar.item icon="cube">
+                    <flux:sidebar.item icon="cube" :href="route('reportes.productos')"
+                        :current="request()->routeIs('reportes.productos')" wire:navigate>
                         Productos vendidos
                     </flux:sidebar.item>
 
