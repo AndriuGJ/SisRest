@@ -151,9 +151,14 @@
                         @endcan
                     @endcan
 
-                    <flux:sidebar.item icon="shopping-cart">
-                        Compras
-                    </flux:sidebar.item>
+                    @can('reportes.ver_todos')
+                        @can('compras.ver')
+                            <flux:sidebar.item icon="shopping-cart" :href="route('reportes.compras')"
+                                :current="request()->routeIs('reportes.compras')" wire:navigate>
+                                Compras
+                            </flux:sidebar.item>
+                        @endcan
+                    @endcan
 
                     <flux:sidebar.item icon="document-text">
                         Comprobantes
