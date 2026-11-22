@@ -1,12 +1,9 @@
-
 <div class="space-y-6">
 
     @php
-        $moneda = fn ($valor) =>
-            'S/ '.number_format((float) $valor, 2, '.', ',');
+        $moneda = fn($valor) => 'S/ ' . number_format((float) $valor, 2, '.', ',');
 
-        $cantidad = fn ($valor) =>
-            rtrim(rtrim(number_format((float) $valor, 4, '.', ','), '0'), '.');
+        $cantidad = fn($valor) => rtrim(rtrim(number_format((float) $valor, 4, '.', ','), '0'), '.');
     @endphp
 
     {{-- Encabezado --}}
@@ -20,28 +17,61 @@
                 Productos vendidos
             </flux:heading>
 
+
             <flux:text class="mt-1">
                 Consulta las cantidades, descuentos e importes de los productos cobrados.
             </flux:text>
         </div>
+
+        @can('reportes.exportar')
+            <div class="flex flex-wrap items-center gap-2">
+
+                <flux:button variant="outline" icon="document-arrow-down" wire:click="exportarPdf" wire:loading.attr="disabled"
+                    :disabled="(bool) $errorFiltros">
+                    <span wire:loading.remove wire:target="exportarPdf">
+                        Exportar PDF
+                    </span>
+
+                    <span wire:loading wire:target="exportarPdf">
+                        Generando PDF...
+                    </span>
+                </flux:button>
+
+                <flux:button variant="outline" icon="table-cells" wire:click="exportarExcel" wire:loading.attr="disabled"
+                    :disabled="(bool) $errorFiltros">
+                    <span wire:loading.remove wire:target="exportarExcel">
+                        Exportar Excel
+                    </span>
+
+                    <span wire:loading wire:target="exportarExcel">
+                        Generando Excel...
+                    </span>
+                </flux:button>
+
+            </div>
+        @endcan
+
     </div>
+
+    @error('exportacion')
+        <p class="text-sm text-red-600 dark:text-red-400">
+            {{ $message }}
+        </p>
+    @enderror
+
+    {{-- Contenedor principal --}}
+
 
     {{-- Contenedor principal --}}
     <div class="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">
 
         {{-- Filtros --}}
-        <div class="grid items-end gap-4 border-b border-zinc-200 p-4 sm:grid-cols-2 xl:grid-cols-4 dark:border-zinc-700">
+        <div
+            class="grid items-end gap-4 border-b border-zinc-200 p-4 sm:grid-cols-2 xl:grid-cols-4 dark:border-zinc-700">
 
-            <flux:input
-                wire:model.live.debounce.300ms="search"
-                label="Buscar producto"
-                placeholder="Nombre o código"
-            />
+            <flux:input wire:model.live.debounce.300ms="search" label="Buscar producto" placeholder="Nombre o código" />
 
-            <flux:select
-                wire:model.live="categoriaId"
-                label="Categoría"
-            >
+            <flux:select wire:model.live="categoriaId" label="Categoría">
                 <option value="">Todas</option>
 
                 @foreach ($categorias as $categoria)
@@ -51,10 +81,7 @@
                 @endforeach
             </flux:select>
 
-            <flux:select
-                wire:model.live="cajaId"
-                label="Caja"
-            >
+            <flux:select wire:model.live="cajaId" label="Caja">
                 <option value="">Todas</option>
 
                 @foreach ($cajas as $caja)
@@ -64,10 +91,7 @@
                 @endforeach
             </flux:select>
 
-            <flux:select
-                wire:model.live="modalidadFilter"
-                label="Modalidad"
-            >
+            <flux:select wire:model.live="modalidadFilter" label="Modalidad">
                 <option value="">Todas</option>
 
                 @foreach ($modalidades as $valor => $nombre)
@@ -77,24 +101,11 @@
                 @endforeach
             </flux:select>
 
-            <flux:input
-                type="date"
-                wire:model.live="from"
-                label="Desde"
-                max="{{ now()->toDateString() }}"
-            />
+            <flux:input type="date" wire:model.live="from" label="Desde" max="{{ now()->toDateString() }}" />
 
-            <flux:input
-                type="date"
-                wire:model.live="to"
-                label="Hasta"
-                max="{{ now()->toDateString() }}"
-            />
+            <flux:input type="date" wire:model.live="to" label="Hasta" max="{{ now()->toDateString() }}" />
 
-            <flux:button
-                wire:click="clearFilters"
-                variant="ghost"
-            >
+            <flux:button wire:click="clearFilters" variant="ghost">
                 Limpiar
             </flux:button>
 
@@ -105,9 +116,7 @@
             <p class="p-4 text-sm text-red-600 dark:text-red-400">
                 {{ $errorFiltros }}
             </p>
-
         @else
-
             {{-- Resumen --}}
             <div class="grid grid-cols-2 gap-4 border-b border-zinc-200 p-4 lg:grid-cols-4 dark:border-zinc-700">
 
@@ -146,7 +155,8 @@
                         Importe neto
                     </p>
 
-                    <p class="mt-1 text-lg font-semibold tabular-nums {{ bccomp($resumen['importe_neto'], '0', 2) < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400' }}">
+                    <p
+                        class="mt-1 text-lg font-semibold tabular-nums {{ bccomp($resumen['importe_neto'], '0', 2) < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400' }}">
                         {{ $moneda($resumen['importe_neto']) }}
                     </p>
                 </div>
@@ -197,7 +207,6 @@
                     <tbody class="divide-y divide-zinc-100 dark:divide-zinc-700">
 
                         @forelse ($productos as $producto)
-
                             <tr wire:key="reporte-producto-{{ $producto->producto_id }}">
 
                                 <td class="px-4 py-3">
@@ -218,7 +227,8 @@
                                     {{ $cantidad($producto->cantidad_cobrada) }}
                                 </td>
 
-                                <td class="whitespace-nowrap px-4 py-3 text-right tabular-nums {{ bccomp((string) $producto->cantidad_devuelta, '0', 4) > 0 ? 'text-red-600 dark:text-red-400' : '' }}">
+                                <td
+                                    class="whitespace-nowrap px-4 py-3 text-right tabular-nums {{ bccomp((string) $producto->cantidad_devuelta, '0', 4) > 0 ? 'text-red-600 dark:text-red-400' : '' }}">
                                     {{ $cantidad($producto->cantidad_devuelta) }}
                                 </td>
 
@@ -234,11 +244,13 @@
                                     {{ $moneda($producto->importe_cobrado) }}
                                 </td>
 
-                                <td class="whitespace-nowrap px-4 py-3 text-right tabular-nums {{ bccomp((string) $producto->importe_devuelto, '0', 2) > 0 ? 'text-red-600 dark:text-red-400' : '' }}">
+                                <td
+                                    class="whitespace-nowrap px-4 py-3 text-right tabular-nums {{ bccomp((string) $producto->importe_devuelto, '0', 2) > 0 ? 'text-red-600 dark:text-red-400' : '' }}">
                                     {{ $moneda($producto->importe_devuelto) }}
                                 </td>
 
-                                <td class="whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums {{ bccomp((string) $producto->importe_neto, '0', 2) < 0 ? 'text-red-600 dark:text-red-400' : '' }}">
+                                <td
+                                    class="whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums {{ bccomp((string) $producto->importe_neto, '0', 2) < 0 ? 'text-red-600 dark:text-red-400' : '' }}">
                                     {{ $moneda($producto->importe_neto) }}
                                 </td>
 
@@ -251,7 +263,6 @@
                                     No hay productos con estos filtros.
                                 </td>
                             </tr>
-
                         @endforelse
 
                     </tbody>
