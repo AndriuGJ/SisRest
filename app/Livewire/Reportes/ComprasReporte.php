@@ -2,16 +2,22 @@
 
 namespace App\Livewire\Reportes;
 
+use App\Exports\ComprasReporteExport;
 use App\Models\User;
+use App\Services\Configuracion\IdentidadVisual;
 use App\Services\Reportes\ReporteCompras;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\File;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 #[Layout('layouts.app')]
 #[Title('Reporte de compras')]
@@ -67,6 +73,7 @@ class ComprasReporte extends Component
             'to',
         ], true)) {
             $this->resetPage();
+            $this->resetValidation('exportacion');
         }
     }
 
@@ -82,6 +89,215 @@ class ComprasReporte extends Component
         $this->establecerFechas();
 
         $this->resetPage();
+        $this->resetValidation();
+    }
+
+    private function datosExportacion(
+        ReporteCompras $reporte,
+        IdentidadVisual $identidad,
+        int $limite
+    ): ?array {
+        $actor = Auth::user();
+
+        abort_unless($actor instanceof User, 403);
+
+        $reporte->autorizar($actor);
+
+        abort_unless(
+            $actor->can('reportes.exportar'),
+            403
+        );
+
+        $this->resetValidation('exportacion');
+
+        try {
+            $filtros = $reporte->validarFiltros(
+                $actor,
+                $this->filtrosActuales()
+            );
+        } catch (ValidationException $error) {
+            $this->addError(
+                'exportacion',
+                $error->validator->errors()->first()
+            );
+
+            return null;
+        }
+
+        $consulta = $reporte->consulta($actor, $filtros);
+
+        $compras = (clone $consulta)
+            ->orderByDesc('fecha')
+            ->orderByDesc('id')
+            ->limit($limite + 1)
+            ->get();
+
+        if ($compras->count() > $limite) {
+            $this->addError(
+                'exportacion',
+                "La exportación admite hasta {$limite} compras. Aplica más filtros."
+            );
+
+            return null;
+        }
+
+        // Utilizamos exactamente los mismos totales
+        // que ya muestra el reporte en pantalla.
+        $resumen = $reporte->resumen($consulta);
+
+        $estados = [
+            'borrador' => 'Borrador',
+            'confirmada' => 'Confirmada',
+            'anulada' => 'Anulada',
+        ];
+
+        $situaciones = [
+            'pendiente' => 'Con saldo pendiente',
+            'pagada' => 'Pagadas',
+            'vencida' => 'Vencidas',
+        ];
+
+        $empresa = $identidad->empresa();
+
+        $hoy = CarbonImmutable::now(
+            config('app.timezone')
+        );
+
+        $proveedorNombre = 'Todos';
+
+        if (! empty($filtros['proveedor'])) {
+            $proveedorNombre = $reporte->proveedores()
+                ->firstWhere('id', (int) $filtros['proveedor'])
+                ?->nombre ?? 'Proveedor seleccionado';
+        }
+
+        return [
+            'empresa' => $empresa,
+            'nombreEmpresa' => $identidad->nombre(),
+            'logo' => $identidad->logoDatos(
+                $empresa?->logo_ruta
+            ),
+
+            'periodo' => CarbonImmutable::parse(
+                $filtros['desde']
+            )->format('d/m/Y')
+                .' al '.CarbonImmutable::parse(
+                    $filtros['hasta']
+                )->format('d/m/Y'),
+
+            'proveedorNombre' => $proveedorNombre,
+
+            'estadoNombre' => $estados[$filtros['estado'] ?? ''] ?? 'Todos',
+
+            'pagoNombre' => $situaciones[$filtros['pago'] ?? ''] ?? 'Todas',
+
+            'buscar' => $filtros['buscar'] ?: 'Sin filtro',
+
+            'compras' => $compras,
+            'resumen' => $resumen,
+
+            'hoy' => $hoy->toDateString(),
+            'fechaEmision' => $hoy->format('d/m/Y H:i'),
+            'usuario' => $actor->name,
+
+            'nombreArchivo' => 'reporte-compras-'
+                .$filtros['desde'].'_'.$filtros['hasta'],
+        ];
+    }
+
+    public function exportarPdf(
+        ReporteCompras $reporte,
+        IdentidadVisual $identidad
+    ): ?StreamedResponse {
+        $datos = $this->datosExportacion(
+            $reporte,
+            $identidad,
+            2000
+        );
+
+        if ($datos === null) {
+            return null;
+        }
+
+        File::ensureDirectoryExists(
+            (string) config(
+                'dompdf.options.font_cache',
+                storage_path('fonts')
+            )
+        );
+
+        $pdf = Pdf::loadView(
+            'reportes.pdf.compras-reporte',
+            $datos
+        )
+            ->setOption('isRemoteEnabled', false)
+            ->setPaper('a4', 'landscape');
+
+        $pdf->render();
+
+        $dompdf = $pdf->getDomPDF();
+        $canvas = $dompdf->getCanvas();
+
+        $fuente = $dompdf->getFontMetrics()
+            ->getFont('DejaVu Sans', 'normal');
+
+        $canvas->page_text(
+            $canvas->get_width() - 135,
+            $canvas->get_height() - 24,
+            'Página {PAGE_NUM} de {PAGE_COUNT}',
+            $fuente,
+            9,
+            [0.35, 0.35, 0.35]
+        );
+
+        return $this->descargar(
+            $pdf->output(),
+            $datos['nombreArchivo'].'.pdf',
+            'application/pdf'
+        );
+    }
+
+    public function exportarExcel(
+        ReporteCompras $reporte,
+        IdentidadVisual $identidad
+    ): ?StreamedResponse {
+        $datos = $this->datosExportacion(
+            $reporte,
+            $identidad,
+            5000
+        );
+
+        if ($datos === null) {
+            return null;
+        }
+
+        $contenido = Excel::raw(
+            new ComprasReporteExport($datos),
+            \Maatwebsite\Excel\Excel::XLSX
+        );
+
+        return $this->descargar(
+            $contenido,
+            $datos['nombreArchivo'].'.xlsx',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        );
+    }
+
+    private function descargar(
+        string $contenido,
+        string $nombre,
+        string $tipo
+    ): StreamedResponse {
+        return response()->streamDownload(
+            function () use ($contenido) {
+                echo $contenido;
+            },
+            $nombre,
+            [
+                'Content-Type' => $tipo,
+                'Cache-Control' => 'private, no-store',
+            ]
+        );
     }
 
     public function render(
