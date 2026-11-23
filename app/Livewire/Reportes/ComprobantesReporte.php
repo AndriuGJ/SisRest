@@ -5,18 +5,16 @@ namespace App\Livewire\Reportes;
 use App\Exports\ComprobantesReporteExport;
 use App\Models\User;
 use App\Services\Configuracion\IdentidadVisual;
+use App\Services\Reportes\ExportadorReportes;
 use App\Services\Reportes\ReporteComprobantes;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\File;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithPagination;
-use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 #[Layout('layouts.app')]
@@ -225,41 +223,10 @@ class ComprobantesReporte extends Component
             return null;
         }
 
-        File::ensureDirectoryExists(
-            (string) config(
-                'dompdf.options.font_cache',
-                storage_path('fonts')
-            )
-        );
-
-        $pdf = Pdf::loadView(
+        return app(ExportadorReportes::class)->pdf(
             'reportes.pdf.comprobantes-reporte',
-            $datos
-        )
-            ->setOption('isRemoteEnabled', false)
-            ->setPaper('a4', 'landscape');
-
-        $pdf->render();
-
-        $dompdf = $pdf->getDomPDF();
-        $canvas = $dompdf->getCanvas();
-
-        $fuente = $dompdf->getFontMetrics()
-            ->getFont('DejaVu Sans', 'normal');
-
-        $canvas->page_text(
-            $canvas->get_width() - 135,
-            $canvas->get_height() - 24,
-            'Página {PAGE_NUM} de {PAGE_COUNT}',
-            $fuente,
-            9,
-            [0.35, 0.35, 0.35]
-        );
-
-        return $this->descargar(
-            $pdf->output(),
-            $datos['nombreArchivo'].'.pdf',
-            'application/pdf'
+            $datos,
+            $datos['nombreArchivo'].'.pdf'
         );
     }
 
@@ -277,32 +244,9 @@ class ComprobantesReporte extends Component
             return null;
         }
 
-        $contenido = Excel::raw(
+        return app(ExportadorReportes::class)->excel(
             new ComprobantesReporteExport($datos),
-            \Maatwebsite\Excel\Excel::XLSX
-        );
-
-        return $this->descargar(
-            $contenido,
-            $datos['nombreArchivo'].'.xlsx',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        );
-    }
-
-    private function descargar(
-        string $contenido,
-        string $nombre,
-        string $tipo
-    ): StreamedResponse {
-        return response()->streamDownload(
-            function () use ($contenido) {
-                echo $contenido;
-            },
-            $nombre,
-            [
-                'Content-Type' => $tipo,
-                'Cache-Control' => 'private, no-store',
-            ]
+            $datos['nombreArchivo'].'.xlsx'
         );
     }
 
