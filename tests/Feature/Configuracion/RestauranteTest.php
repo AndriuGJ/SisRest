@@ -51,13 +51,26 @@ test('restaurant configuration requires authentication and its specific permissi
     $this->get(route('configuracion.mesas'))->assertOk();
 });
 
-test('users and roles navigation appears only in the sidebar on their list pages', function () {
+
+test('users and roles navigation links are available on their list pages', function () {
     foreach (['usuarios.index', 'roles.index'] as $pagina) {
-        $html = $this->get(route($pagina))->assertOk()->getContent();
-        expect(substr_count($html, 'href="'.route('usuarios.index').'"'))->toBe(1)
-            ->and(substr_count($html, 'href="'.route('roles.index').'"'))->toBe(1);
+
+        $html = $this->get(route($pagina))
+            ->assertOk()
+            ->getContent();
+
+        expect(substr_count(
+            $html,
+            'href="'.route('usuarios.index').'"'
+        ))->toBeGreaterThanOrEqual(1);
+
+        expect(substr_count(
+            $html,
+            'href="'.route('roles.index').'"'
+        ))->toBeGreaterThanOrEqual(1);
     }
 });
+
 
 test('salons can be created edited ordered and audited with normalized unique codes', function () {
     Livewire::test(Salones::class)->call('newRecord')

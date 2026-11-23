@@ -313,13 +313,63 @@ test('Livewire courtesy and cancellation preserve the reviewed payload and lock 
     expect(fn () => Livewire::test(AccionesProducto::class, ['pedidoId' => $pedido->id])->set('detalleId', 999))->toThrow(CannotUpdateLockedPropertyException::class);
 });
 
+
 test('courtesy checkout accepts an empty UI payment row and keeps all reviewed general fields immutable', function () {
-    $pedido = pedidoBeneficio($this->actor, $this->turno, [$this->bebida->id => 1]);
+
+    $pedido = pedidoBeneficio(
+        $this->actor,
+        $this->turno,
+        [$this->bebida->id => 1]
+    );
+
     $raiz = $pedido->detalles()->first();
-    autorizarBeneficio($this->actor, $pedido, $raiz->id, datosBeneficio($this->motivo->id, ['accion' => 'cortesia']));
-    Livewire::test(CobroFormulario::class, ['pedido' => $pedido->fresh()])->call('review')->assertDispatched('app:confirm')->call('confirmCharge');
-    expect(Cobro::first()->total)->toBe('0.00')->and(MovimientoCaja::count())->toBe(0);
+
+    autorizarBeneficio(
+        $this->actor,
+        $pedido,
+        $raiz->id,
+        datosBeneficio(
+            $this->motivo->id,
+            ['accion' => 'cortesia']
+        )
+    );
+
+    // Preparar una impresora de caja activa para la prueba.
+    $impresora = $this->turno->caja->impresora;
+
+    $impresora->update([
+        'host' => '127.0.0.1',
+        'puerto' => 19102,
+        'activo' => true,
+    ]);
+
+    // Simular el envío sin conectarse a una impresora real.
+    $this->spy(
+        \App\Services\Impresion\TransporteEscPos::class
+    );
+
+    $pantalla = Livewire::test(
+        CobroFormulario::class,
+        ['pedido' => $pedido->fresh()]
+    );
+
+    // Agregar una fila vacía para comprobar que no
+    // se exige un pago cuando el total es cero.
+    $pantalla
+        ->call('addPayment')
+        ->call('review')
+        ->assertHasNoErrors()
+        ->assertSet('showChargeReview', true)
+        ->call('confirmCharge')
+        ->assertHasNoErrors();
+
+    $cobro = Cobro::firstOrFail();
+
+    expect($cobro->total)->toBe('0.00')
+        ->and($cobro->pagos()->count())->toBe(0)
+        ->and(MovimientoCaja::count())->toBe(0);
 });
+
 
 test('parent operations require saving draft changes and methods cannot be used by a waiter without action permissions', function () {
     $pedido = pedidoBeneficio($this->actor, $this->turno, [$this->plato->id => 1]);
