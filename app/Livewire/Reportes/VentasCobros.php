@@ -6,18 +6,17 @@ use App\Exports\VentasCobrosExport;
 use App\Models\User;
 use App\Services\Configuracion\IdentidadVisual;
 use App\Services\Reportes\ReporteVentas;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\File;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithPagination;
-use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use App\Services\Reportes\ExportadorReportes;
+
 
 #[Layout('layouts.app')]
 #[Title('Ventas y cobros')]
@@ -185,61 +184,26 @@ class VentasCobros extends Component
                 ->firstWhere('id', $filtros['caja'])
                 ?->nombre ?? 'Caja seleccionada');
 
-        File::ensureDirectoryExists(
-            (string) config(
-                'dompdf.options.font_cache',
-                storage_path('fonts')
-            )
-        );
-
-        $pdf = Pdf::loadView('reportes.pdf.ventas-cobros', [
-            'empresa' => $empresa,
-            'nombreEmpresa' => $identidad->nombre(),
-            'logo' => $identidad->logoDatos($empresa?->logo_ruta),
-            'filtros' => $filtros,
-            'cajaNombre' => $cajaNombre,
-            'modalidades' => $this->modalidades(),
-            'resumen' => $resumen,
-            'operaciones' => $operaciones,
-            'usuario' => $actor->name,
-            'fechaEmision' => now()->format('d/m/Y H:i'),
-        ])
-            ->setOption('isRemoteEnabled', false)
-            ->setPaper('a4', 'landscape');
-
-        // Numeración de páginas.
-        $pdf->render();
-
-        $dompdf = $pdf->getDomPDF();
-        $canvas = $dompdf->getCanvas();
-
-        $fuente = $dompdf->getFontMetrics()
-            ->getFont('DejaVu Sans', 'normal');
-
-        $canvas->page_text(
-            $canvas->get_width() - 135,
-            $canvas->get_height() - 24,
-            'Página {PAGE_NUM} de {PAGE_COUNT}',
-            $fuente,
-            9,
-            [0.35, 0.35, 0.35]
-        );
-
-        $nombreArchivo = 'ventas-cobros-'.$filtros['desde']
-    .'_'.$filtros['hasta'].'.pdf';
-
-        $contenido = $pdf->output();
-
-        return response()->streamDownload(
-            function () use ($contenido) {
-                echo $contenido;
-            },
-            $nombreArchivo,
+        return app(ExportadorReportes::class)->pdf(
+            'reportes.pdf.ventas-cobros',
             [
-                'Content-Type' => 'application/pdf',
-                'Cache-Control' => 'private, no-store',
-            ]
+                'empresa' => $empresa,
+                'nombreEmpresa' => $identidad->nombre(),
+                'logo' => $identidad->logoDatos(
+                    $empresa?->logo_ruta
+                ),
+                'filtros' => $filtros,
+                'cajaNombre' => $cajaNombre,
+                'modalidades' => $this->modalidades(),
+                'resumen' => $resumen,
+                'operaciones' => $operaciones,
+                'usuario' => $actor->name,
+                'fechaEmision' => now()->format('d/m/Y H:i'),
+            ],
+            'ventas-cobros-'
+                .$filtros['desde'].'_'.$filtros['hasta'].'.pdf'
         );
+
     }
 
     public function exportarExcel(
@@ -330,28 +294,16 @@ class VentasCobros extends Component
             'fecha' => now()->format('d/m/Y H:i'),
         ];
 
-        $contenido = Excel::raw(
+        return app(ExportadorReportes::class)->excel(
             new VentasCobrosExport(
                 $operaciones,
                 $datos,
                 $modalidades
             ),
-            \Maatwebsite\Excel\Excel::XLSX
+            'ventas-cobros-'
+                .$filtros['desde'].'_'.$filtros['hasta'].'.xlsx'
         );
 
-        $nombreArchivo = 'ventas-cobros-'.$filtros['desde']
-            .'_'.$filtros['hasta'].'.xlsx';
-
-        return response()->streamDownload(
-            function () use ($contenido) {
-                echo $contenido;
-            },
-            $nombreArchivo,
-            [
-                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'Cache-Control' => 'private, no-store',
-            ]
-        );
     }
 
     public function render(ReporteVentas $reporte): View
