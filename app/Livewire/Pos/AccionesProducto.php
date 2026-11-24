@@ -3,14 +3,14 @@
 namespace App\Livewire\Pos;
 
 use App\Concerns\ConAlertas;
+use App\Models\MotivoAnulacion;
 use App\Models\MotivoBeneficio;
 use App\Models\Pedido;
 use App\Models\User;
-use App\Models\MotivoAnulacion;
-use App\Services\Pos\SeguridadAnulaciones as ServicioSeguridad;
 use App\Services\Pos\AccesoPos;
 use App\Services\Pos\GestionAnulaciones;
 use App\Services\Pos\GestionBeneficios;
+use App\Services\Pos\SeguridadAnulaciones as ServicioSeguridad;
 use App\Support\Alertas;
 use App\Support\Cantidad;
 use Illuminate\Contracts\View\View;
@@ -339,5 +339,17 @@ class AccionesProducto extends Component
                 ->orderBy('nombre')
                 ->get(),
         ]);
+    }
+
+    public function disminuirCantidad(): void
+    {
+        $actual = max(1, (int) $this->cantidad);
+        $this->cantidad = (string) max(1, $actual - 1);
+    }
+
+    public function aumentarCantidad(): void
+    {
+        $actual = max(1, (int) $this->cantidad);
+        $this->cantidad = (string) ($actual + 1);
     }
 }
