@@ -6,6 +6,8 @@ use App\Concerns\ConAlertas;
 use App\Models\MotivoBeneficio;
 use App\Models\Pedido;
 use App\Models\User;
+use App\Models\MotivoAnulacion;
+use App\Services\Pos\SeguridadAnulaciones as ServicioSeguridad;
 use App\Services\Pos\AccesoPos;
 use App\Services\Pos\GestionAnulaciones;
 use App\Services\Pos\GestionBeneficios;
