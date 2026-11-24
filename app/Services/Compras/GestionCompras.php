@@ -211,13 +211,48 @@ class GestionCompras
         } elseif ($datos['turnoId'] !== '') {
             throw ValidationException::withMessages(['turnoId' => 'Los pagos externos no deben vincularse a un turno de caja.']);
         }
-        $medio = MedioPago::query()->lockForUpdate()->findOrFail($datos['medioId']);
-        if (! $medio->activo || ($turno && ! $medio->afecta_efectivo) || ($datos['origen'] === 'empresa' && $medio->afecta_efectivo)) {
-            throw ValidationException::withMessages(['medioId' => 'Usa efectivo para caja, un medio digital para empresa o el origen dinero del dueño.']);
+
+        $medio = MedioPago::query()
+            ->lockForUpdate()
+            ->findOrFail($datos['medioId']);
+
+        if (
+            ! $medio->activo
+            || ($turno && ! $medio->afecta_efectivo)
+            || ($datos['origen'] === 'empresa' && $medio->afecta_efectivo)
+        ) {
+            throw ValidationException::withMessages([
+                'medioId' => 'Usa efectivo para caja, un medio digital para empresa o el origen dinero del dueño.',
+            ]);
         }
-        if ($turno && bccomp($monto, $turno->efectivoEsperado(bloquear: true), 2) > 0) {
-            throw ValidationException::withMessages(['monto' => 'El turno no tiene suficiente efectivo esperado para este pago.']);
+
+        // NUEVO: Validar número de operación obligatorio.
+        $referencia = trim($datos['referencia'] ?? '');
+
+        if (
+            ($medio->requiere_referencia
+                || in_array($medio->codigo, ['yape', 'plin'], true))
+            && $referencia === ''
+        ) {
+            throw ValidationException::withMessages([
+                'referencia' => 'Ingresa el número de operación de '.$medio->nombre.'.',
+            ]);
         }
+
+        // Validar que exista suficiente efectivo en caja.
+        if (
+            $turno
+            && bccomp(
+                $monto,
+                $turno->efectivoEsperado(bloquear: true),
+                2
+            ) > 0
+        ) {
+            throw ValidationException::withMessages([
+                'monto' => 'El turno no tiene suficiente efectivo esperado para este pago.',
+            ]);
+        }
+
         $pago = $compra->pagos()->create(['usuario_id' => $actor->id, 'medio_pago_id' => $medio->id, 'medio_pago_nombre' => $medio->nombre,
             'turno_caja_id' => $turno?->id, 'origen_fondos' => $datos['origen'], 'monto' => $monto,
             'referencia' => trim($datos['referencia']) ?: null, 'observaciones' => trim($datos['observaciones']) ?: null,
