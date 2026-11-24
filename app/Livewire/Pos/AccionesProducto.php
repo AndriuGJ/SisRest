@@ -47,6 +47,18 @@ class AccionesProducto extends Component
 
     public string $cantidad = '1';
 
+    public string $motivoAnulacionId = '';
+
+    public string $claveAutorizacion = '';
+
+    public bool $showConfirmCancel = false;
+
+    #[Locked]
+    public int $motivoAnulacionRevisadoId = 0;
+
+    #[Locked]
+    public string $resumenAnulacion = '';
+
     #[Locked]
     public string $clave = '';
 
@@ -110,66 +122,220 @@ class AccionesProducto extends Component
         $this->resetValidation();
         $this->detalleId = $detalleId;
         $this->modo = 'anular';
+        $this->motivoAnulacionId = '';
+        $this->motivoAnulacionRevisadoId = 0;
+        $this->motivoRevisado = '';
+        $this->claveAutorizacion = '';
+        $this->resumenAnulacion = '';
+        $this->showConfirmCancel = false;
         $this->cantidad = '1';
         $this->motivo = '';
         $this->huella = '';
         $this->showModal = true;
     }
 
-    public function review(GestionAnulaciones $anulaciones, GestionBeneficios $beneficios): void
-    {
+    public function review(
+        GestionAnulaciones $anulaciones,
+        GestionBeneficios $beneficios
+    ): void {
         $this->resetValidation();
+
         $actor = $this->actor();
+
         if ($this->modo === 'anular') {
-            $plan = $anulaciones->previsualizar($actor, $this->pedidoId, $this->detalleId, $this->cantidad, $this->motivo);
+            $motivo = app(ServicioSeguridad::class)
+                ->motivoActivo($this->motivoAnulacionId);
+
+            $plan = $anulaciones->previsualizar(
+                $actor,
+                $this->pedidoId,
+                $this->detalleId,
+                $this->cantidad,
+                $motivo->nombre
+            );
+
             $this->cantidadRevisada = $this->cantidad;
-            $this->motivoRevisado = $this->motivo;
+            $this->motivoRevisado = $motivo->nombre;
+            $this->motivoAnulacionRevisadoId = $motivo->id;
+
             $partes = [];
+
             foreach ($plan['hojas'] as $hoja) {
-                $partes[] = $hoja['descripcion'].': liberar '.Cantidad::mostrar($hoja['liberada']).', merma '.Cantidad::mostrar($hoja['merma']);
+                $partes[] = $hoja['descripcion']
+                    .': liberar '.Cantidad::mostrar($hoja['liberada'])
+                    .', merma '.Cantidad::mostrar($hoja['merma']);
             }
-            $texto = 'Anular '.Cantidad::mostrar($plan['cantidad']).' de '.$plan['descripcion'].'. '.implode('; ', $partes).'. Lo registrado como merma no volverá a estar disponible. No se devolverá dinero.';
-        } else {
-            abort_unless($this->modo === 'beneficio', 403);
-            $datos = ['accion' => $this->accion, 'tipo' => $this->tipo, 'valor' => $this->valor, 'motivoId' => $this->motivoId, 'motivo' => $this->motivo];
-            $plan = $beneficios->previsualizar($actor, $this->pedidoId, $this->detalleId, $datos);
-            $this->datosRevisados = $datos;
-            $texto = $this->accion === 'quitar' ? 'Retirar el beneficio de '.$plan['descripcion'].'. Se conservará su autorización anterior en el historial.' : 'Autorizar '.$this->accion.' para '.$plan['descripcion'].'. Beneficio total de esta línea: S/ '.$plan['importe'].'. Se repartirá entre sus cantidades al cobrar. No cambia existencias.';
+
+            $this->resumenAnulacion =
+                'Anular '.Cantidad::mostrar($plan['cantidad'])
+                .' de '.$plan['descripcion'].'. '
+                .implode('; ', $partes)
+                .'. Lo registrado como merma no volverá a estar disponible.'
+                .' No se devolverá dinero.';
+
+            $this->huella = $plan['huella'];
+            $this->clave = (string) Str::uuid();
+
+            $this->showModal = false;
+            $this->showConfirmCancel = true;
+
+            return;
         }
+
+        abort_unless($this->modo === 'beneficio', 403);
+
+        $datos = [
+            'accion' => $this->accion,
+            'tipo' => $this->tipo,
+            'valor' => $this->valor,
+            'motivoId' => $this->motivoId,
+            'motivo' => $this->motivo,
+        ];
+
+        $plan = $beneficios->previsualizar(
+            $actor,
+            $this->pedidoId,
+            $this->detalleId,
+            $datos
+        );
+
+        $this->datosRevisados = $datos;
+
+        $texto = $this->accion === 'quitar'
+            ? 'Retirar el beneficio de '.$plan['descripcion']
+                .'. Se conservará su autorización anterior en el historial.'
+            : 'Autorizar '.$this->accion.' para '.$plan['descripcion']
+                .'. Beneficio total de esta línea: S/ '.$plan['importe']
+                .'. Se repartirá entre sus cantidades al cobrar.'
+                .' No cambia existencias.';
+
         $this->huella = $plan['huella'];
         $this->clave = (string) Str::uuid();
         $this->showModal = false;
-        $this->confirmar($this->modo === 'anular' ? 'Anular producto confirmado' : 'Autorizar beneficio', $texto, 'confirmOperation', $this->modo === 'anular' ? 'Anular producto' : 'Autorizar', peligro: $this->modo === 'anular');
+
+        $this->confirmar(
+            'Autorizar beneficio',
+            $texto,
+            'confirmOperation',
+            'Autorizar'
+        );
     }
 
-    public function confirmOperation(GestionAnulaciones $anulaciones, GestionBeneficios $beneficios): void
-    {
+    public function confirmOperation(
+        GestionAnulaciones $anulaciones,
+        GestionBeneficios $beneficios
+    ): void {
         $actor = $this->actor();
+
         if ($this->huella === '' || $this->clave === '') {
-            $this->notificar('Revisa la operación antes de confirmar.', 'warning', toast: false);
+            $this->notificar(
+                'Revisa la operación antes de confirmar.',
+                'warning',
+                toast: false
+            );
 
             return;
         }
+
         try {
             if ($this->modo === 'anular') {
-                $anulaciones->anular($actor, $this->pedidoId, $this->detalleId, $this->cantidadRevisada, $this->motivoRevisado, $this->clave, $this->huella);
+                abort_unless(
+                    $this->showConfirmCancel
+                        && $this->motivoAnulacionRevisadoId > 0,
+                    403
+                );
+
+                $this->validate([
+                    'claveAutorizacion' => [
+                        'required',
+                        'regex:/^[0-9]{6,12}$/',
+                    ],
+                ]);
+
+                app(ServicioSeguridad::class)->autorizarAnulacion(
+                    $actor,
+                    $this->motivoAnulacionRevisadoId,
+                    $this->motivoRevisado,
+                    $this->claveAutorizacion
+                );
+
+                $anulaciones->anular(
+                    $actor,
+                    $this->pedidoId,
+                    $this->detalleId,
+                    $this->cantidadRevisada,
+                    $this->motivoRevisado,
+                    $this->clave,
+                    $this->huella
+                );
             } else {
-                abort_unless($this->modo === 'beneficio' && $this->datosRevisados !== [], 403);
-                $beneficios->aplicar($actor, $this->pedidoId, $this->detalleId, $this->clave, $this->huella, $this->datosRevisados);
+                abort_unless(
+                    $this->modo === 'beneficio'
+                        && $this->datosRevisados !== [],
+                    403
+                );
+
+                $beneficios->aplicar(
+                    $actor,
+                    $this->pedidoId,
+                    $this->detalleId,
+                    $this->clave,
+                    $this->huella,
+                    $this->datosRevisados
+                );
             }
         } catch (ValidationException $error) {
-            $this->notificar($error->validator->errors()->first(), 'error', toast: false);
+            $this->claveAutorizacion = '';
+
+            $this->notificar(
+                $error->validator->errors()->first(),
+                'error',
+                toast: false
+            );
 
             return;
         }
-        Alertas::flash($this->modo === 'anular' ? 'Anulación registrada.' : 'Beneficio autorizado.');
-        $this->redirectRoute('pos.pedido', $this->pedidoId, navigate: true);
+
+        $this->claveAutorizacion = '';
+        $this->showConfirmCancel = false;
+
+        Alertas::flash(
+            $this->modo === 'anular'
+                ? 'Anulación registrada.'
+                : 'Beneficio autorizado.'
+        );
+
+        $this->redirectRoute(
+            'pos.pedido',
+            $this->pedidoId,
+            navigate: true
+        );
+    }
+
+    public function cancelarConfirmacionAnulacion(): void
+    {
+        $this->claveAutorizacion = '';
+        $this->huella = '';
+        $this->showConfirmCancel = false;
     }
 
     public function render(): View
     {
         $pedido = $this->pedido();
 
-        return view('livewire.pos.acciones-producto', ['detalle' => $this->detalleId ? $pedido->detalles()->find($this->detalleId) : null, 'motivos' => MotivoBeneficio::where('activo', true)->orderBy('nombre')->get()]);
+        return view('livewire.pos.acciones-producto', [
+            'detalle' => $this->detalleId
+                ? $pedido->detalles()->find($this->detalleId)
+                : null,
+
+            'motivos' => MotivoBeneficio::where('activo', true)
+                ->orderBy('nombre')
+                ->get(),
+
+            'motivosAnulacion' => MotivoAnulacion::where('activo', true)
+                ->orderBy('orden')
+                ->orderBy('nombre')
+                ->get(),
+        ]);
     }
 }
