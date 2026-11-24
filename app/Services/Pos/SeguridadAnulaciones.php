@@ -94,8 +94,7 @@ class SeguridadAnulaciones
 
         if (RateLimiter::tooManyAttempts($limite, 5)) {
             throw ValidationException::withMessages([
-                'claveAutorizacion' =>
-                    'Demasiados intentos incorrectos. Inténtalo más tarde.',
+                'claveAutorizacion' => 'Demasiados intentos incorrectos. Inténtalo más tarde.',
             ]);
         }
 
@@ -105,8 +104,7 @@ class SeguridadAnulaciones
 
         if (! $config || ! $config->clave_hash) {
             throw ValidationException::withMessages([
-                'claveAutorizacion' =>
-                    'El administrador todavía no configuró la clave de anulaciones.',
+                'claveAutorizacion' => 'El administrador todavía no configuró la clave de anulaciones.',
             ]);
         }
 
@@ -121,8 +119,7 @@ class SeguridadAnulaciones
             RateLimiter::hit($limite, 900);
 
             throw ValidationException::withMessages([
-                'claveAutorizacion' =>
-                    'La clave de autorización es incorrecta.',
+                'claveAutorizacion' => 'La clave de autorización es incorrecta.',
             ]);
         }
 
@@ -147,11 +144,39 @@ class SeguridadAnulaciones
 
         if (! $motivo) {
             throw ValidationException::withMessages([
-                'motivoId' =>
-                    'Selecciona un motivo de anulación activo.',
+                'motivoId' => 'Selecciona un motivo de anulación activo.',
             ]);
         }
 
         return $motivo;
+    }
+
+    /**
+     * Autoriza una anulación utilizando un motivo activo
+     * y la clave configurada del restaurante.
+     */
+    public function autorizarAnulacion(
+        User $actor,
+        int|string $motivoId,
+        string $motivoRevisado,
+        string $claveAutorizacion
+    ): string {
+        $motivo = $this->motivoActivo($motivoId);
+
+        // Evita confirmar una operación si el motivo
+        // fue modificado después de revisar la anulación.
+        if (! hash_equals($motivo->nombre, $motivoRevisado)) {
+            throw ValidationException::withMessages([
+                'motivoId' => 'El motivo de anulación cambió. Revisa nuevamente la operación.',
+            ]);
+        }
+
+        // Verificación de la clave y límite de intentos.
+        $this->verificarClave(
+            $actor,
+            $claveAutorizacion
+        );
+
+        return $motivo->nombre;
     }
 }
