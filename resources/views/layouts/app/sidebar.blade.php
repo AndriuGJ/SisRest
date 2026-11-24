@@ -203,13 +203,14 @@
             @canany(['configuracion.restaurante', 'impresoras.gestionar'])
                 <flux:sidebar.group heading="Config. restaurante" icon="building-storefront" expandable
                     :expanded="request()->routeIs(
-                        'configuracion.salones',
-                        'configuracion.mesas',
-                        'configuracion.destinos',
-                        'configuracion.impresoras',
-                        'configuracion.medios-pago',
-                        'configuracion.tipos-documento'
-                        )"
+                                            'configuracion.salones',
+                                            'configuracion.mesas',
+                                            'configuracion.destinos',
+                                            'configuracion.impresoras',
+                                            'configuracion.medios-pago',
+                                            'configuracion.tipos-documento',
+                                            'configuracion.seguridad-anulaciones'
+                                            )"
                     class="mt-1">
                     @can('configuracion.restaurante')
                         <flux:sidebar.item icon="building-storefront" :href="route('configuracion.salones')"
@@ -226,6 +227,10 @@
                         <flux:sidebar.item icon="document-text" :href="route('configuracion.tipos-documento')"
                             :current="request()->routeIs('configuracion.tipos-documento')" wire:navigate>
                             Tipos de documento
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="shield-check" :href="route('configuracion.seguridad-anulaciones')"
+                            :current="request()->routeIs('configuracion.seguridad-anulaciones')" wire:navigate>
+                            Seguridad de anulaciones
                         </flux:sidebar.item>
                     @endcan
                     @can('impresoras.gestionar')

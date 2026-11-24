@@ -53,6 +53,7 @@ use App\Livewire\Reportes\ComprasReporte;
 use App\Livewire\Reportes\ComprobantesReporte;
 use App\Livewire\Configuracion\MediosPago;
 use App\Livewire\Configuracion\TiposDocumento;
+use App\Livewire\Configuracion\SeguridadAnulaciones;
 
 Route::get('marca/logo/{archivo}', LogoEmpresaController::class)->name('marca.logo');
 
@@ -164,6 +165,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('destinos', Destinos::class)->name('destinos');
         Route::get('medios-pago', MediosPago::class)->name('medios-pago');
         Route::get('tipos-documento', TiposDocumento::class)->name('tipos-documento');
+        Route::get('seguridad-anulaciones', SeguridadAnulaciones::class)->name('seguridad-anulaciones');
     });
 
     Route::get('configuracion/restaurante/impresoras', Impresoras::class)
