@@ -51,6 +51,8 @@ use App\Livewire\Reportes\CajasArqueos;
 use App\Livewire\Reportes\InventarioKardex;
 use App\Livewire\Reportes\ComprasReporte;
 use App\Livewire\Reportes\ComprobantesReporte;
+use App\Livewire\Configuracion\MediosPago;
+use App\Livewire\Configuracion\TiposDocumento;
 
 Route::get('marca/logo/{archivo}', LogoEmpresaController::class)->name('marca.logo');
 
@@ -160,6 +162,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('salones', Salones::class)->name('salones');
         Route::get('mesas', Mesas::class)->name('mesas');
         Route::get('destinos', Destinos::class)->name('destinos');
+        Route::get('medios-pago', MediosPago::class)->name('medios-pago');
+        Route::get('tipos-documento', TiposDocumento::class)->name('tipos-documento');
     });
 
     Route::get('configuracion/restaurante/impresoras', Impresoras::class)

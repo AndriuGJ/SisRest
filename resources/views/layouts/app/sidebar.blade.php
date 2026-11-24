@@ -202,7 +202,14 @@
             @endcan
             @canany(['configuracion.restaurante', 'impresoras.gestionar'])
                 <flux:sidebar.group heading="Config. restaurante" icon="building-storefront" expandable
-                    :expanded="request()->routeIs('configuracion.salones', 'configuracion.mesas', 'configuracion.destinos', 'configuracion.impresoras')"
+                    :expanded="request()->routeIs(
+                        'configuracion.salones',
+                        'configuracion.mesas',
+                        'configuracion.destinos',
+                        'configuracion.impresoras',
+                        'configuracion.medios-pago',
+                        'configuracion.tipos-documento'
+                        )"
                     class="mt-1">
                     @can('configuracion.restaurante')
                         <flux:sidebar.item icon="building-storefront" :href="route('configuracion.salones')"
@@ -211,6 +218,14 @@
                             :current="request()->routeIs('configuracion.mesas')" wire:navigate>Mesas</flux:sidebar.item>
                         <flux:sidebar.item icon="fire" :href="route('configuracion.destinos')"
                             :current="request()->routeIs('configuracion.destinos')" wire:navigate>Destinos de preparación
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="credit-card" :href="route('configuracion.medios-pago')"
+                            :current="request()->routeIs('configuracion.medios-pago')" wire:navigate>
+                            Medios de pago
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="document-text" :href="route('configuracion.tipos-documento')"
+                            :current="request()->routeIs('configuracion.tipos-documento')" wire:navigate>
+                            Tipos de documento
                         </flux:sidebar.item>
                     @endcan
                     @can('impresoras.gestionar')

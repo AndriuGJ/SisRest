@@ -23,6 +23,7 @@ class TipoComprobante extends Model
         'nombre',
         'electronico',
         'activo',
+        'disponible_venta',
     ];
 
     /** @return array<string, string> */
@@ -31,6 +32,7 @@ class TipoComprobante extends Model
         return [
             'electronico' => 'boolean',
             'activo' => 'boolean',
+            'disponible_venta' => 'boolean',
         ];
     }
 }

@@ -13,6 +13,7 @@ use App\Models\Pedido;
 use App\Models\PedidoDetalle;
 use App\Models\ProcesoCobro;
 use App\Models\SerieComprobante;
+use App\Models\TipoComprobante;
 use App\Models\TipoDocumentoIdentidad;
 use App\Models\TrabajoImpresion;
 use App\Models\User;
@@ -295,7 +296,7 @@ class CobroFormulario extends Component
     public function updatedDocumento(): void
     {
         $config = ConfiguracionFacturacion::first();
-        $this->serieId = (string) (SerieComprobante::where('activo', true)->where('entorno', $config?->entorno->value)->whereHas('tipoComprobante', fn ($q) => $q->where('activo', true)->where('codigo', $this->documento))->orderBy('id')->value('id') ?? '');
+        $this->serieId = (string) (SerieComprobante::where('activo', true)->where('entorno', $config?->entorno->value)->whereHas('tipoComprobante', fn ($q) => $q->where('activo', true)->where('disponible_venta', true)->where('codigo', $this->documento))->orderBy('id')->value('id') ?? '');
         $this->showChargeReview = false;
     }
 
@@ -522,8 +523,30 @@ class CobroFormulario extends Component
 
         $config = ConfiguracionFacturacion::first();
 
-        return view('livewire.cobros.formulario', $resumen + ['pedido' => $pedido,
-            'series' => SerieComprobante::with('tipoComprobante')->where('activo', true)->where('entorno', $config?->entorno->value)->whereHas('tipoComprobante', fn ($q) => $q->where('activo', true)->where('codigo', $this->documento))->orderBy('serie')->get(),
+        $tiposVenta = [];
+
+        if ($actor->can('comprobantes.emitir')) {
+            $codigosActivos = TipoComprobante::query()
+                ->whereIn('codigo', ['01', '03'])
+                ->where('activo', true)
+                ->where('disponible_venta', true)
+                ->pluck('codigo')
+                ->all();
+
+            foreach ([
+                '03' => 'Boleta',
+                '01' => 'Factura',
+            ] as $codigo => $nombre) {
+                if (in_array($codigo, $codigosActivos, true)) {
+                    $tiposVenta[$codigo] = $nombre;
+                }
+            }
+        }
+
+        $tiposVenta['interno'] = 'Nota de venta';
+
+        return view('livewire.cobros.formulario', $resumen + ['pedido' => $pedido,'tiposVenta' => $tiposVenta,
+            'series' => SerieComprobante::with('tipoComprobante')->where('activo', true)->where('entorno', $config?->entorno->value)->whereHas('tipoComprobante', fn ($q) => $q->where('activo', true)->where('disponible_venta', true)->where('codigo', $this->documento))->orderBy('serie')->get(),
             'opcionesFiscales' => ReglasFiscales::AFECTACIONES,
             'tiposCliente' => TipoDocumentoIdentidad::where('activo', true)->whereIn('codigo', ['1', '6'])->get(),
             'motivosBeneficio' => MotivoBeneficio::where('activo', true)->whereIn('tipo', ['descuento', 'ambos'])->orderBy('nombre')->get(), 'medios' => $medios, 'clientes' => $clientes, 'pagosVista' => $pagosVista, 'aplicado' => $aplicado, 'efectivo' => $efectivo, 'vuelto' => $vuelto,

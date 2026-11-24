@@ -46,7 +46,7 @@ class EmitirComprobante
             ReglasFiscales::exigir(hash_equals(ConfigurarFacturacion::version($empresa, $config), $version), 'La configuración fiscal cambió. Revisa nuevamente la emisión.');
             $fecha = CarbonImmutable::now('America/Lima');
             self::configurada($empresa, $config, $fecha);
-            ReglasFiscales::exigir($serie->activo && $serie->tipoComprobante->activo && in_array($serie->tipoComprobante->codigo, ['01', '03'], true) && $serie->entorno === $config->entorno->value, 'Selecciona una serie activa del entorno configurado.');
+            ReglasFiscales::exigir($serie->activo && $serie->tipoComprobante->activo && $serie->tipoComprobante->disponible_venta && in_array($serie->tipoComprobante->codigo, ['01', '03'], true) && $serie->entorno === $config->entorno->value, 'Selecciona una serie activa del entorno configurado.');
             ReglasFiscales::exigir((bool) preg_match($serie->tipoComprobante->codigo === '01' ? '/^F[A-Z0-9]{3}$/' : '/^B[A-Z0-9]{3}$/', $serie->serie), 'La serie no corresponde al tipo de comprobante.');
             ReglasFiscales::exigir($serie->ultimo_correlativo < 99999999, 'Se agotó la numeración de esta serie.');
             ReglasFiscales::exigir($cobro->estado === EstadoCobro::CONFIRMADO && $cobro->moneda === 'PEN', 'Solo se pueden emitir cobros confirmados en soles.');

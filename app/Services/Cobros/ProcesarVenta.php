@@ -59,7 +59,7 @@ class ProcesarVenta
         app(CertificadoFiscal::class)->cargar($config);
         Validator::make(['serieId' => $serieId], ['serieId' => ['required', 'integer', 'exists:series_comprobante,id']])->validate();
         $serie = SerieComprobante::with('tipoComprobante')->findOrFail($serieId);
-        ReglasFiscales::exigir($serie->activo && $serie->tipoComprobante->activo && $serie->tipoComprobante->codigo === $documento && $serie->entorno === $config->entorno->value, 'Selecciona una serie activa del documento y entorno actuales.');
+        ReglasFiscales::exigir($serie->activo && $serie->tipoComprobante->activo && $serie->tipoComprobante->disponible_venta && $serie->tipoComprobante->codigo === $documento && $serie->entorno === $config->entorno->value, 'Selecciona una serie activa del documento y entorno actuales.');
         ReglasFiscales::exigir($serie->ultimo_correlativo < 99999999 && (bool) preg_match($documento === '01' ? '/^F[A-Z0-9]{3}$/' : '/^B[A-Z0-9]{3}$/', $serie->serie), 'Revisa la serie y su numeración disponible.');
         $cliente = isset($plan['cliente']['id']) ? Cliente::with('tipoDocumento')->findOrFail($plan['cliente']['id']) : null;
         $tipo = $cliente->tipoDocumento->codigo ?? '0';
