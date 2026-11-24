@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             CatalogosSeeder::class,
             ConfiguracionInicialSeeder::class,
             AdministradorSeeder::class,
+            MotivosAnulacionSeeder::class,
         ]);
     }
 }
