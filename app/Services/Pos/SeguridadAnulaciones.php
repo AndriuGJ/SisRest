@@ -19,8 +19,8 @@ class SeguridadAnulaciones
      */
     public function guardarClave(
         User $actor,
-        string $claveNueva,
-        ?string $claveActual = null
+        #[\SensitiveParameter] string $claveNueva,
+        #[\SensitiveParameter] ?string $claveActual = null
     ): void {
         // Solo usuarios autorizados para la configuración
         // sensible del sistema podrán cambiar la clave.
@@ -85,7 +85,7 @@ class SeguridadAnulaciones
      */
     public function verificarClave(
         User $actor,
-        string $claveAutorizacion
+        #[\SensitiveParameter] string $claveAutorizacion
     ): void {
         $usuario = User::findOrFail($actor->id);
         abort_unless($usuario->activo, 403);
@@ -109,7 +109,7 @@ class SeguridadAnulaciones
         }
 
         if (
-            $claveAutorizacion === ''
+            ! preg_match('/^[0-9]{6,12}$/', $claveAutorizacion)
             || ! Hash::check(
                 $claveAutorizacion,
                 $config->clave_hash
@@ -130,7 +130,8 @@ class SeguridadAnulaciones
      * Obtiene un motivo activo y válido.
      */
     public function motivoActivo(
-        int|string $motivoId
+        int|string $motivoId,
+        bool $bloquear = false
     ): MotivoAnulacion {
         Validator::make(
             ['motivoId' => $motivoId],
@@ -140,6 +141,7 @@ class SeguridadAnulaciones
         $motivo = MotivoAnulacion::query()
             ->whereKey($motivoId)
             ->where('activo', true)
+            ->when($bloquear, fn ($q) => $q->lockForUpdate())
             ->first();
 
         if (! $motivo) {
@@ -159,7 +161,7 @@ class SeguridadAnulaciones
         User $actor,
         int|string $motivoId,
         string $motivoRevisado,
-        string $claveAutorizacion
+        #[\SensitiveParameter] string $claveAutorizacion
     ): string {
         $motivo = $this->motivoActivo($motivoId);
 
