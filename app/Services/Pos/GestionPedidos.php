@@ -189,22 +189,23 @@ class GestionPedidos
         });
     }
 
-    public function descartar(User $actor, int $id, string $version, string $motivo): void
+    public function descartar(User $actor, int $id, string $version, string $motivo, int|string $motivoId = '', #[\SensitiveParameter] string $claveAutorizacion = ''): void
     {
-        $this->ejecutar($actor, 'pedidos.editar', function () use ($actor, $id, $version, $motivo): void {
+        $actual = AccesoPos::usuario($actor);
+        Gate::forUser($actual)->authorize('pedidos.editar');
+        AccesoPos::pedido($actual, Pedido::findOrFail($id));
+        app(SeguridadAnulaciones::class)->autorizarAnulacion($actual, $motivoId, $motivo, $claveAutorizacion);
+        $this->ejecutar($actor, 'pedidos.editar', function () use ($actor, $id, $version, $motivo, $motivoId): void {
+            $vigente = app(SeguridadAnulaciones::class)->motivoActivo($motivoId, bloquear: true);
+            if (! hash_equals($vigente->nombre, $motivo)) {
+                throw ValidationException::withMessages(['motivoId' => 'El motivo cambió. Revisa el descarte nuevamente.']);
+            }
             $pedido = Pedido::lockForUpdate()->findOrFail($id);
             AccesoPos::pedido($actor, $pedido);
             if ($pedido->estado->value === 'anulado') {
                 return;
             }
-            $this->editable($actor, $pedido, $version);
-            if ($pedido->mesa_id) {
-                Gate::forUser(User::findOrFail($actor->id))->authorize('mesas.liberar');
-            }
-            if ($pedido->cobros()->exists() || $pedido->detalles()->where('estado', '<>', 'borrador')->exists()) {
-                throw ValidationException::withMessages(['seguridad' => 'Solo se descartan borradores sin productos confirmados ni cobros.']);
-            }
-            Validator::make(['motivo' => trim($motivo)], ['motivo' => ['required', 'string', 'min:5', 'max:500']])->validate();
+            $this->borradorDescartable($actor, $pedido, $version, $motivo);
             foreach ($pedido->detalles as $detalle) {
                 $this->lineaEditable($detalle);
                 $detalle->update(['estado' => 'anulado', 'cantidad_anulada' => $detalle->cantidad]);
@@ -216,6 +217,28 @@ class GestionPedidos
             OcupacionMesa::where('pedido_id', $pedido->id)->delete();
             activity()->causedBy($actor)->performedOn($pedido)->event('pedido_descartado')->withProperties(['motivo' => trim($motivo)])->log('Borrador descartado y mesa liberada sin movimientos');
         });
+    }
+
+    public function previsualizarDescarte(User $actor, int $id, string $version, string $motivo): void
+    {
+        $this->ejecutar($actor, 'pedidos.editar', function () use ($actor, $id, $version, $motivo): void {
+            $this->borradorDescartable($actor, Pedido::lockForUpdate()->findOrFail($id), $version, $motivo);
+        });
+    }
+
+    private function borradorDescartable(User $actor, Pedido $pedido, string $version, string $motivo): void
+    {
+        $this->editable($actor, $pedido, $version);
+        if ($pedido->mesa_id) {
+            Gate::forUser(User::findOrFail($actor->id))->authorize('mesas.liberar');
+        }
+        if ($pedido->cobros()->exists() || $pedido->detalles()->where('estado', '<>', 'borrador')->exists()) {
+            throw ValidationException::withMessages(['seguridad' => 'Solo se descartan borradores sin productos confirmados ni cobros.']);
+        }
+        Validator::make(['motivo' => trim($motivo)], ['motivo' => ['required', 'string', 'min:5', 'max:500']])->validate();
+        foreach ($pedido->detalles as $detalle) {
+            $this->lineaEditable($detalle);
+        }
     }
 
     private function editable(User $actor, Pedido $pedido, string $version): void
