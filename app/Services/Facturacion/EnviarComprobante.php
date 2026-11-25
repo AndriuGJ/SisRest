@@ -11,7 +11,9 @@ use App\Models\Empresa;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Throwable;
 
 class EnviarComprobante
@@ -52,11 +54,15 @@ class EnviarComprobante
         }, 3);
         if ($salida !== null) {
             $c = Comprobante::findOrFail($id);
+            $etapa = 'xml_local';
             try {
-                $respuesta = app(TransporteSunat::class)->enviar(ConfiguracionFacturacion::firstOrFail(), (string) $c->emisor['ruc'], XmlFiscal::dato($c, 'tipo'), $salida->xml_nombre ?? '', $this->xml($salida->xml_ruta, $salida->xml_sha256 ?? ''));
-                $this->registrar($actor, $salida->id, $respuesta);
-            } catch (Throwable) {
-                $this->incierto($salida->id, false);
+                $xml = $this->xml($salida->xml_ruta, $salida->xml_sha256 ?? '');
+                $etapa = 'transporte';
+                $respuesta = app(TransporteSunat::class)->enviar(ConfiguracionFacturacion::firstOrFail(), (string) $c->emisor['ruc'], XmlFiscal::dato($c, 'tipo'), $salida->xml_nombre ?? '', $xml);
+                $etapa = 'registro_respuesta';
+                $this->registrar($actor, $salida->id, $respuesta, $etapa);
+            } catch (Throwable $error) {
+                $this->incierto($salida->id, false, $error, $etapa);
             }
         }
 
@@ -85,11 +91,13 @@ class EnviarComprobante
             return $envio;
         }, 3);
         if ($salida !== null) {
+            $etapa = 'transporte';
             try {
                 $respuesta = app(TransporteSunat::class)->consultar(ConfiguracionFacturacion::firstOrFail(), Comprobante::findOrFail($id), $salida->ticket);
-                $this->registrar($actor, $salida->id, $respuesta);
-            } catch (Throwable) {
-                $this->incierto($salida->id, true);
+                $etapa = 'registro_respuesta';
+                $this->registrar($actor, $salida->id, $respuesta, $etapa);
+            } catch (Throwable $error) {
+                $this->incierto($salida->id, true, $error, $etapa);
             }
         }
 
@@ -128,16 +136,32 @@ class EnviarComprobante
         return $xml;
     }
 
-    private function registrar(User $actor, int $envioId, RespuestaSunat $r): void
+    private function registrar(User $actor, int $envioId, #[\SensitiveParameter] RespuestaSunat $r, string &$etapa): void
     {
         $envioLeido = ComprobanteEnvio::findOrFail($envioId);
         $c = Comprobante::findOrFail($envioLeido->comprobante_id);
-        $cdr = $r->cdr !== null ? app(LeerCdr::class)->leer($r->cdr, $envioLeido->xml_nombre ?? '', (string) $c->emisor['ruc']) : null;
+        $cdr = null;
         $ruta = null;
-        if ($cdr !== null) {
-            $ruta = 'comprobantes/'.XmlFiscal::dato($c, 'entorno').'/'.$c->clave_idempotencia.'/R-'.$envioLeido->xml_nombre.'.zip';
-            ReglasFiscales::exigir(Storage::disk('local')->put($ruta, $r->cdr) === true, 'No se pudo guardar el CDR.');
+        if ($r->cdr !== null) {
+            $etapa = 'cdr_guardado';
+            if (strlen($r->cdr) > 2 * 1024 * 1024) {
+                throw new FalloSunat('cdr_tamano');
+            }
+            // Quarantine before parsing: a malformed response is evidence, never an accepted CDR.
+            // Preserve the first captured response; subsequent consultations use distinct files.
+            $ruta = 'comprobantes/'.XmlFiscal::dato($c, 'entorno').'/'.$c->clave_idempotencia.'/recibidos/'.Str::uuid().'.zip';
+            try {
+                if (! Storage::disk('local')->put($ruta, $r->cdr)) {
+                    throw new FalloSunat('cdr_guardado');
+                }
+            } catch (Throwable) {
+                throw new FalloSunat('cdr_guardado');
+            }
+            ComprobanteEnvio::whereKey($envioId)->whereNull('cdr_recibido_ruta')->update(['cdr_recibido_ruta' => $ruta, 'cdr_recibido_sha256' => hash('sha256', $r->cdr)]);
+            $etapa = 'cdr_lectura';
+            $cdr = app(LeerCdr::class)->leer($r->cdr, $envioLeido->xml_nombre ?? '', (string) $c->emisor['ruc']);
         }
+        $etapa = 'registro_respuesta';
         DB::transaction(function () use ($actor, $envioId, $r, $cdr, $ruta): void {
             $leido = ComprobanteEnvio::findOrFail($envioId);
             $c = Comprobante::lockForUpdate()->findOrFail($leido->comprobante_id);
@@ -159,19 +183,31 @@ class EnviarComprobante
         }, 3);
     }
 
-    private function incierto(int $id, bool $consulta): void
+    private function incierto(int $id, bool $consulta, #[\SensitiveParameter] Throwable $error, string $etapa): void
     {
-        DB::transaction(function () use ($id, $consulta): void {
+        $diagnostico = FalloSunat::desde($error)->seguro() + [
+            'referencia' => (string) Str::uuid(),
+            'etapa' => $etapa,
+            'operacion' => $consulta ? 'consulta' : 'envio',
+            'fecha' => now()->toIso8601String(),
+        ];
+        DB::transaction(function () use ($id, $consulta, $diagnostico): void {
             $leido = ComprobanteEnvio::findOrFail($id);
             $c = Comprobante::lockForUpdate()->findOrFail($leido->comprobante_id);
             $envio = ComprobanteEnvio::lockForUpdate()->findOrFail($id);
             if (in_array($c->estado_sunat, [SunatEstado::ACEPTADO, SunatEstado::OBSERVADO, SunatEstado::RECHAZADO], true)) {
                 return;
             }
+            $campo = $consulta ? 'diagnostico_consulta' : 'diagnostico_envio';
+            if ($consulta || $envio->diagnostico_envio === null) {
+                $envio->setAttribute($campo, $diagnostico);
+            }
             $envio->update(['consultando' => false, 'estado' => $consulta ? $envio->estado->value : 'resultado_incierto', 'mensaje' => $consulta ? 'No se pudo completar la consulta. Puedes consultar nuevamente.' : 'No se obtuvo una respuesta verificable. No repitas el envío; consulta o concilia el resultado.', 'finalizado_at' => now()]);
             if (! $consulta) {
                 $c->update(['estado_sunat' => 'desconocido']);
             }
+            // Explicit allowlist only. Never report($error), faultstring, detail or SOAP envelopes.
+            Log::warning('Diagnóstico seguro SUNAT', $diagnostico + ['envio_id' => $id, 'comprobante_id' => $c->id, 'entorno' => XmlFiscal::dato($c, 'entorno')]);
         }, 3);
     }
 }
