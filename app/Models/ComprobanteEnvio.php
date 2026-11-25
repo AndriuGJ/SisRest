@@ -9,6 +9,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
+ * @property array<string, mixed>|null $diagnostico_envio
+ * @property array<string, mixed>|null $diagnostico_consulta
+ * @property string|null $cdr_recibido_ruta
+ * @property string|null $cdr_recibido_sha256
  * @property string|null $xml_nombre
  * @property string|null $xml_ruta
  * @property string|null $xml_sha256
@@ -32,6 +36,10 @@ class ComprobanteEnvio extends Model
     protected $table = 'comprobante_envios';
 
     protected $fillable = [
+        'diagnostico_envio',
+        'diagnostico_consulta',
+        'cdr_recibido_ruta',
+        'cdr_recibido_sha256',
         'xml_nombre',
         'xml_ruta',
         'xml_sha256',
@@ -53,6 +61,8 @@ class ComprobanteEnvio extends Model
     protected function casts(): array
     {
         return [
+            'diagnostico_envio' => 'array',
+            'diagnostico_consulta' => 'array',
             'consultando' => 'boolean',
 
             'estado' => EstadoComprobanteEnvio::class,
