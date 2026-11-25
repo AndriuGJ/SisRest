@@ -49,9 +49,10 @@ class AccionesProducto extends Component
 
     public string $cantidad = '1';
 
-    public string $motivoAnulacionId = '';
+    #[Locked]
+    public int $cantidadMaxima = 0;
 
-    public string $claveAutorizacion = '';
+    public string $motivoAnulacionId = '';
 
     public bool $showConfirmCancel = false;
 
@@ -124,10 +125,10 @@ class AccionesProducto extends Component
         $this->resetValidation();
         $this->detalleId = $detalleId;
         $this->modo = 'anular';
+        $this->cantidadMaxima = app(GestionAnulaciones::class)->maximoAnulable($this->actor(), $this->pedidoId, $detalleId);
         $this->motivoAnulacionId = '';
         $this->motivoAnulacionRevisadoId = 0;
         $this->motivoRevisado = '';
-        $this->claveAutorizacion = '';
         $this->resumenAnulacion = '';
         $this->showConfirmCancel = false;
         $this->cantidad = '1';
@@ -225,8 +226,10 @@ class AccionesProducto extends Component
 
     public function confirmOperation(
         GestionAnulaciones $anulaciones,
-        GestionBeneficios $beneficios
+        GestionBeneficios $beneficios,
+        #[\SensitiveParameter] string $claveAutorizacion = ''
     ): void {
+        $this->resetValidation();
         $actor = $this->actor();
 
         if ($this->huella === '' || $this->clave === '') {
@@ -242,23 +245,8 @@ class AccionesProducto extends Component
         try {
             if ($this->modo === 'anular') {
                 abort_unless(
-                    $this->showConfirmCancel
-                        && $this->motivoAnulacionRevisadoId > 0,
+                    $this->motivoAnulacionRevisadoId > 0,
                     403
-                );
-
-                $this->validate([
-                    'claveAutorizacion' => [
-                        'required',
-                        'regex:/^[0-9]{6,12}$/',
-                    ],
-                ]);
-
-                app(ServicioSeguridad::class)->autorizarAnulacion(
-                    $actor,
-                    $this->motivoAnulacionRevisadoId,
-                    $this->motivoRevisado,
-                    $this->claveAutorizacion
                 );
 
                 $anulaciones->anular(
@@ -268,7 +256,9 @@ class AccionesProducto extends Component
                     $this->cantidadRevisada,
                     $this->motivoRevisado,
                     $this->clave,
-                    $this->huella
+                    $this->huella,
+                    $this->motivoAnulacionRevisadoId,
+                    $claveAutorizacion
                 );
             } else {
                 abort_unless(
@@ -287,7 +277,11 @@ class AccionesProducto extends Component
                 );
             }
         } catch (ValidationException $error) {
-            $this->claveAutorizacion = '';
+            if ($this->modo === 'anular') {
+                $this->addError('anulacion', $error->validator->errors()->first());
+
+                return;
+            }
 
             $this->notificar(
                 $error->validator->errors()->first(),
@@ -298,7 +292,6 @@ class AccionesProducto extends Component
             return;
         }
 
-        $this->claveAutorizacion = '';
         $this->showConfirmCancel = false;
 
         Alertas::flash(
@@ -316,7 +309,6 @@ class AccionesProducto extends Component
 
     public function cancelarConfirmacionAnulacion(): void
     {
-        $this->claveAutorizacion = '';
         $this->huella = '';
         $this->showConfirmCancel = false;
     }
@@ -350,6 +342,7 @@ class AccionesProducto extends Component
     public function aumentarCantidad(): void
     {
         $actual = max(1, (int) $this->cantidad);
-        $this->cantidad = (string) ($actual + 1);
+        $this->cantidadMaxima = app(GestionAnulaciones::class)->maximoAnulable($this->actor(), $this->pedidoId, $this->detalleId);
+        $this->cantidad = (string) min($this->cantidadMaxima, $actual + 1);
     }
 }
