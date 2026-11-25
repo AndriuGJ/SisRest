@@ -70,7 +70,7 @@
                     </p>
                 </div>
 
-            @endif
+            @else
             <flux:select wire:model.live="accion" label="Acción del beneficio">
                 @can('descuentos.aplicar')
                     <option value="descuento">Aplicar descuento</option>
