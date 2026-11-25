@@ -25,6 +25,9 @@ if (! $app->environment('testing') || DB::getDriverName() !== 'mysql' || DB::con
     throw new RuntimeException('Usa APP_ENV=testing y la base MySQL desechable sisrest_test.');
 }
 
+require_once __DIR__.'/AutorizacionAnulacion.php';
+autorizacionAnulacionPrueba('Descarte de prueba concurrente');
+
 if (($argv[1] ?? '') === 'worker') {
     [$modo, $id, $actorId, $clave, $directorio, $indice] = array_slice($argv, 2);
     $actor = User::findOrFail((int) $actorId);
@@ -44,7 +47,7 @@ if (($argv[1] ?? '') === 'worker') {
         } elseif ($modo === 'guardar') {
             $servicio->guardar($actor, (int) $id, $turno->id, $version, ['clienteId' => '', 'comensales' => '', 'observaciones' => 'Edición simultánea'], []);
         } else {
-            $servicio->descartar($actor, (int) $id, $version, 'Descarte de prueba concurrente');
+            $servicio->descartar($actor, (int) $id, $version, 'Descarte de prueba concurrente', ...autorizacionAnulacionPrueba('Descarte de prueba concurrente'));
         }
         exit(0);
     } catch (ValidationException $error) {
