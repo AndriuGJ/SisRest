@@ -25,6 +25,7 @@ use App\Services\Facturacion\CertificadoFiscal;
 use App\Services\Facturacion\ConfigurarFacturacion;
 use App\Services\Facturacion\EmitirComprobante;
 use App\Services\Facturacion\EnviarComprobante;
+use App\Services\Facturacion\FalloSunat;
 use App\Services\Facturacion\RepresentacionFiscal;
 use App\Services\Facturacion\RespuestaSunat;
 use App\Services\Facturacion\TransporteSunat;
@@ -39,7 +40,9 @@ use Database\Seeders\EjemploInventarioSeeder;
 use Database\Seeders\RolesPermisosSeeder;
 use Greenter\Ws\Services\SoapClient;
 use Greenter\XMLSecLibs\Sunat\SignedXml;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -450,3 +453,96 @@ test('fiscal thermal documents share the compact layout without losing fiscal id
     $bytes = app(TicketOperativo::class)->generar($texto, $contenido['qr'], null, null, $ancho);
     expect(str_contains($bytes, "\x1d(k"))->toBeTrue();
 })->with(['03', '01'])->with([[58, 32], [80, 48]]);
+
+test('persists a safe original diagnostic and never resends an uncertain invoice', function (string $tipo) {
+    $c = emitirFiscal($this->cobro, $this->actor, '01');
+    Log::spy();
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andThrow(new FalloSunat($tipo, $tipo === 'soap_autenticacion' ? '0102' : null));
+    $service = app(EnviarComprobante::class);
+    $service->enviar($this->actor, $c->id);
+    $primero = $c->envios()->firstOrFail();
+    $diagnostico = $primero->diagnostico_envio;
+    expect($diagnostico['tipo'])->toBe($tipo)->and($diagnostico['etapa'])->toBe('transporte')->and($diagnostico['operacion'])->toBe('envio');
+    $service->enviar($this->actor, $c->id);
+    expect($primero->fresh()->diagnostico_envio)->toBe($diagnostico)->and($c->envios()->count())->toBe(1)->and($c->fresh()->estado_sunat->value)->toBe('desconocido');
+    Log::shouldHaveReceived('warning')->once()->with('Diagnóstico seguro SUNAT', Mockery::on(fn ($context) => $context['referencia'] === $diagnostico['referencia'] && $context['entorno'] === 'beta' && ! isset($context['exception'])));
+})->with(['conexion_timeout', 'soap_autenticacion', 'soap_sunat', 'respuesta_invalida', 'zip_preparacion']);
+
+test('quarantines an invalid CDR before parsing and exposes only a safe local diagnosis', function (bool $incorrecto) {
+    $c = emitirFiscal($this->cobro, $this->actor, '01');
+    $contenido = $incorrecto ? zipCdrFiscal($c, XmlFiscal::nombre($c), ruc: '20999999999') : 'SECRET malformed ZIP';
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(cdr: $contenido));
+    app(EnviarComprobante::class)->enviar($this->actor, $c->id);
+    $envio = $c->envios()->firstOrFail();
+    expect($envio->diagnostico_envio['tipo'])->toBe($incorrecto ? 'cdr_referencia' : 'cdr_zip')->and($envio->diagnostico_envio['etapa'])->toBe('cdr_lectura')
+        ->and($envio->cdr_recibido_sha256)->toBe(hash('sha256', $contenido))->and(Storage::disk('local')->get($envio->cdr_recibido_ruta))->toBe($contenido)
+        ->and($envio->cdr_ruta)->toBeNull()->and($c->fresh()->cdr_ruta)->toBeNull()->and($c->fresh()->estado_sunat->value)->toBe('desconocido');
+    $this->get(route('comprobantes.ver', $c))->assertOk()->assertSee($envio->diagnostico_envio['referencia'])->assertDontSee('SECRET');
+    $antes = $envio->refresh()->getAttributes();
+    $this->mock(TransporteSunat::class)->shouldNotReceive('consultar');
+    $this->artisan('facturacion:diagnosticar', ['numero' => 'F001-1', '--entorno' => 'beta', '--usuario' => $this->actor->id])->expectsOutputToContain('Revisión local de solo lectura')->assertSuccessful();
+    expect($envio->fresh()->getAttributes())->toBe($antes);
+})->with([true, false]);
+
+test('preserves original evidence and original diagnostic when a consultation also fails', function () {
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(cdr: 'bad CDR ORIGINAL'));
+    $service = app(EnviarComprobante::class);
+    $service->enviar($this->actor, $c->id);
+    $envio = $c->envios()->firstOrFail();
+    $original = $envio->diagnostico_envio;
+    $ruta = $envio->cdr_recibido_ruta;
+    $envio->update(['ticket' => 'T-TEST']);
+    $this->mock(TransporteSunat::class)->shouldReceive('consultar')->once()->andThrow(new SoapFault('HTTP', 'Connection timed out SOL-SECRET'));
+    $service->consultar($this->actor, $c->id);
+    expect($envio->fresh()->diagnostico_envio)->toBe($original)->and($envio->fresh()->cdr_recibido_ruta)->toBe($ruta)
+        ->and($envio->fresh()->diagnostico_consulta['tipo'])->toBe('conexion_timeout')->and($envio->fresh()->consultando)->toBeFalse()
+        ->and(json_encode($envio->fresh()->toArray()))->not->toContain('SOL-SECRET');
+});
+
+test('diagnoses old F001-1 offline without inventing its original cause or changing Beta', function () {
+    $c = emitirFiscal($this->cobro, $this->actor, '01');
+    $envio = $c->envios()->create(['intento' => 1, 'estado' => 'resultado_incierto', 'iniciado_at' => now(), 'xml_ruta' => $c->xml_ruta, 'xml_nombre' => XmlFiscal::nombre($c), 'xml_sha256' => XmlFiscal::dato($c, 'xml_sha256'), 'mensaje' => 'No se obtuvo una respuesta verificable.']);
+    $c->update(['estado_sunat' => 'desconocido']);
+    $antes = $envio->refresh()->getAttributes();
+    $this->mock(TransporteSunat::class)->shouldNotReceive('enviar')->shouldNotReceive('consultar');
+    $this->artisan('facturacion:diagnosticar', ['numero' => 'F001-1', '--entorno' => 'beta', '--usuario' => $this->actor->id])->expectsOutputToContain('no fue conservado')->expectsOutputToContain('SHA-256 coincide')->assertSuccessful();
+    expect($envio->fresh()->getAttributes())->toBe($antes)->and($c->fresh()->estado_sunat->value)->toBe('desconocido')->and(ConfiguracionFacturacion::firstOrFail()->entorno->value)->toBe('beta');
+    expect(fn () => app(EnviarComprobante::class)->consultar($this->actor, $c->id))->toThrow(ValidationException::class);
+});
+
+test('offline diagnostics enforce active user permissions and require explicit environment', function () {
+    emitirFiscal($this->cobro, $this->actor, '01');
+    $user = User::factory()->create();
+    $this->artisan('facturacion:diagnosticar', ['numero' => 'F001-1', '--entorno' => 'beta', '--usuario' => $user->id])->expectsOutputToContain('no está autorizado')->assertFailed();
+    $this->artisan('facturacion:diagnosticar', ['numero' => 'F001-1', '--usuario' => $this->actor->id])->assertFailed();
+    $this->actor->update(['activo' => false]);
+    $this->artisan('facturacion:diagnosticar', ['numero' => 'F001-1', '--entorno' => 'beta', '--usuario' => $this->actor->id])->assertFailed();
+});
+
+test('logs only allowlisted metadata even when SOAP fault includes credentials XML and private paths', function () {
+    $c = emitirFiscal($this->cobro, $this->actor, '01');
+    Log::spy();
+    $fault = new SoapFault('soap-env:Client.0102', 'SOL-SECRET /private/key.pem <Password>SECRET</Password>', null, ['certificate' => 'PRIVATE-CERTIFICATE']);
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andThrow($fault);
+    app(EnviarComprobante::class)->enviar($this->actor, $c->id);
+    $envio = $c->envios()->firstOrFail();
+    expect($envio->diagnostico_envio['codigo_sunat'])->toBe('0102')->and(json_encode($envio->toArray()))->not->toContain('SOL-SECRET', 'PRIVATE-CERTIFICATE', '/private/key.pem', '<Password>');
+    Log::shouldHaveReceived('warning')->once()->with('Diagnóstico seguro SUNAT', Mockery::on(fn ($context) => ! array_diff(array_keys($context), ['categoria', 'tipo', 'codigo_sunat', 'mensaje', 'referencia', 'etapa', 'operacion', 'fecha', 'envio_id', 'comprobante_id', 'entorno']) && ! str_contains(json_encode($context), 'SECRET') && $context['codigo_sunat'] === '0102'));
+});
+
+test('distinguishes private CDR storage failure from SUNAT rejection', function () {
+    $c = emitirFiscal($this->cobro, $this->actor, '01');
+    $cdr = zipCdrFiscal($c, XmlFiscal::nombre($c));
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(cdr: $cdr));
+    $disk = Storage::disk('local');
+    $mock = Mockery::mock(FilesystemAdapter::class);
+    $mock->shouldReceive('exists')->andReturnUsing(fn ($path) => $disk->exists($path));
+    $mock->shouldReceive('get')->andReturnUsing(fn ($path) => $disk->get($path));
+    $mock->shouldReceive('put')->once()->andReturnFalse();
+    Storage::shouldReceive('disk')->with('local')->andReturn($mock);
+    app(EnviarComprobante::class)->enviar($this->actor, $c->id);
+    $envio = $c->envios()->firstOrFail();
+    expect($envio->diagnostico_envio['tipo'])->toBe('cdr_guardado')->and($envio->diagnostico_envio['etapa'])->toBe('cdr_guardado')
+        ->and($c->fresh()->estado_sunat->value)->toBe('desconocido')->and($envio->cdr_ruta)->toBeNull();
+});
