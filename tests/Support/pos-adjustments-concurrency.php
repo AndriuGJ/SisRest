@@ -37,6 +37,9 @@ set_exception_handler(function (Throwable $e): void {
 if (! $app->environment('testing') || DB::getDriverName() !== 'mysql' || DB::connection()->getDatabaseName() !== 'sisrest_test') {
     throw new RuntimeException('Usa APP_ENV=testing y la base MySQL desechable sisrest_test.');
 }
+require_once __DIR__.'/AutorizacionAnulacion.php';
+autorizacionAnulacionPrueba('Anulación de prueba concurrente');
+
 if (($argv[1] ?? '') === 'worker') {
     [$modo,$id,$actorId,$clave,$directorio,$indice] = array_slice($argv, 2);
     $actor = User::findOrFail((int) $actorId);
@@ -66,7 +69,7 @@ if (($argv[1] ?? '') === 'worker') {
     }
     try {
         if ($modo === 'anular') {
-            app(GestionAnulaciones::class)->anular($actor, $pedido->id, $linea->id, (string) (int) $linea->cantidad, 'Anulación de prueba concurrente', $clave, $plan['huella']);
+            app(GestionAnulaciones::class)->anular($actor, $pedido->id, $linea->id, (string) (int) $linea->cantidad, 'Anulación de prueba concurrente', $clave, $plan['huella'], ...autorizacionAnulacionPrueba('Anulación de prueba concurrente'));
         } elseif ($modo === 'beneficio') {
             app(GestionBeneficios::class)->aplicar($actor, $pedido->id, $linea->id, $clave, $plan['huella'], $datos);
         } elseif ($modo === 'cobrar') {
