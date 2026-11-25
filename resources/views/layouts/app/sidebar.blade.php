@@ -7,9 +7,9 @@
 
 <body class="min-h-screen bg-white dark:bg-zinc-800 {{ request()->routeIs('pos.*') ? 'pos-palette' : '' }}">
     <flux:sidebar sticky collapsible persist="false"
-        class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
+        class="restaurant-sidebar border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
 
-        <flux:sidebar.header class="!flex !flex-col !items-center !gap-3 !px-3 !pt-5 !pb-3">
+        <flux:sidebar.header class="restaurant-sidebar-header !flex !flex-col !items-center !gap-3 !px-3 !pt-5 !pb-3">
             @php
                 $nombreRestaurante = app(\App\Services\Configuracion\IdentidadVisual::class)->nombre();
             @endphp
@@ -43,7 +43,7 @@
         </flux:sidebar.header>
 
 
-        <flux:sidebar.nav>
+        <flux:sidebar.nav class="restaurant-sidebar-nav">
             <div class="grid">
                 <p class="sidebar-section-label px-3 py-2 text-sm font-medium text-zinc-400">Restaurante</p>
                 <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')"
@@ -242,9 +242,9 @@
             @endcanany
         </flux:sidebar.nav>
 
-        <flux:spacer />
-
-        <x-desktop-user-menu class="hidden lg:block" :name="auth()->user()->name" />
+        <div class="restaurant-sidebar-footer hidden border-t border-zinc-200 pt-2 lg:block dark:border-zinc-700">
+            <x-desktop-user-menu :name="auth()->user()->name" />
+        </div>
     </flux:sidebar>
 
     <!-- Mobile User Menu -->
