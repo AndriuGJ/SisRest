@@ -6,13 +6,17 @@ use App\Concerns\ConAlertas;
 use App\Models\AnulacionPedido;
 use App\Models\BeneficioPedido;
 use App\Models\CategoriaProducto;
+use App\Models\EnvioCocina;
 use App\Models\EnvioCocinaDetalle;
+use App\Models\MotivoAnulacion;
 use App\Models\Pedido;
 use App\Models\PedidoDetalle;
+use App\Models\TrabajoImpresion;
 use App\Models\TurnoCaja;
 use App\Models\User;
 use App\Services\Cobros\CerrarAtencion;
 use App\Services\Cobros\EstadoCuenta;
+use App\Services\Impresion\ImpresionOperativa;
 use App\Services\Inventario\CalculoProduccion;
 use App\Services\Pos\AccesoPos;
 use App\Services\Pos\AnularPedido;
@@ -20,6 +24,7 @@ use App\Services\Pos\CatalogoPos;
 use App\Services\Pos\ConfirmarPedido;
 use App\Services\Pos\GestionEntregas;
 use App\Services\Pos\GestionPedidos;
+use App\Services\Pos\SeguridadAnulaciones;
 use App\Support\Alertas;
 use App\Support\Cantidad;
 use Illuminate\Contracts\View\View;
@@ -32,9 +37,6 @@ use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithPagination;
-use App\Models\EnvioCocina;
-use App\Models\TrabajoImpresion;
-use App\Services\Impresion\ImpresionOperativa;
 use Throwable;
 
 #[Layout('layouts.app')]
@@ -108,6 +110,19 @@ class PedidoPantalla extends Component
     public bool $showDiscard = false;
 
     public bool $showCancelOrder = false;
+
+    public string $motivoAnulacionId = '';
+
+    public bool $showConfirmCancel = false;
+
+    #[Locked]
+    public string $tipoAnulacionRevisada = '';
+
+    #[Locked]
+    public int $motivoAnulacionRevisadoId = 0;
+
+    #[Locked]
+    public string $resumenAnulacion = '';
 
     public string $motivoAnulacionTotal = '';
 
@@ -304,7 +319,6 @@ class PedidoPantalla extends Component
             'Confirmar y enviar'
         );
     }
-
 
     public function confirmSend(
         ConfirmarPedido $servicio,
@@ -547,6 +561,12 @@ class PedidoPantalla extends Component
         $this->redirectRoute('pos.index', navigate: true);
     }
 
+    private function limpiarAnulacion(): void
+    {
+        $this->resetValidation();
+        $this->reset('motivoAnulacionId', 'motivoAnulacionRevisadoId', 'motivoTotalRevisado', 'huellaAnulacionTotal', 'versionDescarte', 'motivoConfirmado', 'tipoAnulacionRevisada', 'resumenAnulacion', 'showConfirmCancel', 'showCancelOrder', 'showDiscard');
+    }
+
     public function openCancelOrder(): void
     {
         Gate::forUser($this->actor())->authorize('pedidos.anular_enviados');
@@ -554,40 +574,42 @@ class PedidoPantalla extends Component
         if ($pedido->mesa_id) {
             Gate::forUser($this->actor())->authorize('mesas.liberar');
         }
-        $this->resetValidation();
-        $this->motivoAnulacionTotal = $this->motivoTotalRevisado = $this->huellaAnulacionTotal = '';
+        $this->limpiarAnulacion();
         $this->showCancelOrder = true;
     }
 
     public function reviewCancelOrder(AnularPedido $gestion): void
     {
         $this->resetValidation();
-        $plan = $gestion->previsualizar($this->actor(), $this->pedidoId, $this->motivoAnulacionTotal);
-        $this->motivoTotalRevisado = trim($this->motivoAnulacionTotal);
+        $motivo = app(SeguridadAnulaciones::class)->motivoActivo($this->motivoAnulacionId);
+        $plan = $gestion->previsualizar($this->actor(), $this->pedidoId, $motivo->nombre);
+        $this->motivoAnulacionRevisadoId = $motivo->id;
+        $this->motivoTotalRevisado = $motivo->nombre;
         $this->huellaAnulacionTotal = $plan['huella'];
         $this->showCancelOrder = false;
-        $texto = 'Se anulará todo el pedido, incluidos los borradores, y se liberará la mesa. Los productos todavía sin preparar liberarán sus reservas.';
+        $this->tipoAnulacionRevisada = 'pedido';
+        $this->resumenAnulacion = 'Se anularán todos los productos y borradores y se liberará la mesa. Lo no preparado libera su reserva.';
         if ($plan['mermas'] > 0) {
-            $texto .= ' Hay productos en preparación o listos: se registrarán como merma y no volverán al stock disponible.';
+            $this->resumenAnulacion .= ' Hay productos en preparación: se registrarán como merma.';
         }
-        $this->confirmar('Anular pedido completo', $texto.' No se devolverá dinero. Esta operación no se puede deshacer.', 'confirmCancelOrder', 'Anular todo', peligro: true);
+        $this->resumenAnulacion .= ' Motivo: '.$motivo->nombre.'. No se devolverá dinero.';
+        $this->showConfirmCancel = true;
     }
 
-    public function confirmCancelOrder(AnularPedido $gestion): void
+    public function confirmCancelOrder(AnularPedido $gestion, #[\SensitiveParameter] string $claveAutorizacion = ''): void
     {
-        if ($this->huellaAnulacionTotal === '' || $this->motivoTotalRevisado === '') {
-            $this->notificar('Revisa la anulación antes de confirmar.', 'warning', toast: false);
-
-            return;
+        $this->resetValidation();
+        if ($this->tipoAnulacionRevisada !== 'pedido' || $this->huellaAnulacionTotal === '' || $this->motivoAnulacionRevisadoId < 1) {
+            throw ValidationException::withMessages(['seguridad' => 'Revisa la anulación completa antes de confirmar.']);
         }
         try {
-            $gestion->anular($this->actor(), $this->pedidoId, $this->motivoTotalRevisado, $this->huellaAnulacionTotal);
+            $gestion->anular($this->actor(), $this->pedidoId, $this->motivoTotalRevisado, $this->huellaAnulacionTotal, $this->motivoAnulacionRevisadoId, $claveAutorizacion);
         } catch (ValidationException $error) {
-            $this->huellaAnulacionTotal = '';
-            $this->notificar($error->validator->errors()->first(), 'error', toast: false);
+            $this->addError('anulacion', $error->validator->errors()->first());
 
             return;
         }
+        $this->showConfirmCancel = false;
         Alertas::flash('Pedido anulado y mesa liberada.');
         $this->redirectRoute('pos.index', navigate: true);
     }
@@ -609,27 +631,52 @@ class PedidoPantalla extends Component
         $this->dispatch('pos:anulacion', detalleId: $id)->to(AccionesProducto::class);
     }
 
-    public function requestDiscard(): void
+    public function openDiscard(): void
     {
         Gate::forUser($this->actor())->authorize('pedidos.editar');
-        $this->validate(['motivo' => ['required', 'string', 'min:5', 'max:500']]);
-        $this->versionDescarte = $this->version;
-        $this->motivoConfirmado = $this->motivo;
-        $this->showDiscard = false;
-        $this->confirmar('Descartar borrador', 'Se conservará el pedido como anulado y se liberará su mesa si corresponde. No se modificarán existencias.', 'confirmDiscard', 'Descartar borrador', peligro: true);
+        $pedido = $this->pedido();
+        if ($pedido->mesa_id) {
+            Gate::forUser($this->actor())->authorize('mesas.liberar');
+        }
+        $this->limpiarAnulacion();
+        $this->showDiscard = true;
     }
 
-    public function confirmDiscard(GestionPedidos $gestion): void
+    public function requestDiscard(GestionPedidos $gestion): void
     {
+        $this->resetValidation();
+        $motivo = app(SeguridadAnulaciones::class)->motivoActivo($this->motivoAnulacionId);
+        $gestion->previsualizarDescarte($this->actor(), $this->pedidoId, $this->version, $motivo->nombre);
+        $this->versionDescarte = $this->version;
+        $this->motivoConfirmado = $motivo->nombre;
+        $this->motivoAnulacionRevisadoId = $motivo->id;
+        $this->tipoAnulacionRevisada = 'borrador';
+        $this->resumenAnulacion = 'Se descartará todo el borrador y se liberará la mesa. No se modificarán existencias ni pagos. Motivo: '.$motivo->nombre.'.';
+        $this->showDiscard = false;
+        $this->showConfirmCancel = true;
+    }
+
+    public function confirmDiscard(GestionPedidos $gestion, #[\SensitiveParameter] string $claveAutorizacion = ''): void
+    {
+        $this->resetValidation();
+        if ($this->tipoAnulacionRevisada !== 'borrador' || $this->versionDescarte === '' || $this->motivoAnulacionRevisadoId < 1) {
+            throw ValidationException::withMessages(['seguridad' => 'Revisa el descarte antes de confirmar.']);
+        }
         try {
-            $gestion->descartar($this->actor(), $this->pedidoId, $this->versionDescarte, $this->motivoConfirmado);
+            $gestion->descartar($this->actor(), $this->pedidoId, $this->versionDescarte, $this->motivoConfirmado, $this->motivoAnulacionRevisadoId, $claveAutorizacion);
         } catch (ValidationException $error) {
-            $this->notificar($error->validator->errors()->first(), 'error', toast: false);
+            $this->addError('anulacion', $error->validator->errors()->first());
 
             return;
         }
+        $this->showConfirmCancel = false;
         Alertas::flash('Borrador descartado.');
         $this->redirectRoute('pos.index', navigate: true);
+    }
+
+    public function cancelarConfirmacionAnulacion(): void
+    {
+        $this->limpiarAnulacion();
     }
 
     /** @return array<string,array{detalleId:string,productoId:string,cantidad:string,nota:string}> */
@@ -729,7 +776,7 @@ class PedidoPantalla extends Component
             $progreso[$detalle->id] = ['lista' => $lista, 'iniciada' => $iniciada, 'entregable' => bcsub($detalle->cantidadVigente(), $detalle->cantidad_entregada, 4)];
         }
 
-        return view('livewire.pos.pedido-pantalla', ['pedido' => $pedido, 'productos' => $catalogo->paginate(18), 'seleccionados' => $seleccionados,
+        return view('livewire.pos.pedido-pantalla', ['motivosAnulacion' => MotivoAnulacion::where('activo', true)->orderBy('orden')->orderBy('nombre')->get(), 'pedido' => $pedido, 'productos' => $catalogo->paginate(18), 'seleccionados' => $seleccionados,
             'gruposPedido' => $grupos, 'filasVista' => $filasVista, 'categorias' => CategoriaProducto::where('activo', true)->orderBy('orden')->get(),  'total' => $total,
             'anulaciones' => AnulacionPedido::with('detalles')->where('pedido_id', $pedido->id)->latest('id')->limit(20)->get(),
             'beneficiosHistorial' => BeneficioPedido::where('pedido_id', $pedido->id)->latest('id')->limit(20)->get(),
