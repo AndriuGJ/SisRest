@@ -178,7 +178,7 @@ test('cancellation notice prints canceled quantities without applying cancellati
     $detalle = $pedido->detalles()->first();
     $gestion = app(GestionAnulaciones::class);
     $plan = $gestion->previsualizar($this->actor, $pedido->id, $detalle->id, '1', 'Cliente canceló una unidad');
-    $anulacion = $gestion->anular($this->actor, $pedido->id, $detalle->id, '1', 'Cliente canceló una unidad', (string) Str::uuid(), $plan['huella']);
+    $anulacion = $gestion->anular($this->actor, $pedido->id, $detalle->id, '1', 'Cliente canceló una unidad', (string) Str::uuid(), $plan['huella'], ...autorizacionAnulacionPrueba('Cliente canceló una unidad'));
     $this->transporte->shouldReceive('enviar')->twice();
     $stock = $this->chaufa->articulo->fresh()->toArray();
     $comanda = imprimirOperativo($this->actor, solicitudImpresion('comanda', EnvioCocina::first()->id));
