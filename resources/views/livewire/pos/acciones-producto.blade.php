@@ -27,7 +27,7 @@
                         </p>
 
                         <div class="mt-2 flex items-center justify-center gap-3">
-                            <button type="button" wire:click="disminuirCantidad"
+                            <button type="button" wire:click="disminuirCantidad" @disabled((int)$cantidad <= 1)
                                 class="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-zinc-300 bg-white text-lg font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200">
                                 -
                             </button>
@@ -37,31 +37,14 @@
                                 {{ $cantidad }}
                             </div>
 
-                            <button type="button" wire:click="aumentarCantidad"
+                            <button type="button" wire:click="aumentarCantidad" @disabled((int)$cantidad >= $cantidadMaxima)
                                 class="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-zinc-300 bg-white text-lg font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200">
                                 +
                             </button>
                         </div>
                     </div>
 
-                    <div>
-                        <p class="text-sm font-medium text-zinc-700 dark:text-zinc-200">
-                            Motivo de la anulación
-                        </p>
-
-                        <div class="mt-3 grid gap-2 sm:grid-cols-2">
-                            @foreach ($motivosAnulacion as $motivoOpcion)
-                                <button type="button" wire:click="$set('motivoAnulacionId', '{{ $motivoOpcion->id }}')"
-                                    class="rounded-xl border px-4 py-3 text-left text-sm font-medium transition
-                            {{ (string) $motivoAnulacionId === (string) $motivoOpcion->id
-                                ? 'border-red-500 bg-red-50 text-red-700 shadow-sm dark:border-red-400 dark:bg-red-500/10 dark:text-red-300'
-                                : 'border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700/60' }}">
-                                    {{ $motivoOpcion->nombre }}
-                                </button>
-                            @endforeach
-                        </div>
-                    </div>
-
+                    <x-pos.motivos-anulacion :motivos="$motivosAnulacion" :seleccionado="$motivoAnulacionId" />
                     <p class="text-sm text-zinc-500">
                         No se anulan cantidades cobradas o entregadas.
                         Lo no iniciado libera su reserva.
@@ -125,63 +108,12 @@
                     Cancelar
                 </flux:button>
 
-                <flux:button variant="primary" wire:click="review" wire:loading.attr="disabled">
+                <flux:button variant="primary" wire:click="review" wire:loading.attr="disabled" :disabled="$modo === 'anular' && $cantidadMaxima < 1">
                     Revisar y confirmar
                 </flux:button>
             </div>
         </div>
     </flux:modal>
 
-    {{-- Segunda ventana: confirmación con clave --}}
-    <flux:modal wire:model.self="showConfirmCancel" class="w-full md:max-w-lg" :dismissible="false">
-        <div class="space-y-5 px-2 py-1 text-center">
-
-            <div
-                class="mx-auto flex h-24 w-24 items-center justify-center rounded-full border-4 border-orange-200 text-5xl font-bold text-orange-300">
-                !
-            </div>
-
-            <div class="space-y-2">
-                <h2 class="text-3xl font-bold text-zinc-700 dark:text-zinc-100">
-                    Necesitamos de tu Confirmación
-                </h2>
-
-                <p class="text-base text-zinc-500 dark:text-zinc-300">
-                    {{ $resumenAnulacion }}
-                </p>
-            </div>
-
-            @if ($errors->any())
-                <p role="alert" class="text-sm font-medium text-red-600">
-                    {{ $errors->first() }}
-                </p>
-            @endif
-
-            <div class="mx-auto max-w-xs text-left">
-                <label class="mb-2 block text-center text-lg font-medium text-zinc-700 dark:text-zinc-200">
-                    Ingrese código de seguridad
-                </label>
-
-                <input type="password" wire:model="claveAutorizacion" maxlength="12" autocomplete="off"
-                    class="w-full rounded-md border border-zinc-300 bg-white px-4 py-3 text-center text-lg outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-200 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
-            </div>
-
-            <p class="text-3xl font-medium text-lime-500">
-                ¿Está Usted de Acuerdo?
-            </p>
-
-            <div class="flex justify-center gap-3 pt-2">
-                <button type="button" wire:click="confirmOperation" wire:loading.attr="disabled"
-                    wire:target="confirmOperation"
-                    class="rounded-md bg-green-500 px-7 py-3 text-lg font-semibold text-white transition hover:bg-green-600">
-                    Sí, Adelante!
-                </button>
-
-                <button type="button" wire:click="cancelarConfirmacionAnulacion"
-                    class="rounded-md bg-zinc-400 px-7 py-3 text-lg font-semibold text-white transition hover:bg-zinc-500">
-                    No!
-                </button>
-            </div>
-        </div>
-    </flux:modal>
+    <x-pos.confirmar-anulacion :resumen="$resumenAnulacion" confirmar="confirmOperation" />
 </div>
