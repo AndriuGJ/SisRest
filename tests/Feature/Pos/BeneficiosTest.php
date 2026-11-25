@@ -26,6 +26,7 @@ use App\Services\Cobros\CerrarAtencion;
 use App\Services\Cobros\EstadoCuenta;
 use App\Services\Cobros\GestionCobros;
 use App\Services\Cocina\GestionCocina;
+use App\Services\Impresion\TransporteEscPos;
 use App\Services\Pos\ConfirmarPedido;
 use App\Services\Pos\GestionAnulaciones;
 use App\Services\Pos\GestionBeneficios;
@@ -82,7 +83,7 @@ function anularBeneficio(User $actor, Pedido $pedido, int $id, string $cantidad,
     $servicio = app(GestionAnulaciones::class);
     $plan = $servicio->previsualizar($actor, $pedido->id, $id, $cantidad, 'Cliente canceló el producto');
 
-    return $servicio->anular($actor, $pedido->id, $id, $cantidad, 'Cliente canceló el producto', $clave ?? (string) Str::uuid(), $plan['huella']);
+    return $servicio->anular($actor, $pedido->id, $id, $cantidad, 'Cliente canceló el producto', $clave ?? (string) Str::uuid(), $plan['huella'], ...autorizacionAnulacionPrueba('Cliente canceló el producto'));
 }
 function cobroBeneficio(User $actor, Pedido $pedido, TurnoCaja $turno, array $cantidades, string $importe, array $extra = []): Cobro
 {
@@ -107,8 +108,8 @@ test('unstarted cancellation releases only its reservation and is idempotent wit
     $raiz = $pedido->detalles()->first();
     $clave = (string) Str::uuid();
     $plan = app(GestionAnulaciones::class)->previsualizar($this->actor, $pedido->id, $raiz->id, '2', 'Cliente canceló el producto');
-    $registro = app(GestionAnulaciones::class)->anular($this->actor, $pedido->id, $raiz->id, '2', 'Cliente canceló el producto', $clave, $plan['huella']);
-    expect(app(GestionAnulaciones::class)->anular($this->actor, $pedido->id, $raiz->id, '2', 'Cliente canceló el producto', $clave, $plan['huella'])->id)->toBe($registro->id)
+    $registro = app(GestionAnulaciones::class)->anular($this->actor, $pedido->id, $raiz->id, '2', 'Cliente canceló el producto', $clave, $plan['huella'], ...autorizacionAnulacionPrueba('Cliente canceló el producto'));
+    expect(app(GestionAnulaciones::class)->anular($this->actor, $pedido->id, $raiz->id, '2', 'Cliente canceló el producto', $clave, $plan['huella'], ...autorizacionAnulacionPrueba('Cliente canceló el producto'))->id)->toBe($registro->id)
         ->and($this->plato->articulo->fresh()->stock_actual)->toBe('10.0000')->and($this->plato->articulo->fresh()->stock_reservado)->toBe('1.0000')->and($raiz->fresh()->cantidad_anulada)->toBe('2.0000')
         ->and(ReservaInventario::first()->cantidad_liberada)->toBe('2.0000')->and(EnvioCocinaDetalle::first()->cantidad_anulada)->toBe('2.0000')->and(MovimientoInventario::count())->toBe(0)->and(MovimientoCaja::count())->toBe(0)->and(AnulacionPedido::count())->toBe(1);
     $this->get(route('pos.pedido', $pedido))->assertOk()->assertSee('Cliente canceló el producto')->assertSee('Anulados: 2');
@@ -168,7 +169,7 @@ test('kitchen progress after cancellation review invalidates confirmation even w
     $s = app(GestionAnulaciones::class);
     $plan = $s->previsualizar($this->actor, $pedido->id, $raiz->id, '2', 'Cliente canceló el producto');
     avanceBeneficio($this->actor, EnvioCocinaDetalle::first(), 'iniciar', '1');
-    expect(fn () => $s->anular($this->actor, $pedido->id, $raiz->id, '2', 'Cliente canceló el producto', (string) Str::uuid(), $plan['huella']))->toThrow(ValidationException::class);
+    expect(fn () => $s->anular($this->actor, $pedido->id, $raiz->id, '2', 'Cliente canceló el producto', (string) Str::uuid(), $plan['huella'], ...autorizacionAnulacionPrueba('Cliente canceló el producto')))->toThrow(ValidationException::class);
     expect(AnulacionPedido::count())->toBe(0)->and($this->plato->articulo->fresh()->stock_reservado)->toBe('2.0000');
 });
 
@@ -308,11 +309,11 @@ test('Livewire courtesy and cancellation preserve the reviewed payload and lock 
     $pantalla = Livewire::test(AccionesProducto::class, ['pedidoId' => $pedido->id]);
     $pantalla->call('openBenefit', $raiz->id)->set('accion', 'cortesia')->set('motivoId', (string) $this->motivo->id)->set('motivo', 'Cumpleaños autorizado del cliente')->call('review')->assertDispatched('app:confirm')->set('accion', 'quitar')->call('confirmOperation')->assertRedirect(route('pos.pedido', $pedido));
     expect($raiz->fresh()->es_cortesia)->toBeTrue();
-    Livewire::test(AccionesProducto::class, ['pedidoId' => $pedido->id])->call('openCancel', $raiz->id)->set('cantidad', '1')->set('motivo', 'Cliente retiró una unidad')->call('review')->set('cantidad', '2')->call('confirmOperation');
+    $autorizacion = autorizacionAnulacionPrueba('Cliente retiró una unidad');
+    Livewire::test(AccionesProducto::class, ['pedidoId' => $pedido->id])->call('openCancel', $raiz->id)->set('cantidad', '1')->set('motivoAnulacionId', (string) $autorizacion['motivoId'])->call('review')->assertHasNoErrors()->assertSet('showConfirmCancel', true)->set('cantidad', '2')->call('confirmOperation', $autorizacion['claveAutorizacion'])->assertHasNoErrors();
     expect($raiz->fresh()->cantidad_anulada)->toBe('1.0000');
     expect(fn () => Livewire::test(AccionesProducto::class, ['pedidoId' => $pedido->id])->set('detalleId', 999))->toThrow(CannotUpdateLockedPropertyException::class);
 });
-
 
 test('courtesy checkout accepts an empty UI payment row and keeps all reviewed general fields immutable', function () {
 
@@ -345,7 +346,7 @@ test('courtesy checkout accepts an empty UI payment row and keeps all reviewed g
 
     // Simular el envío sin conectarse a una impresora real.
     $this->spy(
-        \App\Services\Impresion\TransporteEscPos::class
+        TransporteEscPos::class
     );
 
     $pantalla = Livewire::test(
@@ -369,7 +370,6 @@ test('courtesy checkout accepts an empty UI payment row and keeps all reviewed g
         ->and($cobro->pagos()->count())->toBe(0)
         ->and(MovimientoCaja::count())->toBe(0);
 });
-
 
 test('parent operations require saving draft changes and methods cannot be used by a waiter without action permissions', function () {
     $pedido = pedidoBeneficio($this->actor, $this->turno, [$this->plato->id => 1]);
