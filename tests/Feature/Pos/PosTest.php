@@ -189,7 +189,8 @@ test('discarding an unconfirmed draft preserves history and frees its table even
     $pedido = abrirPedidoPos($this->actor, $this->turno, $this->mesa);
     guardarPos($this->actor, $pedido, $this->turno, ['a' => filaPos($this->producto)]);
     $this->turno->update(['estado' => 'cerrada', 'cerrada_at' => now()]);
-    Livewire::test(PedidoPantalla::class, ['pedido' => $pedido->fresh()])->set('motivo', 'Cliente se retiró')->call('requestDiscard')->assertDispatched('app:confirm')->call('confirmDiscard')->assertHasNoErrors();
+    $autorizacion = autorizacionAnulacionPrueba('Cliente se retiró');
+    Livewire::test(PedidoPantalla::class, ['pedido' => $pedido->fresh()])->call('openDiscard')->set('motivoAnulacionId', (string) $autorizacion['motivoId'])->call('requestDiscard')->assertHasNoErrors()->assertSet('showConfirmCancel', true)->call('confirmDiscard', $autorizacion['claveAutorizacion'])->assertHasNoErrors();
     expect($pedido->fresh()->estado->value)->toBe('anulado')->and($pedido->detalles()->first()->estado->value)->toBe('anulado')->and(OcupacionMesa::count())->toBe(0)
         ->and($this->producto->articulo->fresh()->stock_actual)->toBe('10.0000')->and(MovimientoInventario::count())->toBe(0);
 });
@@ -201,7 +202,7 @@ test('confirmed lines remain read only and prevent discarding but allow adding n
     $linea->update(['estado' => 'confirmado', 'confirmado_at' => now()]);
     guardarPos($this->actor, $pedido, $this->turno, ['b' => filaPos($this->producto, ['cantidad' => '2'])]);
     expect($linea->fresh()->cantidad)->toBe('1.0000')->and($pedido->detalles()->count())->toBe(2);
-    expect(fn () => app(GestionPedidos::class)->descartar($this->actor, $pedido->id, GestionPedidos::huella($pedido->fresh()), 'Cancelar pedido'))->toThrow(ValidationException::class);
+    expect(fn () => app(GestionPedidos::class)->descartar($this->actor, $pedido->id, GestionPedidos::huella($pedido->fresh()), 'Cancelar pedido', ...autorizacionAnulacionPrueba('Cancelar pedido')))->toThrow(ValidationException::class);
     expect(fn () => guardarPos($this->actor, $pedido, $this->turno, ['a' => filaPos($this->producto, ['detalleId' => (string) $linea->id])]))->toThrow(ValidationException::class);
 });
 
