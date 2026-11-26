@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class EnviarComprobante
@@ -104,6 +105,79 @@ class EnviarComprobante
         return Comprobante::findOrFail($id);
     }
 
+    /** Reconcile only the stored response. Never invokes the SUNAT transport or signs XML. */
+    public function reprocesarCdr(User $actor, int $id, int $envioId): Comprobante
+    {
+        return DB::transaction(function () use ($actor, $id, $envioId): Comprobante {
+            // Same lock order as send/consultation registration; concurrent confirmations serialize.
+            $c = Comprobante::lockForUpdate()->findOrFail($id);
+            AccesoFacturacion::cobro($actor, $c->cobro()->firstOrFail(), 'comprobantes.emitir');
+            $envio = $c->envios()->whereKey($envioId)->lockForUpdate()->firstOrFail();
+            ReglasFiscales::exigir(XmlFiscal::dato($c, 'tipo') === '01' && $c->entorno === XmlFiscal::dato($c, 'entorno') && in_array($c->entorno, ['beta', 'produccion'], true), 'El reprocesamiento local requiere una factura con entorno consistente.');
+            ReglasFiscales::exigir(! $envio->consultando && $envio->estado !== EnvioEstado::EN_PROCESO, 'Hay una operación en curso. Espera a que finalice antes de reprocesar el CDR.');
+            ReglasFiscales::exigir($envio->xml_nombre === XmlFiscal::nombre($c), 'El intento no corresponde a la factura.');
+            $contenido = $this->cdrAlmacenado($c, $envio);
+            $cdr = app(LeerCdr::class)->leer($contenido, $envio->xml_nombre, (string) $c->emisor['ruc']);
+            $estado = $this->estadoCdr($cdr);
+            ReglasFiscales::exigir($estado !== 'desconocido', 'El CDR no contiene un resultado fiscal definitivo. Se conserva el estado anterior.');
+            if (in_array($c->estado_sunat, [SunatEstado::ACEPTADO, SunatEstado::OBSERVADO, SunatEstado::RECHAZADO], true)) {
+                ReglasFiscales::exigir($c->estado_sunat->value === $estado && $envio->estado->value === $estado && $c->cdr_ruta === $envio->cdr_recibido_ruta && $envio->cdr_ruta === $envio->cdr_recibido_ruta, 'El comprobante ya tiene un resultado definitivo diferente. Se requiere conciliación.');
+
+                return $c; // Idempotent: no second audit, message append or timestamp update.
+            }
+            ReglasFiscales::exigir($c->estado_sunat === SunatEstado::DESCONOCIDO && $envio->estado === EnvioEstado::RESULTADO_INCIERTO, 'Solo se recuperan intentos con resultado incierto.');
+            $anterior = $c->estado_sunat->value;
+            $c->update(['estado_sunat' => $estado, 'cdr_ruta' => $envio->cdr_recibido_ruta]);
+            $envio->update([
+                'estado' => $estado,
+                'codigo_respuesta' => $cdr['codigo'],
+                'cdr_ruta' => $envio->cdr_recibido_ruta,
+                // Preserve the original attempt message, diagnostics and send timestamps.
+                'mensaje' => ($envio->mensaje ? $envio->mensaje."\n\n" : '').'CDR reprocesado localmente: '.$cdr['mensaje'].($cdr['observaciones'] ? "\n".implode("\n", $cdr['observaciones']) : ''),
+            ]);
+            activity()->causedBy($actor)->performedOn($c)->withProperties([
+                'origen' => 'cdr_local', 'envio_id' => $envio->id,
+                'estado_anterior' => $anterior, 'estado_sunat' => $estado,
+                'codigo_respuesta' => $cdr['codigo'], 'cdr_sha256' => $envio->cdr_recibido_sha256,
+            ])->log('CDR almacenado reprocesado localmente');
+
+            return $c;
+        }, 3);
+    }
+
+    private function cdrAlmacenado(Comprobante $c, ComprobanteEnvio $envio): string
+    {
+        $ruta = $envio->cdr_recibido_ruta;
+        $hash = $envio->cdr_recibido_sha256;
+        $prefijo = 'comprobantes/'.$c->entorno.'/'.$c->clave_idempotencia.'/';
+        ReglasFiscales::exigir(is_string($ruta) && str_starts_with($ruta, $prefijo) && ! str_contains($ruta, '\\') && ! array_intersect(explode('/', $ruta), ['.', '..']) && is_string($hash) && preg_match('/^[a-f0-9]{64}$/D', $hash) === 1, 'No hay una ruta y SHA-256 válidos del CDR recibido.');
+        try {
+            $disco = Storage::disk('local');
+            ReglasFiscales::exigir($disco->exists($ruta), 'No se encontró el ZIP del CDR almacenado.');
+            $stream = $disco->readStream($ruta);
+            ReglasFiscales::exigir(is_resource($stream), 'No se pudo leer el ZIP del CDR almacenado.');
+            try {
+                $contenido = stream_get_contents($stream, 2 * 1024 * 1024 + 1);
+            } finally {
+                fclose($stream);
+            }
+        } catch (ValidationException $error) {
+            throw $error;
+        } catch (Throwable) {
+            throw ValidationException::withMessages(['facturacion' => 'No se pudo leer el ZIP del CDR almacenado.']);
+        }
+        ReglasFiscales::exigir(is_string($contenido) && strlen($contenido) > 0 && strlen($contenido) <= 2 * 1024 * 1024, 'El tamaño del CDR almacenado no es válido.');
+        ReglasFiscales::exigir(hash_equals($hash, hash('sha256', $contenido)), 'El SHA-256 del CDR no coincide. El archivo pudo ser alterado; no se modificó el comprobante.');
+
+        return $contenido;
+    }
+
+    /** @param array{codigo:string,mensaje:string,observaciones:list<string>} $cdr */
+    private function estadoCdr(array $cdr): string
+    {
+        return $cdr['codigo'] === '0' ? ($cdr['observaciones'] ? 'observado' : 'aceptado') : ((int) $cdr['codigo'] >= 2000 ? 'rechazado' : 'desconocido');
+    }
+
     public function recuperarInterrumpido(User $actor, int $id): void
     {
         DB::transaction(function () use ($actor, $id): void {
@@ -170,7 +244,7 @@ class EnviarComprobante
                 return;
             }
             if ($cdr !== null) {
-                $estado = $cdr['codigo'] === '0' ? ($cdr['observaciones'] ? 'observado' : 'aceptado') : ((int) $cdr['codigo'] >= 2000 ? 'rechazado' : 'desconocido');
+                $estado = $this->estadoCdr($cdr);
                 $c->update(['estado_sunat' => $estado, 'cdr_ruta' => $ruta]);
                 $envio->update(['estado' => $estado === 'desconocido' ? 'resultado_incierto' : $estado, 'codigo_respuesta' => $cdr['codigo'], 'mensaje' => $cdr['mensaje'].($cdr['observaciones'] ? "\n".implode("\n", $cdr['observaciones']) : ''), 'cdr_ruta' => $ruta, 'consultando' => false, 'finalizado_at' => now()]);
             } elseif ($r->ticket !== null) {
