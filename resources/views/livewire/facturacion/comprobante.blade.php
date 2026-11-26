@@ -24,6 +24,11 @@
                     <p class="text-xs text-amber-800">Este intento no conserva un diagnóstico técnico original. La actualización no puede reconstruir el error anterior. No repitas el envío.</p>
                 @endif
                 @if($envio->cdr_recibido_ruta && !$envio->cdr_ruta)<p class="text-xs text-zinc-500">Respuesta conservada en almacenamiento privado para diagnóstico local; todavía no es un CDR validado.</p>@endif
+                @can('comprobantes.emitir')
+                    @if(\App\Services\Facturacion\XmlFiscal::dato($comprobante, 'tipo') === '01' && $comprobante->estado_sunat->value === 'desconocido' && $envio->estado->value === 'resultado_incierto' && !$envio->consultando && $envio->cdr_recibido_ruta && $envio->cdr_recibido_sha256)
+                        <flux:button wire:click="solicitarReprocesamiento({{ $envio->id }})" wire:loading.attr="disabled" icon="document-check">Reprocesar CDR almacenado</flux:button>
+                    @endif
+                @endcan
                 @if($envio->xml_ruta && \App\Services\Facturacion\XmlFiscal::dato($comprobante,'tipo') === '03')<a class="inline-block underline" href="{{ route('comprobantes.archivo',[$comprobante,'resumen']) }}">Descargar resumen firmado</a>@endif</div>@empty<p class="py-3 text-zinc-500">Documento firmado, pendiente de envío.</p>@endforelse</div></section>
     <p class="break-all text-xs text-zinc-500">Hash del documento: {{ $comprobante->hash_documento }}</p>
 </div>
