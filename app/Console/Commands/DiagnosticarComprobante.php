@@ -21,12 +21,12 @@ class DiagnosticarComprobante extends Command
     public function handle(): int
     {
         $entorno = $this->option('entorno');
-        if (! in_array($entorno, ['beta', 'produccion'], true) || ! preg_match('/^([FB][A-Z0-9]{3})-([1-9]\d{0,7})$/D', (string) $this->argument('numero'), $m) || ! ctype_digit((string) $this->option('usuario'))) {
+        if (! in_array($entorno, ['beta', 'produccion'], true) || ! preg_match('/^([FB][A-Z0-9]{3})-(\d{1,8})$/D', (string) $this->argument('numero'), $m) || ! ctype_digit((string) $this->option('usuario')) || (int) $m[2] < 1) {
             $this->error('Indique número válido, --entorno=beta|produccion y --usuario=ID autorizado.');
 
             return self::FAILURE;
         }
-        $c = Comprobante::where('entorno', $entorno)->where('correlativo', $m[2])->whereHas('serie', fn ($q) => $q->where('serie', $m[1]))->first();
+        $c = Comprobante::where('entorno', $entorno)->where('correlativo', (int) $m[2])->whereHas('serie', fn ($q) => $q->where('serie', $m[1]))->first();
         $actor = User::find((int) $this->option('usuario'));
         if (! $c || ! $actor) {
             $this->error('Documento o usuario no encontrado.');
