@@ -27,6 +27,9 @@ class EnviarComprobante
             $c = Comprobante::lockForUpdate()->findOrFail($id);
             AccesoFacturacion::cobro($actor, $c->cobro()->firstOrFail(), 'comprobantes.emitir');
             $this->validarConfiguracion($e, $config, $c);
+            if (XmlFiscal::dato($c, 'tipo') === '03' && $c->resumenActivo()->exists()) {
+                return null; // A grouped or historical RC already owns this boleta.
+            }
             if ($c->envios()->exists()) {
                 // Never send again when a previous request might have reached SUNAT.
                 return null;
@@ -67,11 +70,21 @@ class EnviarComprobante
             }
         }
 
+        $this->vincularResumenUnitario($id);
+
         return Comprobante::findOrFail($id);
     }
 
     public function consultar(User $actor, int $id): Comprobante
     {
+        $leido = Comprobante::findOrFail($id);
+        $vinculo = $leido->resumenActivo()->with('resumen')->first();
+        if ($vinculo && $vinculo->resumen->envio_historico_id === null) {
+            AccesoFacturacion::cobro($actor, $leido->cobro()->firstOrFail());
+            app(GestionResumenes::class)->consultar($actor, $vinculo->resumen_diario_id);
+
+            return $leido->fresh();
+        }
         $salida = DB::transaction(function () use ($actor, $id): ?ComprobanteEnvio {
             $e = Empresa::where('singleton', 1)->lockForUpdate()->firstOrFail();
             $config = ConfiguracionFacturacion::where('empresa_id', $e->id)->lockForUpdate()->firstOrFail();
@@ -102,6 +115,8 @@ class EnviarComprobante
                 $this->incierto($actor, $salida->id, true, $error, $etapa);
             }
         }
+
+        $this->vincularResumenUnitario($id);
 
         return Comprobante::findOrFail($id);
     }
@@ -199,6 +214,17 @@ class EnviarComprobante
                 $envio->update(['consultando' => false, 'consulta_finalizada_at' => now()]);
             }
         }, 3);
+    }
+
+    private function vincularResumenUnitario(int $id): void
+    {
+        $c = Comprobante::findOrFail($id);
+        if (XmlFiscal::dato($c, 'tipo') === '03') {
+            $envio = $c->envios()->latest('id')->first();
+            if ($envio) {
+                app(ImportarResumenesHistoricos::class)->sincronizar($envio->id);
+            }
+        }
     }
 
     private function validarConfiguracion(Empresa $e, ConfiguracionFacturacion $config, Comprobante $c): void
