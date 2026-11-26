@@ -84,6 +84,11 @@
                     @endcan
                 </flux:sidebar.group>
             @endcanany
+            @can('comprobantes.ver')
+                <flux:sidebar.group heading="Facturación" icon="document-duplicate" expandable :expanded="request()->routeIs('resumenes.*')" class="mt-1">
+                    <flux:sidebar.item icon="document-duplicate" :href="route('resumenes.index')" :current="request()->routeIs('resumenes.*')" wire:navigate>Resúmenes diarios</flux:sidebar.item>
+                </flux:sidebar.group>
+            @endcan
             @canany(['productos.ver', 'inventario.ver', 'preparaciones.ver'])
                 <flux:sidebar.group heading="Inventario" icon="archive-box" expandable
                     :expanded="request()->routeIs('productos.*', 'insumos.*', 'preparaciones.*')" class="mt-1">
