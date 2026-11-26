@@ -28,8 +28,23 @@ class LeerCdr
             }
             try {
                 $stat = $zip->statName('R-'.$nombre.'.xml');
-                if ($stat === false || $stat['size'] > 4 * 1024 * 1024 || $zip->numFiles !== 1) {
+                if ($stat === false || $stat['size'] > 4 * 1024 * 1024 || $zip->numFiles > 65) {
                     throw new FalloSunat('cdr_nombre');
+                }
+                $archivos = 0;
+                for ($i = 0; $i < $zip->numFiles; $i++) {
+                    $entrada = $zip->statIndex($i);
+                    if ($entrada === false) {
+                        throw new FalloSunat('cdr_nombre');
+                    }
+                    if (str_ends_with($entrada['name'], '/')) {
+                        // SUNAT may include empty directory entries. Never extract anything.
+                        if ($entrada['size'] !== 0 || ! preg_match('~^(?:[a-zA-Z0-9_.-]+/)+$~D', $entrada['name']) || array_intersect(explode('/', $entrada['name']), ['.', '..'])) {
+                            throw new FalloSunat('cdr_nombre');
+                        }
+                    } elseif (++$archivos !== 1 || $entrada['name'] !== 'R-'.$nombre.'.xml') {
+                        throw new FalloSunat('cdr_nombre');
+                    }
                 }
                 $xml = $zip->getFromName('R-'.$nombre.'.xml');
             } finally {
@@ -48,6 +63,9 @@ class LeerCdr
         $xp = new DOMXPath($dom);
         $xp->registerNamespace('cac', 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2');
         $xp->registerNamespace('cbc', 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2');
+        if ($dom->documentElement?->localName !== 'ApplicationResponse' || $dom->documentElement->namespaceURI !== 'urn:oasis:names:specification:ubl:schema:xsd:ApplicationResponse-2' || $xp->evaluate('count(/*/cac:DocumentResponse)') !== 1.0 || $xp->evaluate('count(/*/cac:DocumentResponse/cac:Response)') !== 1.0) {
+            throw new FalloSunat('cdr_xml');
+        }
         $referencia = (string) $xp->evaluate('string(/*/cac:DocumentResponse/cac:Response/cbc:ReferenceID)');
         $receptor = (string) $xp->evaluate('string(/*/cac:ReceiverParty/cac:PartyIdentification/cbc:ID)');
         $sinRuc = substr($nombre, strlen($ruc) + 1);
