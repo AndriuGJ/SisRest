@@ -12,6 +12,7 @@ use App\Models\Empresa;
 use App\Models\Impresora;
 use App\Models\MedioPago;
 use App\Models\Producto;
+use App\Models\ResumenDiario;
 use App\Models\SerieComprobante;
 use App\Models\TipoComprobante;
 use App\Models\TurnoCaja;
@@ -21,6 +22,7 @@ use App\Services\Cobros\GestionCobros;
 use App\Services\Facturacion\ConfigurarFacturacion;
 use App\Services\Facturacion\EmitirComprobante;
 use App\Services\Facturacion\EnviarComprobante;
+use App\Services\Facturacion\GestionResumenes;
 use App\Services\Facturacion\RespuestaSunat;
 use App\Services\Facturacion\TransporteSunat;
 use App\Services\Pos\ConfirmarPedido;
@@ -32,6 +34,7 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 
 require dirname(__DIR__, 2).'/vendor/autoload.php';
@@ -72,6 +75,13 @@ if (($argv[1] ?? '') === 'worker') {
 
             return new RespuestaSunat(ticket: 'T-'.basename($nombre));
         }
+
+        public function consultarTicket(ConfiguracionFacturacion $config, string $ruc, string $ticket, string $entorno): RespuestaSunat
+        {
+            $this->enviar($config, $ruc, '03', 'consulta', '');
+
+            return new RespuestaSunat(pendiente: true, codigo: '98');
+        }
     });
     file_put_contents($directorio.'/ready-'.$indice, '1');
     $limite = microtime(true) + 15;
@@ -85,6 +95,20 @@ if (($argv[1] ?? '') === 'worker') {
         $filas = $cobro->detalles()->pluck('id')->mapWithKeys(fn ($id) => [$id => '10'])->all();
         $c = app(EmitirComprobante::class)->emitir($actor, $cobro->id, $clave, ['serieId' => (int) $serieId, 'tipo' => '0', 'numero' => '', 'nombre' => 'Cliente concurrente', 'direccion' => ''], $filas, $version);
         echo $c->id.PHP_EOL;
+    } elseif (in_array($modo, ['resumen_generar', 'resumen_conflicto'], true)) {
+        try {
+            $r = app(GestionResumenes::class)->generar($actor, [(int) $id], $clave);
+            echo $r->id.PHP_EOL;
+        } catch (ValidationException $error) {
+            if ($modo !== 'resumen_conflicto') {
+                throw $error;
+            }
+            echo "reservation conflict safely blocked\n";
+        }
+    } elseif ($modo === 'resumen_enviar') {
+        app(GestionResumenes::class)->enviar($actor, (int) $id);
+    } elseif ($modo === 'resumen_consultar') {
+        app(GestionResumenes::class)->consultar($actor, (int) $id);
     } else {
         app(EnviarComprobante::class)->enviar($actor, (int) $id);
     }
@@ -128,7 +152,7 @@ function competirFiscal(string $modo, array $ids, int $actor, int $serie, string
                 }
             }
             $peticiones = is_file($directorio.'/requests') ? count(file($directorio.'/requests', FILE_IGNORE_NEW_LINES)) : 0;
-            if ($modo === 'enviar' && ($peticiones >= 2 || ($peticiones === 1 && count($codigos) > 0))) {
+            if (in_array($modo, ['enviar', 'resumen_enviar', 'resumen_consultar'], true) && ($peticiones >= 2 || ($peticiones === 1 && count($codigos) > 0))) {
                 file_put_contents($directorio.'/release', '1');
             }
             if (microtime(true) > $limite) {
@@ -185,7 +209,7 @@ try {
     } while (SerieComprobante::where('serie', $numeroSerie)->exists());
     $serieFiscal = SerieComprobante::create(['tipo_comprobante_id' => TipoComprobante::where('codigo', '03')->firstOrFail()->id, 'serie' => $numeroSerie, 'entorno' => 'beta', 'activo' => true]);
     $cobrosFiscales = [];
-    for ($i = 0; $i < 4; $i++) {
+    for ($i = 0; $i < 7; $i++) {
         $pedido = app(GestionPedidos::class)->abrir($actor, $turno->id, (string) Str::uuid(), ['modalidad' => 'rapida', 'mesaId' => '', 'mozoId' => (string) $actor->id, 'comensales' => '', 'observaciones' => '', 'destinatario' => '', 'telefono' => '', 'direccion' => '', 'referencia' => '', 'costoEnvio' => '0'])->refresh();
         $pedidos[] = $pedido->id;
         app(GestionPedidos::class)->guardar($actor, $pedido->id, $turno->id, GestionPedidos::huella($pedido), ['clienteId' => '', 'comensales' => '', 'observaciones' => ''], ['uno' => ['detalleId' => '', 'productoId' => (string) $producto->id, 'cantidad' => '1', 'nota' => '']]);
@@ -201,7 +225,7 @@ try {
     competirFiscal('emitir', [$cobrosFiscales[0], $cobrosFiscales[0]], $actor->id, $serieFiscal->id, $dir);
     competirFiscal('emitir', [$cobrosFiscales[1], $cobrosFiscales[2]], $actor->id, $serieFiscal->id, $dir);
     competirFiscal('emitir', [$cobrosFiscales[3], $cobrosFiscales[3]], $actor->id, $serieFiscal->id, $dir, true);
-    $docs = Comprobante::whereIn('cobro_id', $cobrosFiscales)->orderBy('correlativo')->get();
+    $docs = Comprobante::whereIn('cobro_id', array_slice($cobrosFiscales, 0, 4))->orderBy('correlativo')->get();
     if ($docs->count() !== 4 || $docs->pluck('correlativo')->all() !== [1, 2, 3, 4] || $serieFiscal->fresh()->ultimo_correlativo !== 4) {
         throw new RuntimeException('Se duplicó un cobro/correlativo o se perdió una asignación.');
     }
@@ -213,10 +237,36 @@ try {
     if ($enviados !== 2 || ComprobanteEnvio::whereIn('comprobante_id', $docs->pluck('id'))->pluck('xml_nombre')->unique()->count() !== 3) {
         throw new RuntimeException('Se duplicó un resumen diario.');
     }
-    echo json_encode(['result' => 'passed', 'checks' => ['same charge and different UUIDs', 'same charge and repeated UUID', 'shared series numbering', 'same summary sent once', 'unique concurrent summary numbers', 'SUNAT outside database transactions']], JSON_THROW_ON_ERROR).PHP_EOL;
+    competirFiscal('emitir', array_slice($cobrosFiscales, 4, 3), $actor->id, $serieFiscal->id, $dir);
+    $extras = Comprobante::whereIn('cobro_id', array_slice($cobrosFiscales, 4, 3))->orderBy('id')->get();
+    competirFiscal('resumen_generar', [$docs[3]->id, $docs[3]->id], $actor->id, $serieFiscal->id, $dir, true);
+    $reserva = $docs[3]->resumenActivo()->firstOrFail();
+    if (ResumenDiario::whereKey($reserva->resumen_diario_id)->count() !== 1 || $docs[3]->resumenesDetalles()->count() !== 1) {
+        throw new RuntimeException('La generación idempotente duplicó un resumen o una reserva.');
+    }
+    competirFiscal('resumen_generar', [$extras[0]->id, $extras[1]->id], $actor->id, $serieFiscal->id, $dir);
+    competirFiscal('resumen_conflicto', [$extras[2]->id, $extras[2]->id], $actor->id, $serieFiscal->id, $dir);
+    if ($extras[2]->resumenesDetalles()->count() !== 1 || ResumenDiario::where('usuario_id', $actor->id)->pluck('nombre')->unique()->count() !== 7) {
+        throw new RuntimeException('Se duplicó una reserva o la secuencia concurrente de resúmenes.');
+    }
+    $r = ResumenDiario::findOrFail($reserva->resumen_diario_id);
+    if (competirFiscal('resumen_enviar', [$r->id, $r->id], $actor->id, $serieFiscal->id, $dir) !== 1 || $r->fresh()->estado !== 'enviado') {
+        throw new RuntimeException('El resumen agrupado se envió repetidamente.');
+    }
+    if (competirFiscal('resumen_consultar', [$r->id, $r->id], $actor->id, $serieFiscal->id, $dir) !== 1 || $r->fresh()->estado !== 'enviado' || $r->eventos()->where('operacion', 'consulta_pendiente')->count() !== 1) {
+        throw new RuntimeException('La consulta concurrente duplicó operaciones o perdió el estado pendiente.');
+    }
+    echo json_encode(['result' => 'passed', 'checks' => ['same charge and different UUIDs', 'same charge and repeated UUID', 'shared series numbering', 'same summary sent once', 'unique concurrent summary numbers', 'SUNAT outside database transactions', 'grouped RC generation idempotency', 'different RC sequences and competing memberships', 'grouped RC sent once', 'ticket consultation claimed once']], JSON_THROW_ON_ERROR).PHP_EOL;
 } finally {
     $idsCobro = DB::table('cobros')->whereIn('pedido_id', $pedidos)->pluck('id');
     $docs = Comprobante::whereIn('cobro_id', $idsCobro)->get();
+    $resumenes = ResumenDiario::whereHas('detalles', fn ($q) => $q->whereIn('comprobante_id', $docs->pluck('id')))->get();
+    foreach ($resumenes as $r) {
+        Storage::disk('local')->deleteDirectory('resumenes/'.$r->entorno.'/'.$r->clave_idempotencia);
+    }
+    DB::table('resumen_diario_eventos')->whereIn('resumen_diario_id', $resumenes->pluck('id'))->delete();
+    DB::table('resumen_diario_detalles')->whereIn('resumen_diario_id', $resumenes->pluck('id'))->delete();
+    DB::table('resumenes_diarios')->whereIn('id', $resumenes->pluck('id'))->delete();
     foreach ($docs as $doc) {
         Storage::disk('local')->deleteDirectory('comprobantes/beta/'.$doc->clave_idempotencia);
     }
