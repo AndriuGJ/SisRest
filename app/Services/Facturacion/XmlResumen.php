@@ -17,7 +17,8 @@ class XmlResumen
 
     private const SAC = 'urn:sunat:names:specification:ubl:peru:schema:xsd:SunatAggregateComponents-1';
 
-    public function generar(Summary $resumen, Comprobante $c): string
+    /** @param Comprobante|list<Comprobante> $c */
+    public function generar(Summary $resumen, Comprobante|array $c): string
     {
         $xml = (new SummaryBuilder(['autoescape' => 'html']))->build($resumen);
         ReglasFiscales::exigir($xml !== null, 'No se pudo generar el resumen.');
@@ -28,33 +29,37 @@ class XmlResumen
         $xp->registerNamespace('cac', self::CAC);
         $xp->registerNamespace('cbc', self::CBC);
         $lineas = $xp->query('/*/sac:SummaryDocumentsLine');
-        $linea = $lineas !== false ? $lineas->item(0) : null;
-        ReglasFiscales::exigir($linea instanceof DOMElement, 'El resumen no contiene la boleta.');
-        $clientes = $xp->query('cac:AccountingCustomerParty', $linea);
-        $cliente = $clientes !== false ? $clientes->item(0) : null;
-        if ($cliente instanceof DOMElement) {
-            $party = $cliente->appendChild($dom->createElementNS(self::CAC, 'cac:Party'));
-            $legal = $party->appendChild($dom->createElementNS(self::CAC, 'cac:PartyLegalEntity'));
-            $nombre = $dom->createElementNS(self::CBC, 'cbc:RegistrationName');
-            $nombre->appendChild($dom->createTextNode((string) $c->receptor['nombre']));
-            $legal->appendChild($nombre);
-        }
-        // Greenter Lite's bundled summary template predates the mandatory tax rate.
-        foreach ($xp->query('cac:TaxTotal', $linea) ?: [] as $tax) {
-            if ($tax instanceof \DOMNode) {
-                $linea->removeChild($tax);
+        $boletas = $c instanceof Comprobante ? [$c] : $c;
+        ReglasFiscales::exigir($lineas !== false && $lineas->length === count($boletas) && count($boletas) > 0, 'El resumen no contiene todas las boletas.');
+        foreach ($lineas as $indice => $linea) {
+            ReglasFiscales::exigir($linea instanceof DOMElement, 'Línea de resumen inválida.');
+            $c = $boletas[$indice];
+            $clientes = $xp->query('cac:AccountingCustomerParty', $linea);
+            $cliente = $clientes !== false ? $clientes->item(0) : null;
+            if ($cliente instanceof DOMElement) {
+                $party = $cliente->appendChild($dom->createElementNS(self::CAC, 'cac:Party'));
+                $legal = $party->appendChild($dom->createElementNS(self::CAC, 'cac:PartyLegalEntity'));
+                $nombre = $dom->createElementNS(self::CBC, 'cbc:RegistrationName');
+                $nombre->appendChild($dom->createTextNode((string) $c->receptor['nombre']));
+                $legal->appendChild($nombre);
             }
-        }
-        $this->impuesto($dom, $linea, '1000', 'IGV', $c->impuestos, XmlFiscal::dato($c, 'gravadas'), XmlFiscal::dato($c, 'tasa'));
-        if (bccomp($c->operaciones_gratuitas, '0', 2) > 0) {
-            $baseGratuitaGravada = '0.00';
-            foreach ($c->detalles as $detalle) {
-                if (in_array($detalle->tipo_afectacion_igv, ['11', '12', '13', '14', '15', '16'], true)) {
-                    $baseGratuitaGravada = bcadd($baseGratuitaGravada, $detalle->base_imponible, 2);
+            // Greenter Lite's bundled summary template predates the mandatory tax rate.
+            foreach ($xp->query('cac:TaxTotal', $linea) ?: [] as $tax) {
+                if ($tax instanceof \DOMNode) {
+                    $linea->removeChild($tax);
                 }
             }
-            // Free-transfer tax is reported separately and never increases the amount payable.
-            $this->impuesto($dom, $linea, '9996', 'GRA', XmlFiscal::dato($c, 'igv_gratuitas'), $baseGratuitaGravada, XmlFiscal::dato($c, 'tasa'));
+            $this->impuesto($dom, $linea, '1000', 'IGV', $c->impuestos, XmlFiscal::dato($c, 'gravadas'), XmlFiscal::dato($c, 'tasa'));
+            if (bccomp($c->operaciones_gratuitas, '0', 2) > 0) {
+                $baseGratuitaGravada = '0.00';
+                foreach ($c->detalles as $detalle) {
+                    if (in_array($detalle->tipo_afectacion_igv, ['11', '12', '13', '14', '15', '16'], true)) {
+                        $baseGratuitaGravada = bcadd($baseGratuitaGravada, $detalle->base_imponible, 2);
+                    }
+                }
+                // Free-transfer tax is reported separately and never increases the amount payable.
+                $this->impuesto($dom, $linea, '9996', 'GRA', XmlFiscal::dato($c, 'igv_gratuitas'), $baseGratuitaGravada, XmlFiscal::dato($c, 'tasa'));
+            }
         }
         $salida = $dom->saveXML();
         ReglasFiscales::exigir(is_string($salida), 'No se pudo serializar el resumen.');
