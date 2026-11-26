@@ -53,4 +53,23 @@ Para nuevos fallos, la pantalla de historial muestra la referencia UUID que perm
 
 Las pruebas usan XML/CDR y certificados de prueba generados, almacenamiento simulado y transporte SOAP simulado. Cubren clasificación de errores, ausencia de secretos en logs/diagnósticos, CDR inválido y ajeno, XML inseguro, fallo de almacenamiento, conservación de evidencia e idempotencia, revisión local de intentos antiguos y permisos. No usan el comprobante real F001-1 ni credenciales del restaurante.
 
-Validación ejecutada en este cambio: `optimize:clear` y `view:cache` correctos; suite completa **523 aprobadas, 8 omitidas, 3634 aserciones**; análisis PHPStan de los seis archivos PHP del módulo modificados, **0 errores**; formato Pint correcto. Se volvió a ejecutar el grupo unitario tras precisar la clasificación de advertencias PHP no reconocidas.
+Validación del cambio inicial de diagnóstico: `optimize:clear` y `view:cache` correctos; suite completa **523 aprobadas, 8 omitidas, 3634 aserciones**; análisis PHPStan de los seis archivos PHP del módulo modificados, **0 errores**; formato Pint correcto. Se volvió a ejecutar el grupo unitario tras precisar la clasificación de advertencias PHP no reconocidas.
+
+## Reprocesamiento local de un CDR capturado (F001-2)
+
+Cuando el ZIP ya está en `comprobante_envios.cdr_recibido_ruta`, con su SHA-256 guardado, ahora se puede conciliar explícitamente una **factura** cuyo resultado quedó incierto:
+
+1. Actualizar `codex/base-restaurante` y limpiar cachés (`php artisan optimize:clear`, `php artisan view:cache`). Este cambio no necesita otra migración; requiere las columnas de diagnóstico del cambio anterior.
+2. Ir a **Ventas → Comprobantes**, abrir **F001-2 de Beta**, y en su intento pulsar **Reprocesar CDR almacenado**. Se requiere usuario activo con acceso al pedido/caja y permisos `comprobantes.ver` y `comprobantes.emitir`.
+3. Confirmar la operación local. Se valida la ruta privada del comprobante, existencia, lectura limitada a 2 MiB, SHA-256, ZIP, XML, nombre esperado, RUC y referencia de factura. No se usa el transporte SUNAT, ni credenciales SOL ni certificado actual.
+4. Con código `0` y notas —incluida la observación `4093`— se registra **observado**. Con código `0` sin notas, **aceptado**. Un CDR de rechazo válido conserva las reglas de rechazo existentes. Un código no definitivo, archivo alterado o CDR ajeno no modifica el documento.
+
+El lector admite el XML esperado junto a entradas de directorios vacíos de nombre seguro (máximo 65 entradas). No extrae archivos, no permite otros archivos, rutas peligrosas ni XML con entidades/DOCTYPE. Conserva límites de tamaño y comprueba un único `ApplicationResponse` con una respuesta de documento.
+
+El servicio es `EnviarComprobante::reprocesarCdr($actor, $comprobanteId, $envioId)`. La interfaz transmite identificadores bloqueados y el servidor vuelve a validar permisos, pertenencia y datos actuales. No permite actuar durante un envío/consulta en curso.
+
+Resultado y auditoría se guardan en una misma transacción con bloqueo de comprobante e intento. Se enlaza el ZIP validado como CDR, se añade su mensaje al historial y se registra actor, comprobante, intento, hash, código y transición de estado. Se conservan el mensaje previo, fechas originales, XML, cobro, correlativo y diagnósticos originales. No se crea otro intento ni emisión. Repetir la misma operación válida no cambia fechas/mensajes ni genera otra auditoría. Un resultado fiscal definitivo distinto no se sobrescribe.
+
+El comando `facturacion:diagnosticar` anterior sigue siendo de **solo lectura**: no reprocesa ni concilia. La nueva acción de la pantalla es la que registra explícitamente el resultado validado. Esta función no corrige ni vuelve a firmar el ubigeo del XML emitido; conserva la observación recibida.
+
+Validación del reprocesamiento local: **550 pruebas en total, 542 aprobadas, 8 omitidas, 3820 aserciones**; grupo específico de facturación/diagnóstico, **82 aprobadas**. PHPStan de los tres archivos PHP modificados: **0 errores**. `optimize:clear`, `view:cache`, Pint y `git diff --check` correctos. Las pruebas incluyen recuperación con observación `4093`, aceptación sin observaciones, rechazo, alteración/ausencia/tamaño/hash/ruta del archivo, CDR ajeno, directorios inseguros, permisos, confirmación e identificadores Livewire, idempotencia, conflicto con un resultado definitivo y reversión ante fallo de auditoría.
