@@ -898,3 +898,158 @@ test('ticket transport only finalizes after a matching validated CDR with a cons
         ->and($envio->fresh()->getRawOriginal('iniciado_at'))->toBe($original['iniciado_at'])->and($envio->fresh()->getRawOriginal('finalizado_at'))->toBe($original['finalizado_at'])
         ->and($envio->fresh()->mensaje)->toContain($original['mensaje'], 'Resultado de consulta:')->and($envio->fresh()->consulta_finalizada_at)->not->toBeNull();
 })->with([['0', '0', false, 'aceptado'], ['0', '0', true, 'observado'], ['99', '2335', false, 'rechazado']]);
+
+function respuestaHttpSoapFiscal(string $codigo = '98', ?string $zip = null): string
+{
+    return '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><getStatusResponse xmlns="http://service.sunat.gob.pe"><status><statusCode>'.$codigo.'</statusCode>'.($zip === null ? '' : '<content>'.base64_encode($zip).'</content>').'</status></getStatusResponse></s:Body></s:Envelope>';
+}
+
+test('native HTTP SOAP roundtrip constructs safe getStatus headers WSSE and processes simulated responses', function (string $caso, string $esperado, ?string $fallo) {
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(ticket: 'T-LOCAL-SOAP'));
+    $service = app(EnviarComprobante::class);
+    $service->enviar($this->actor, $c->id);
+    $envio = $c->envios()->firstOrFail();
+    $original = $envio->getAttributes();
+    $config = ConfiguracionFacturacion::firstOrFail();
+    $config->update(['usuario_sol' => 'LOCALUSER', 'clave_sol' => 'LOCAL-SOAP-SECRET']);
+    $zip = zipCdrFiscal($c, $envio->xml_nombre, $caso === 'rechazado' ? '2335' : '0', ruc: $caso === 'ajeno' ? '20999999999' : '20131312955');
+    $response = match ($caso) {
+        'aceptado', 'rechazado', 'ajeno' => respuestaHttpSoapFiscal($caso === 'rechazado' ? '99' : '0', $zip),
+        'soap_fault' => '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault><faultcode>s:Server.200</faultcode><faultstring>Failed to establish a backside connection LOCAL-SOAP-SECRET</faultstring></s:Fault></s:Body></s:Envelope>',
+        'http_503', 'no_xml' => 'not XML LOCAL-SOAP-SECRET',
+        'http_503_vacio' => '',
+        default => respuestaHttpSoapFiscal(),
+    };
+    $fixture = ['ticket' => 'T-LOCAL-SOAP', 'username' => '20131312955LOCALUSER', 'password' => 'LOCAL-SOAP-SECRET', 'response' => $response,
+        'http_status' => $caso === 'soap_fault' ? 500 : (str_starts_with($caso, 'http_503') ? 503 : 200),
+        'drop_headers' => $caso === 'sin_cabeceras', 'chunked' => $caso === 'chunked', 'close_delimited' => $caso === 'sin_length'];
+    $process = proc_open([PHP_BINARY, base_path('tests/Support/soap-http-fixture.php')], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, base_path());
+    if (! is_resource($process)) {
+        throw new RuntimeException('Could not start local SOAP peer');
+    }
+    try {
+        fwrite($pipes[0], json_encode($fixture, JSON_THROW_ON_ERROR));
+        fclose($pipes[0]);
+        stream_set_timeout($pipes[1], 8);
+        $ready = json_decode(fgets($pipes[1]) ?: '{}', true, 512, JSON_THROW_ON_ERROR);
+        if (! isset($ready['address']) || ! preg_match('/^127\.0\.0\.1:\d+$/D', $ready['address'])) {
+            throw new RuntimeException('Local SOAP peer did not become ready');
+        }
+        // Only this test adapter replaces the fixed Beta endpoint with a loopback HTTP peer.
+        $transport = new class('http://'.$ready['address'].'/billService') extends TransporteSunat
+        {
+            private ?SoapClient $nativeClient = null;
+
+            public function __construct(private string $localEndpoint) {}
+
+            public function endpoint(#[SensitiveParameter] ConfiguracionFacturacion $config, bool $consultaCdr = false): string
+            {
+                expect(parent::endpoint($config, $consultaCdr))->toBe('https://e-beta.sunat.gob.pe/ol-ti-itcpfegem-beta/billService');
+
+                return $this->localEndpoint;
+            }
+
+            public function cliente(#[SensitiveParameter] ConfiguracionFacturacion $config, string $ruc, bool $consultaCdr = false): SoapClient
+            {
+                return $this->nativeClient = parent::cliente($config, $ruc, $consultaCdr);
+            }
+
+            public function traceVacio(): bool
+            {
+                return $this->nativeClient !== null && $this->nativeClient->__getLastRequest() === null && $this->nativeClient->__getLastResponse() === null;
+            }
+        };
+        app()->instance(TransporteSunat::class, $transport);
+        Log::spy();
+        $service->consultar($this->actor, $c->id);
+        $metadata = json_decode(fgets($pipes[1]) ?: '{}', true, 512, JSON_THROW_ON_ERROR);
+        expect(count($metadata))->toBe(13);
+        foreach ($metadata as $name => $valid) {
+            expect($valid, 'HTTP contract: '.$name)->toBeTrue(); // Only booleans, no envelope/header values.
+        }
+        expect($transport->traceVacio())->toBeTrue()->and($c->fresh()->estado_sunat->value)->toBe($esperado)
+            ->and($envio->fresh()->ticket)->toBe('T-LOCAL-SOAP')->and($c->envios()->count())->toBe(1)
+            ->and($envio->fresh()->getRawOriginal('iniciado_at'))->toBe($original['iniciado_at'])
+            ->and($envio->fresh()->getRawOriginal('finalizado_at'))->toBe($original['finalizado_at']);
+        if ($fallo !== null) {
+            expect($envio->fresh()->diagnostico_consulta['tipo'])->toBe($fallo)->and($c->fresh()->cdr_ruta)->toBeNull();
+            Log::shouldHaveReceived('warning')->once()->with('Diagnóstico seguro SUNAT', Mockery::on(fn ($context) => ! str_contains(json_encode($context), 'LOCAL-SOAP-SECRET') && ! str_contains(json_encode($context), 'T-LOCAL-SOAP') && ! str_contains(json_encode($context), '<')));
+        }
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        expect(proc_close($process))->toBe(0);
+        $process = null;
+    } finally {
+        if (is_resource($process)) {
+            foreach ($pipes as $pipe) {
+                if (is_resource($pipe)) {
+                    fclose($pipe);
+                }
+            }
+            proc_terminate($process);
+            proc_close($process);
+        }
+    }
+})->with([
+    ['pendiente', 'enviado', null], ['aceptado', 'aceptado', null], ['rechazado', 'rechazado', null],
+    ['chunked', 'enviado', null], ['sin_length', 'enviado', null],
+    ['soap_fault', 'enviado', 'soap_sunat'], ['http_503', 'enviado', 'soap_decodificacion'], ['http_503_vacio', 'enviado', 'http_servidor'],
+    ['sin_cabeceras', 'enviado', 'http_sin_cabeceras'], ['no_xml', 'enviado', 'soap_decodificacion'], ['ajeno', 'enviado', 'cdr_referencia'],
+]);
+
+test('SOAP configuration keeps verified TLS and explicit protocol connection limits without manual headers', function () {
+    $transport = new class extends TransporteSunat
+    {
+        public function opcionesPrueba(): array
+        {
+            return $this->opcionesCliente();
+        }
+    };
+    $options = $transport->opcionesPrueba();
+    $context = stream_context_get_options($options['stream_context']);
+    expect($options['trace'])->toBeFalse()->and($options['soap_version'])->toBe(SOAP_1_1)->and($options['exceptions'])->toBeTrue()
+        ->and($options['connection_timeout'])->toBe(10)->and($options['keep_alive'])->toBeFalse()->and($options['cache_wsdl'])->toBe(WSDL_CACHE_NONE)
+        ->and($context)->toBe(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true, 'allow_self_signed' => false], 'http' => ['protocol_version' => 1.1]])
+        ->and(array_key_exists('header', $context['http']))->toBeFalse();
+    $file = WsdlProvider::getBillPath();
+    expect(is_file($file))->toBeTrue()->and(str_contains($file, '://'))->toBeFalse();
+    $client = $transport->cliente(ConfiguracionFacturacion::firstOrFail(), '20131312955');
+    expect(str_contains(implode('\n', $client->__getFunctions()), 'getStatus('))->toBeTrue();
+});
+
+test('native SOAP response timeout is applied per call and restored on success fault or client construction failure', function (string $caso) {
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $config = ConfiguracionFacturacion::firstOrFail();
+    $transport = Mockery::mock(TransporteSunat::class)->makePartial();
+    $transport->shouldReceive('cliente')->once()->andReturnUsing(function () use ($caso) {
+        expect(ini_get('default_socket_timeout'))->toBe('25');
+        if ($caso === 'constructor') {
+            throw new RuntimeException('LOCAL-SOAP-SECRET');
+        }
+        $client = Mockery::mock(SoapClient::class);
+        $client->shouldReceive('call')->once()->andReturnUsing(function () use ($caso) {
+            expect(ini_get('default_socket_timeout'))->toBe('25');
+            if ($caso === 'fault') {
+                throw new SoapFault('HTTP', 'Error Fetching http headers');
+            }
+
+            return (object) ['status' => (object) ['statusCode' => '98']];
+        });
+
+        return $client;
+    });
+    $previous = ini_get('default_socket_timeout');
+    try {
+        ini_set('default_socket_timeout', '7');
+        try {
+            $response = $transport->consultar($config, $c, 'T-SCOPE');
+            expect($response->codigo)->toBe('98')->and($caso)->toBe('success');
+        } catch (FalloSunat $error) {
+            expect($caso)->not->toBe('success')->and($error->tipo)->toBe($caso === 'fault' ? 'http_sin_cabeceras' : 'error_no_clasificado');
+        }
+        expect(ini_get('default_socket_timeout'))->toBe('7');
+    } finally {
+        ini_set('default_socket_timeout', $previous);
+    }
+})->with(['success', 'fault', 'constructor']);
