@@ -31,12 +31,23 @@ class XmlFiscal
 
     public static function nombre(Comprobante $c): string
     {
-        return (string) $c->emisor['ruc'].'-'.self::dato($c, 'tipo').'-'.self::dato($c, 'serie').'-'.$c->correlativo;
+        return (string) $c->emisor['ruc'].'-'.self::dato($c, 'tipo').'-'.self::dato($c, 'serie').'-'.self::correlativoFiscal($c);
     }
 
     public static function numero(Comprobante $c): string
     {
-        return self::dato($c, 'serie').'-'.$c->correlativo;
+        return self::dato($c, 'serie').'-'.str_pad((string) $c->correlativo, 8, '0', STR_PAD_LEFT);
+    }
+
+    public static function correlativoFiscal(Comprobante $c): string
+    {
+        // Missing snapshot means a legacy identity. Never change its signed number or filename.
+        return self::dato($c, 'correlativo_xml') ?: (string) $c->correlativo;
+    }
+
+    public static function numeroFiscal(Comprobante $c): string
+    {
+        return self::dato($c, 'serie').'-'.self::correlativoFiscal($c);
     }
 
     public function factura(Comprobante $c): Invoice
@@ -47,7 +58,7 @@ class XmlFiscal
             $cliente->setAddress((new Address)->setDireccion(ReglasFiscales::texto((string) $c->receptor['direccion']))->setCodigoPais('PE'));
         }
         $invoice = (new Invoice)->setUblVersion('2.1')->setTipoOperacion('0101')
-            ->setTipoDoc(self::dato($c, 'tipo'))->setSerie(self::dato($c, 'serie'))->setCorrelativo((string) $c->correlativo)
+            ->setTipoDoc(self::dato($c, 'tipo'))->setSerie(self::dato($c, 'serie'))->setCorrelativo(self::correlativoFiscal($c))
             ->setFechaEmision(CarbonImmutable::parse(self::dato($c, 'fecha_hora')))->setTipoMoneda($c->moneda)
             ->setFormaPago(new FormaPagoContado)->setCompany($this->empresa($c))
             ->setClient($cliente)
@@ -83,7 +94,7 @@ class XmlFiscal
 
     public function resumen(Comprobante $c, int $numero, CarbonImmutable $fecha): Summary
     {
-        $detalle = (new SummaryDetail)->setTipoDoc('03')->setSerieNro(self::numero($c))->setEstado('1')
+        $detalle = (new SummaryDetail)->setTipoDoc('03')->setSerieNro(self::numeroFiscal($c))->setEstado('1')
             ->setClienteTipo((string) $c->receptor['tipo'])->setClienteNro((string) $c->receptor['numero'])
             ->setTotal((float) $c->total)->setMtoOperGravadas((float) self::dato($c, 'gravadas'))
             ->setMtoOperExoneradas((float) self::dato($c, 'exoneradas'))->setMtoOperInafectas((float) self::dato($c, 'inafectas'))
@@ -93,7 +104,21 @@ class XmlFiscal
             ->setCompany($this->empresa($c))->setMoneda($c->moneda)->setDetails([$detalle]);
     }
 
-    public function firmar(DocumentInterface $documento, string $pem, ?Comprobante $comprobante = null): string
+    /** @param list<Comprobante> $boletas */
+    public function resumenAgrupado(array $boletas, int $numero, CarbonImmutable $fecha): Summary
+    {
+        ReglasFiscales::exigir(count($boletas) > 0, 'Selecciona boletas para el resumen.');
+        $base = $this->resumen($boletas[0], $numero, $fecha);
+        $lineas = [];
+        foreach ($boletas as $boleta) {
+            $lineas[] = $this->resumen($boleta, $numero, $fecha)->getDetails()[0];
+        }
+
+        return $base->setDetails($lineas);
+    }
+
+    /** @param Comprobante|list<Comprobante>|null $comprobante */
+    public function firmar(DocumentInterface $documento, #[\SensitiveParameter] string $pem, Comprobante|array|null $comprobante = null): string
     {
         if ($documento instanceof Summary) {
             ReglasFiscales::exigir($comprobante !== null, 'El resumen requiere el comprobante de origen.');
