@@ -113,3 +113,7 @@ Existen [reportes operativos de otro integrador](https://github.com/carlosvidal/
 Referencia del contrato del servicio: [documentación de Greenter, BillService y endpoints](https://fe-primer.greenter.dev/docs/webservices/), y las implementaciones instaladas `SoapClient`, `ExtService` y los WSDL de Greenter. Las pruebas usan mocks o respuestas locales del cliente SOAP nativo; no contactan SUNAT ni fabrican una aceptación operativa.
 
 Validación de esta ampliación: suite completa **588 pruebas, 580 aprobadas, 8 omitidas, 4164 aserciones**. Después del último refuerzo para conservar el estado ante un CDR no definitivo, se repitió el grupo de facturación/diagnóstico: **121 aprobadas, 1165 aserciones**. PHPStan de los cuatro archivos PHP modificados: **0 errores**. Pint, compilación Blade y comprobación de diferencias correctos. No se consultó un ticket real ni se envió un resumen en estas pruebas.
+
+### Revisión adicional del transporte HTTP nativo
+
+La configuración de lectura se corrigió después de comprobar que `http.timeout` del contexto no controla la espera del cliente SOAP nativo. Se usa ahora `default_socket_timeout` con alcance temporal y restauración. La verificación de cabeceras, WS-Security y respuestas con un servidor local, sus resultados y límites se documentan en [consulta-soap-beta.md](consulta-soap-beta.md). El problema real de `getStatus` Beta sigue sin confirmarse; no se alteró el ticket ni su estado operativo.
