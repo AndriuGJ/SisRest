@@ -14,7 +14,7 @@ class RepresentacionFiscal
 {
     public function qr(Comprobante $c): string
     {
-        return implode('|', [(string) $c->emisor['ruc'], XmlFiscal::dato($c, 'tipo'), XmlFiscal::dato($c, 'serie'), (string) $c->correlativo, $c->impuestos, $c->total, $c->fecha_emision->toDateString(), (string) $c->receptor['tipo'], (string) $c->receptor['numero']]);
+        return implode('|', [(string) $c->emisor['ruc'], XmlFiscal::dato($c, 'tipo'), XmlFiscal::dato($c, 'serie'), XmlFiscal::correlativoFiscal($c), $c->impuestos, $c->total, $c->fecha_emision->toDateString(), (string) $c->receptor['tipo'], (string) $c->receptor['numero']]);
     }
 
     public function qrImagen(Comprobante $c): string
@@ -31,6 +31,9 @@ class RepresentacionFiscal
             $lineas[] = ['descripcion' => $d->descripcion, 'cantidad' => Cantidad::mostrar($d->cantidad), 'nota' => '', 'extra' => ['Afectacion IGV: '.$d->tipo_afectacion_igv], 'precio' => $d->precio_unitario, 'total' => $d->total];
         }
         $avisos = ['Representacion impresa del comprobante electronico.', 'SUNAT: '.$c->estado_sunat->value, 'Hash: '.($c->hash_documento ?? '')];
+        if (XmlFiscal::numeroFiscal($c) !== XmlFiscal::numero($c)) {
+            $avisos[] = 'Identidad fiscal original: '.XmlFiscal::numeroFiscal($c);
+        }
         if (bccomp($c->operaciones_gratuitas, '0', 2) > 0) {
             $avisos[] = 'TRANSFERENCIA GRATUITA / SERVICIO PRESTADO GRATUITAMENTE';
         }
