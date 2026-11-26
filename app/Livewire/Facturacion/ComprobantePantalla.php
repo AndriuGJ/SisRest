@@ -7,6 +7,7 @@ use App\Models\Comprobante;
 use App\Models\User;
 use App\Services\Facturacion\AccesoFacturacion;
 use App\Services\Facturacion\EnviarComprobante;
+use App\Services\Facturacion\FalloSunat;
 use App\Services\Facturacion\XmlFiscal;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Auth;
@@ -26,6 +27,9 @@ class ComprobantePantalla extends Component
 
     #[Locked]
     public bool $envioConfirmado = false;
+
+    #[Locked]
+    public ?int $reprocesarEnvioId = null;
 
     private function actor(): User
     {
@@ -75,6 +79,28 @@ class ComprobantePantalla extends Component
     {
         app(EnviarComprobante::class)->consultar($this->actor(), $this->comprobanteId);
         $this->notificar('Consulta terminada. Revisa la respuesta registrada.', 'info');
+    }
+
+    public function solicitarReprocesamiento(int $envioId): void
+    {
+        $c = $this->comprobante();
+        AccesoFacturacion::usuario($this->actor(), 'comprobantes.emitir');
+        $c->envios()->findOrFail($envioId);
+        $this->reprocesarEnvioId = $envioId;
+        $this->confirmar('Reprocesar CDR almacenado', XmlFiscal::numero($c).' · Se verificará el SHA-256 y se registrará el resultado del CDR guardado. Esta operación es local: no envía ni consulta SUNAT y conserva el diagnóstico original.', 'reprocesarCdr', 'Reprocesar localmente');
+    }
+
+    public function reprocesarCdr(): void
+    {
+        abort_if($this->reprocesarEnvioId === null, 403);
+        $envioId = $this->reprocesarEnvioId;
+        $this->reprocesarEnvioId = null;
+        try {
+            $c = app(EnviarComprobante::class)->reprocesarCdr($this->actor(), $this->comprobanteId, $envioId);
+            $this->notificar('CDR reprocesado localmente. Estado: '.$c->estado_sunat->value.'.', 'success', toast: false);
+        } catch (FalloSunat $error) {
+            $this->addError('facturacion', $error->getMessage());
+        }
     }
 
     public function render(): View
