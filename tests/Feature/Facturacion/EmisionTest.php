@@ -1,8 +1,10 @@
 <?php
 
 use App\Livewire\Facturacion\ComprobantePantalla;
+use App\Livewire\Facturacion\Comprobantes;
 use App\Livewire\Facturacion\ConfiguracionFiscal;
 use App\Livewire\Facturacion\EmisionCobro;
+use App\Livewire\Facturacion\ResumenesDiarios;
 use App\Livewire\Impresion\DocumentosImpresion;
 use App\Models\Caja;
 use App\Models\Cobro;
@@ -16,6 +18,8 @@ use App\Models\MovimientoCaja;
 use App\Models\MovimientoInventario;
 use App\Models\Pedido;
 use App\Models\Producto;
+use App\Models\ResumenDiario;
+use App\Models\ResumenDiarioDetalle;
 use App\Models\SerieComprobante;
 use App\Models\TurnoCaja;
 use App\Models\User;
@@ -27,6 +31,8 @@ use App\Services\Facturacion\ConfigurarFacturacion;
 use App\Services\Facturacion\EmitirComprobante;
 use App\Services\Facturacion\EnviarComprobante;
 use App\Services\Facturacion\FalloSunat;
+use App\Services\Facturacion\GestionResumenes;
+use App\Services\Facturacion\ImportarResumenesHistoricos;
 use App\Services\Facturacion\LeerCdr;
 use App\Services\Facturacion\RepresentacionFiscal;
 use App\Services\Facturacion\RespuestaSunat;
@@ -45,9 +51,11 @@ use Greenter\Ws\Services\WsdlProvider;
 use Greenter\XMLSecLibs\Sunat\SignedXml;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -1053,3 +1061,314 @@ test('native SOAP response timeout is applied per call and restored on success f
         ini_set('default_socket_timeout', $previous);
     }
 })->with(['success', 'fault', 'constructor']);
+
+function otraBoletaResumenFiscal(object $test): Comprobante
+{
+    $p = cuentaFiscal($test->actor, $test->turno, [$test->producto->id => 1]);
+    $total = $test->producto->precio_venta;
+    $cobro = realizarCobroFiscal($test->actor, $p, $test->turno, seleccionFiscal($p), ['p1' => pagoFiscal('efectivo', $total, $total)]);
+
+    return emitirFiscal($cobro, $test->actor);
+}
+
+function zipResumenFiscal(ResumenDiario $r, string $codigo = '0', bool $observado = false, ?string $nombre = null): string
+{
+    $c = $r->detalles()->firstOrFail()->comprobante;
+
+    return zipCdrFiscal($c, $nombre ?? $r->nombre, $codigo, ruc: (string) $r->emisor['ruc'], referencia: substr($r->nombre, 12), observado: $observado);
+}
+
+test('formats eight digits centrally while future XML filenames QR and summary references keep one fiscal identity', function () {
+    $c = emitirFiscal($this->cobro, $this->actor, '01');
+    expect($c->correlativo)->toBe(1)->and(XmlFiscal::numero($c))->toBe('F001-00000001')->and(XmlFiscal::numeroFiscal($c))->toBe('F001-00000001')
+        ->and(XmlFiscal::nombre($c))->toBe('20131312955-01-F001-00000001')
+        ->and(Storage::disk('local')->get($c->xml_ruta))->toContain('<cbc:ID>F001-00000001</cbc:ID>')
+        ->and(app(RepresentacionFiscal::class)->qr($c))->toContain('|F001|00000001|');
+    $this->get(route('comprobantes.ver', $c))->assertOk()->assertSee('F001-00000001');
+    Livewire::test(Comprobantes::class)->set('buscar', 'F001-1')->assertSee('F001-00000001')->set('buscar', 'F001-00000001')->assertSee('F001-00000001');
+    $this->artisan('facturacion:diagnosticar', ['numero' => 'F001-00000001', '--entorno' => 'beta', '--usuario' => $this->actor->id])->assertSuccessful();
+});
+
+test('continues series counters and never changes a historical signed identity for display padding', function () {
+    SerieComprobante::where('serie', 'B001')->update(['ultimo_correlativo' => 43]);
+    $c = emitirFiscal($this->cobro, $this->actor);
+    expect($c->correlativo)->toBe(44)->and(XmlFiscal::numero($c))->toBe('B001-00000044');
+    // Build a legacy fixture using the pre-change identity; the application never mutates it on read.
+    $snapshot = $c->configuracion_tributaria;
+    unset($snapshot['correlativo_xml']);
+    $c->configuracion_tributaria = $snapshot;
+    $xml = app(XmlFiscal::class)->firmar(app(XmlFiscal::class)->factura($c), app(CertificadoFiscal::class)->cargar(ConfiguracionFacturacion::firstOrFail()));
+    $ruta = 'comprobantes/beta/'.$c->clave_idempotencia.'/'.XmlFiscal::nombre($c).'.xml';
+    Storage::disk('local')->put($ruta, $xml);
+    $snapshot['xml_sha256'] = hash('sha256', $xml);
+    $c->update(['xml_ruta' => $ruta, 'configuracion_tributaria' => $snapshot]);
+    $antes = $c->refresh()->getAttributes();
+    $this->get(route('comprobantes.ver', $c))->assertOk()->assertSee('B001-00000044')->assertSee('Identidad fiscal original: B001-44');
+    expect(XmlFiscal::nombre($c))->toBe('20131312955-03-B001-44')->and(app(RepresentacionFiscal::class)->qr($c))->toContain('|B001|44|')
+        ->and(Storage::disk('local')->get($ruta))->toBe($xml)->and($c->fresh()->getAttributes())->toBe($antes);
+    $r = app(GestionResumenes::class)->generar($this->actor, [$c->id], (string) Str::uuid());
+    expect(Storage::disk('local')->get($r->xml_ruta))->toContain('<cbc:ID>B001-44</cbc:ID>')->and($c->fresh()->xml_ruta)->toBe($ruta);
+});
+
+test('generates and signs multiple summary lines once with immutable hashes and idempotent membership', function () {
+    $a = emitirFiscal($this->cobro, $this->actor);
+    $b = otraBoletaResumenFiscal($this);
+    $service = app(GestionResumenes::class);
+    $clave = (string) Str::uuid();
+    $r = $service->generar($this->actor, [$b->id, $a->id], $clave);
+    $xml = Storage::disk('local')->get($r->xml_ruta);
+    $dom = new DOMDocument;
+    expect($dom->loadXML($xml))->toBeTrue();
+    $xp = new DOMXPath($dom);
+    $xp->registerNamespace('sac', 'urn:sunat:names:specification:ubl:peru:schema:xsd:SunatAggregateComponents-1');
+    $xp->registerNamespace('cbc', 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2');
+    expect($xp->evaluate('count(/*/sac:SummaryDocumentsLine)'))->toBe(2.0)
+        ->and($xml)->toContain('<cbc:ID>B001-00000001</cbc:ID>', '<cbc:ID>B001-00000002</cbc:ID>', '<cbc:Percent>18.0000</cbc:Percent>')
+        ->and($r->xml_sha256)->toBe(hash('sha256', $xml))->and($r->total)->toBe(bcadd($a->total, $b->total, 2));
+    $signed = new SignedXml;
+    expect($signed->verifyXml($xml))->toBeTrue();
+    if ($schema = getenv('SISREST_RESUMEN_XSD')) {
+        $previous = libxml_use_internal_errors(true);
+        try {
+            expect($dom->schemaValidate($schema))->toBeTrue();
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+        }
+    }
+    $same = $service->generar($this->actor, [$a->id, $b->id], $clave);
+    expect($same->id)->toBe($r->id)->and($r->detalles()->count())->toBe(2)->and($r->eventos()->count())->toBe(1)
+        ->and($a->fresh()->estado_sunat->value)->toBe('pendiente')->and(Storage::disk('local')->get($r->xml_ruta))->toBe($xml);
+    expect(fn () => $service->generar($this->actor, [$a->id], $clave))->toThrow(ValidationException::class);
+    expect(fn () => $service->generar($this->actor, [$a->id], (string) Str::uuid()))->toThrow(ValidationException::class);
+    $this->mock(TransporteSunat::class)->shouldNotReceive('enviar');
+    app(EnviarComprobante::class)->enviar($this->actor, $a->id);
+    expect($a->envios()->count())->toBe(0);
+});
+
+test('summary generation rejects ineligible mixed or tampered boletas atomically', function (string $caso) {
+    $a = emitirFiscal($this->cobro, $this->actor);
+    $b = otraBoletaResumenFiscal($this);
+    match ($caso) {
+        'fecha' => $b->update(['fecha_emision' => $b->fecha_emision->subDay()]),
+        'entorno' => $b->update(['entorno' => 'produccion']),
+        'ruc' => $b->update(['emisor' => [...$b->emisor, 'ruc' => '20999999999']]),
+        'xml' => Storage::disk('local')->put($b->xml_ruta, 'altered'),
+        'estado' => $b->update(['estado_sunat' => 'aceptado']),
+        'plazo' => $a->update(['fecha_emision' => $a->fecha_emision->subDays(8)]),
+    };
+    expect(fn () => app(GestionResumenes::class)->generar($this->actor, [$a->id, $b->id], (string) Str::uuid()))->toThrow(ValidationException::class);
+    expect(ResumenDiario::count())->toBe(0)->and(ResumenDiarioDetalle::count())->toBe(0);
+})->with(['fecha', 'entorno', 'ruc', 'xml', 'estado', 'plazo']);
+
+test('sends a grouped RC outside transactions exactly once and reconciles its verified whole-document CDR', function (string $codigo, bool $nota, string $estado, string $boletaEstado) {
+    $a = emitirFiscal($this->cobro, $this->actor);
+    $b = otraBoletaResumenFiscal($this);
+    $service = app(GestionResumenes::class);
+    $r = $service->generar($this->actor, [$a->id, $b->id], (string) Str::uuid());
+    $mock = $this->mock(TransporteSunat::class);
+    $mock->shouldReceive('enviar')->once()->withArgs(fn ($cfg, $ruc, $tipo, $nombre, $xml) => $cfg->entorno->value === 'beta' && $tipo === '03' && $nombre === $r->nombre && hash('sha256', $xml) === $r->xml_sha256 && DB::transactionLevel() === 1)->andReturn(new RespuestaSunat(ticket: 'T-GROUP'));
+    // RefreshDatabase owns the outer test transaction; the sender releases its own locks before SOAP.
+    $service->enviar($this->actor, $r->id);
+    $service->enviar($this->actor, $r->id);
+    expect($r->fresh()->ticket)->toBe('T-GROUP')->and($a->fresh()->estado_sunat->value)->toBe('enviado');
+    $mock->shouldReceive('consultarTicket')->once()->with(Mockery::type(ConfiguracionFacturacion::class), '20131312955', 'T-GROUP', 'beta')->andReturn(new RespuestaSunat(cdr: zipResumenFiscal($r, $codigo, $nota)));
+    $service->consultar($this->actor, $r->id);
+    $service->consultar($this->actor, $r->id);
+    expect($r->fresh()->estado)->toBe($estado)->and($a->fresh()->estado_sunat->value)->toBe($boletaEstado)->and($b->fresh()->estado_sunat->value)->toBe($boletaEstado)
+        ->and($r->fresh()->ticket)->toBe('T-GROUP')->and(Storage::disk('local')->exists($r->fresh()->cdr_ruta))->toBeTrue();
+    if ($estado === 'rechazado') {
+        expect($service->elegibles($this->actor)->whereIn('id', [$a->id, $b->id])->count())->toBe(2);
+        $nuevo = $service->generar($this->actor, [$a->id, $b->id], (string) Str::uuid());
+        expect($nuevo->nombre)->not->toBe($r->nombre)->and($r->detalles()->count())->toBe(2);
+    }
+})->with([['0', false, 'aceptado', 'aceptado'], ['0', true, 'observado', 'observado'], ['2335', false, 'rechazado', 'pendiente']]);
+
+test('uncertain RC sends never repeat while failed ticket consultations retain state and safe history', function (bool $ticket) {
+    $a = emitirFiscal($this->cobro, $this->actor);
+    $service = app(GestionResumenes::class);
+    $r = $service->generar($this->actor, [$a->id], (string) Str::uuid());
+    $mock = $this->mock(TransporteSunat::class);
+    if ($ticket) {
+        $mock->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(ticket: 'T-KEEP'));
+        $mock->shouldReceive('consultarTicket')->twice()->andThrow(new SoapFault('HTTP', 'Error Fetching http headers SECRET'));
+    } else {
+        $mock->shouldReceive('enviar')->once()->andThrow(new SoapFault('HTTP', 'Connection timed out SECRET'));
+        $mock->shouldNotReceive('consultarTicket');
+    }
+    $service->enviar($this->actor, $r->id);
+    $service->enviar($this->actor, $r->id);
+    if ($ticket) {
+        $service->consultar($this->actor, $r->id);
+        $service->consultar($this->actor, $r->id);
+        expect($r->fresh()->estado)->toBe('enviado')->and($r->fresh()->ticket)->toBe('T-KEEP')->and($a->fresh()->estado_sunat->value)->toBe('enviado')
+            ->and($r->eventos()->where('operacion', 'consulta_sin_respuesta')->count())->toBe(2);
+    } else {
+        expect($r->fresh()->estado)->toBe('resultado_incierto');
+        expect(fn () => $service->consultar($this->actor, $r->id))->toThrow(ValidationException::class);
+    }
+    expect(json_encode($r->fresh()->diagnostico))->not->toContain('SECRET')->and($service->elegibles($this->actor)->whereKey($a->id)->exists())->toBeFalse();
+})->with([true, false]);
+
+test('historical RC linking preserves the exact pending ticket files hashes states and original history idempotently', function () {
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $snapshot = $c->configuracion_tributaria;
+    unset($snapshot['correlativo_xml']);
+    $c->update(['emisor' => [...$c->emisor, 'ruc' => '20568780681'], 'configuracion_tributaria' => $snapshot, 'estado_sunat' => 'enviado']);
+    $nombre = '20568780681-RC-20261126-1';
+    $ruta = 'comprobantes/beta/'.$c->clave_idempotencia.'/'.$nombre.'.xml';
+    Storage::disk('local')->put($ruta, '<historical signed fixture unchanged/>');
+    $envio = $c->envios()->create(['intento' => 1, 'estado' => 'enviado', 'ticket' => 'TICKET-HISTORICO-PRUEBA', 'xml_nombre' => $nombre, 'xml_ruta' => $ruta, 'xml_sha256' => hash('sha256', '<historical signed fixture unchanged/>'), 'iniciado_at' => now(), 'finalizado_at' => now(), 'usuario_id' => $this->actor->id, 'diagnostico_consulta' => (new FalloSunat('http_sin_cabeceras'))->seguro(), 'mensaje' => 'Ticket recibido, sin CDR.']);
+    $original = $envio->refresh()->getAttributes();
+    $documento = $c->fresh()->getAttributes();
+    $importador = app(ImportarResumenesHistoricos::class);
+    $importador->importar();
+    $r = ResumenDiario::sole();
+    $projection = $r->getAttributes();
+    $importador->importar();
+    expect($envio->fresh()->getAttributes())->toBe($original)->and($c->fresh()->getAttributes())->toBe($documento)
+        ->and($r->fresh()->getAttributes())->toBe($projection)->and($r->fresh()->nombre)->toBe($nombre)
+        ->and($r->fresh()->ticket === 'TICKET-HISTORICO-PRUEBA')->toBeTrue()->and($r->fresh()->estado)->toBe('enviado')
+        ->and($r->eventos()->count())->toBe(1)->and(Storage::disk('local')->get($ruta))->toBe('<historical signed fixture unchanged/>');
+    $this->mock(TransporteSunat::class)->shouldNotReceive('enviar');
+    app(GestionResumenes::class)->enviar($this->actor, $r->id);
+    $this->get(route('resumenes.ver', $r))->assertOk()->assertSee($nombre);
+    $this->get(route('resumenes.archivo', [$r, 'xml']))->assertDownload($nombre.'.xml');
+});
+
+test('summary CDR validation cannot settle unrelated malformed or nondefinitive responses', function (string $caso) {
+    $a = emitirFiscal($this->cobro, $this->actor);
+    $b = otraBoletaResumenFiscal($this);
+    $service = app(GestionResumenes::class);
+    $r = $service->generar($this->actor, [$a->id, $b->id], (string) Str::uuid());
+    $mock = $this->mock(TransporteSunat::class);
+    $mock->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(ticket: 'T-CHECK'));
+    $service->enviar($this->actor, $r->id);
+    $bytes = match ($caso) {
+        'archivo' => 'bad ZIP SECRET', 'ajeno' => zipResumenFiscal($r, nombre: '20131312955-RC-20000101-99'), 'codigo' => zipResumenFiscal($r, '0100')
+    };
+    $mock->shouldReceive('consultarTicket')->once()->andReturn(new RespuestaSunat(cdr: $bytes));
+    $service->consultar($this->actor, $r->id);
+    expect($r->fresh()->estado)->toBe('enviado')->and($r->fresh()->ticket)->toBe('T-CHECK')->and($r->fresh()->cdr_ruta)->toBeNull()
+        ->and($a->fresh()->estado_sunat->value)->toBe('enviado')->and($b->fresh()->estado_sunat->value)->toBe('enviado')
+        ->and($r->fresh()->cdr_recibido_sha256)->toBe(hash('sha256', $bytes))->and($r->detalles()->whereNotNull('comprobante_activo_id')->count())->toBe(2);
+})->with(['archivo', 'ajeno', 'codigo']);
+
+test('summary permissions protect lists details downloads mutation and reviewed Livewire target identities', function () {
+    $a = emitirFiscal($this->cobro, $this->actor);
+    $b = otraBoletaResumenFiscal($this);
+    $component = Livewire::test(ResumenesDiarios::class)->set('formulario', true)->set('seleccion', [(string) $a->id, (string) $b->id])->call('revisarGeneracion')->assertHasNoErrors();
+    expect(fn () => Livewire::test(ResumenesDiarios::class)->set('revisadas', [$a->id]))->toThrow(CannotUpdateLockedPropertyException::class);
+    $component->set('seleccion', [(string) $a->id])->call('generar')->assertHasNoErrors();
+    $r = ResumenDiario::sole();
+    expect($r->detalles()->count())->toBe(2);
+    $this->get(route('resumenes.index'))->assertOk()->assertSee($r->nombre);
+    $this->get(route('resumenes.ver', $r))->assertOk()->assertSee('B001-00000001')->assertSee('B001-00000002');
+    $otro = User::factory()->create();
+    $otro->assignRole('cajero');
+    $this->actingAs($otro);
+    $this->get(route('resumenes.index'))->assertOk()->assertDontSee($r->nombre);
+    $this->get(route('resumenes.ver', $r))->assertForbidden();
+    $this->get(route('resumenes.archivo', [$r, 'xml']))->assertForbidden();
+    expect(fn () => app(GestionResumenes::class)->enviar($otro, $r->id))->toThrow(HttpException::class);
+    $otro->syncRoles([]);
+    expect(fn () => app(GestionResumenes::class)->generar($otro, [$a->id], (string) Str::uuid()))->toThrow(AuthorizationException::class);
+});
+
+test('summary generation and single-boleta compatibility share one sequence and block cross-route duplicate declarations', function () {
+    $a = emitirFiscal($this->cobro, $this->actor);
+    $mock = $this->mock(TransporteSunat::class);
+    $mock->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(ticket: 'T-UNIT'));
+    app(EnviarComprobante::class)->enviar($this->actor, $a->id);
+    $hist = ResumenDiario::sole();
+    $b = otraBoletaResumenFiscal($this);
+    $r = app(GestionResumenes::class)->generar($this->actor, [$b->id], (string) Str::uuid());
+    expect($r->correlativo)->toBe($hist->correlativo + 1)->and($r->nombre)->not->toBe($hist->nombre);
+    expect(fn () => app(GestionResumenes::class)->generar($this->actor, [$a->id], (string) Str::uuid()))->toThrow(ValidationException::class);
+    app(EnviarComprobante::class)->enviar($this->actor, $b->id);
+    expect($b->envios()->count())->toBe(0);
+});
+
+test('summary reservations are enforced by a database uniqueness constraint and stale sends cannot be repeated', function () {
+    $a = emitirFiscal($this->cobro, $this->actor);
+    $service = app(GestionResumenes::class);
+    $r = $service->generar($this->actor, [$a->id], (string) Str::uuid());
+    expect(fn () => DB::transaction(fn () => $r->detalles()->create(['comprobante_id' => $a->id, 'comprobante_activo_id' => $a->id, 'linea' => 2, 'numero_fiscal' => XmlFiscal::numeroFiscal($a)])))->toThrow(QueryException::class);
+    $r->update(['estado' => 'en_proceso', 'envio_iniciado_at' => now()->subMinutes(3)]);
+    $service->recuperarInterrumpido($this->actor, $r->id);
+    expect($r->fresh()->estado)->toBe('resultado_incierto');
+    $this->mock(TransporteSunat::class)->shouldNotReceive('enviar');
+    $service->enviar($this->actor, $r->id);
+});
+
+test('new summary sequences and memberships remain independent across environments without a network call', function () {
+    $a = emitirFiscal($this->cobro, $this->actor);
+    $service = app(GestionResumenes::class);
+    $beta = $service->generar($this->actor, [$a->id], (string) Str::uuid());
+    // Isolated database fixture only; no application credentials/environment or remote endpoint is changed.
+    $b = otraBoletaResumenFiscal($this);
+    $b->update(['entorno' => 'produccion', 'configuracion_tributaria' => [...$b->configuracion_tributaria, 'entorno' => 'produccion']]);
+    $testConfig = ConfiguracionFacturacion::firstOrFail();
+    $testConfig->update(['entorno' => 'produccion']);
+    $produccion = $service->generar($this->actor, [$b->id], (string) Str::uuid());
+    expect($beta->entorno)->toBe('beta')->and($produccion->entorno)->toBe('produccion')->and($beta->correlativo)->toBe(1)->and($produccion->correlativo)->toBe(1)
+        ->and($beta->xml_ruta)->not->toBe($produccion->xml_ruta);
+    $this->mock(TransporteSunat::class)->shouldNotReceive('enviar');
+    expect(fn () => $service->enviar($this->actor, $beta->id))->toThrow(ValidationException::class);
+});
+
+test('grouped sendSummary and getStatus use native SOAP serialization and simulated replies for the whole batch', function () {
+    $a = emitirFiscal($this->cobro, $this->actor);
+    $b = otraBoletaResumenFiscal($this);
+    $service = app(GestionResumenes::class);
+    $r = $service->generar($this->actor, [$a->id, $b->id], (string) Str::uuid());
+    $soap = new class(WsdlProvider::getBillPath(), ['trace' => false, 'exceptions' => true]) extends SoapClient
+    {
+        public int $calls = 0;
+
+        public string $zip;
+
+        public string $nombre;
+
+        public function __doRequest(#[SensitiveParameter] string $request, string $location, string $action, int $version, bool $oneWay = false): ?string
+        {
+            expect($location)->toBe('https://e-beta.sunat.gob.pe/ol-ti-itcpfegem-beta/billService');
+            $this->calls++;
+            $dom = new DOMDocument;
+            $dom->loadXML($request, LIBXML_NONET);
+            $xp = new DOMXPath($dom);
+            if ($action === 'urn:sendSummary') {
+                expect($xp->evaluate('string(//*[local-name()="fileName"])'))->toBe($this->nombre.'.zip');
+                $payload = base64_decode($xp->evaluate('string(//*[local-name()="contentFile"])'), true);
+                $file = tempnam(sys_get_temp_dir(), 'rc-test');
+                try {
+                    file_put_contents($file, $payload);
+                    $zip = new ZipArchive;
+                    $zip->open($file);
+                    $xml = $zip->getFromName($this->nombre.'.xml');
+                    $zip->close();
+                    $doc = new DOMDocument;
+                    $doc->loadXML($xml, LIBXML_NONET);
+                    expect((new DOMXPath($doc))->evaluate('count(//*[local-name()="SummaryDocumentsLine"])'))->toBe(2.0);
+                } finally {
+                    unlink($file);
+                }
+
+                return '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><sendSummaryResponse xmlns="http://service.sunat.gob.pe"><ticket>T-SOAP-GROUP</ticket></sendSummaryResponse></s:Body></s:Envelope>';
+            }
+            expect($action)->toBe('urn:getStatus')->and($xp->evaluate('string(//*[local-name()="ticket"])'))->toBe('T-SOAP-GROUP');
+
+            return respuestaHttpSoapFiscal('0', $this->zip);
+        }
+    };
+    $soap->zip = zipResumenFiscal($r);
+    $soap->nombre = $r->nombre;
+    $soap->setService('https://e-beta.sunat.gob.pe/ol-ti-itcpfegem-beta/billService');
+    $transport = Mockery::mock(TransporteSunat::class)->makePartial();
+    $transport->shouldReceive('cliente')->twice()->andReturn($soap);
+    app()->instance(TransporteSunat::class, $transport);
+    $service->enviar($this->actor, $r->id);
+    $service->consultar($this->actor, $r->id);
+    expect($soap->calls)->toBe(2)->and($r->fresh()->estado)->toBe('aceptado')->and($a->fresh()->estado_sunat->value)->toBe('aceptado')->and($b->fresh()->estado_sunat->value)->toBe('aceptado')
+        ->and($soap->__getLastRequest())->toBeNull();
+});
