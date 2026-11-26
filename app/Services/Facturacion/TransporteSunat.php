@@ -12,6 +12,10 @@ use ZipArchive;
 
 class TransporteSunat
 {
+    public const CONEXION_SEGUNDOS = 10;
+
+    public const RESPUESTA_SEGUNDOS = 25;
+
     public function endpoint(#[\SensitiveParameter] ConfiguracionFacturacion $config, bool $consultaCdr = false): string
     {
         if ($consultaCdr) {
@@ -27,14 +31,30 @@ class TransporteSunat
     {
         $endpoint = $this->endpoint($config, $consultaCdr);
         // Greenter's default client disables TLS verification. Always supply explicit verified options.
-        $cliente = new SoapClient($consultaCdr ? WsdlProvider::getConsultPath() : WsdlProvider::getBillPath(), [
-            'trace' => false, 'exceptions' => true, 'connection_timeout' => 10,
-            'stream_context' => stream_context_create(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true, 'allow_self_signed' => false], 'http' => ['timeout' => 25]]),
-        ]);
+        $cliente = new SoapClient($consultaCdr ? WsdlProvider::getConsultPath() : WsdlProvider::getBillPath(), $this->opcionesCliente());
         $cliente->setService($endpoint);
         $cliente->setCredentials($ruc.($config->usuario_sol ?? ''), $config->clave_sol ?? '');
 
         return $cliente;
+    }
+
+    /** @return array<string, mixed> */
+    protected function opcionesCliente(): array
+    {
+        return [
+            'trace' => false,
+            'exceptions' => true,
+            'soap_version' => SOAP_1_1,
+            'connection_timeout' => self::CONEXION_SEGUNDOS,
+            'keep_alive' => false,
+            'cache_wsdl' => WSDL_CACHE_NONE,
+            // Native SOAP generates Content-Type, SOAPAction, Host, Content-Length and Connection.
+            // Do not add duplicate manual headers or HTTP Basic credentials for WS-Security.
+            'stream_context' => stream_context_create([
+                'ssl' => ['verify_peer' => true, 'verify_peer_name' => true, 'allow_self_signed' => false],
+                'http' => ['protocol_version' => 1.1],
+            ]),
+        ];
     }
 
     public function enviar(#[\SensitiveParameter] ConfiguracionFacturacion $config, string $ruc, string $tipo, string $nombre, #[\SensitiveParameter] string $xml): RespuestaSunat
@@ -104,6 +124,11 @@ class TransporteSunat
     /** @param array<string, mixed> $argumentos */
     private function llamar(#[\SensitiveParameter] ConfiguracionFacturacion $config, string $ruc, bool $consultaCdr, string $metodo, #[\SensitiveParameter] array $argumentos): mixed
     {
+        // http.timeout is ignored by native SOAP. Scope its documented response timeout to this call.
+        $anterior = ini_get('default_socket_timeout');
+        if (ini_set('default_socket_timeout', (string) self::RESPUESTA_SEGUNDOS) === false) {
+            throw new FalloSunat('soap_configuracion_local');
+        }
         try {
             $cliente = $consultaCdr ? $this->cliente($config, $ruc, true) : $this->cliente($config, $ruc);
 
@@ -111,6 +136,8 @@ class TransporteSunat
         } catch (Throwable $error) {
             // Do not chain the exception: SOAP detail and traces can contain WS-Security credentials.
             throw FalloSunat::desde($error);
+        } finally {
+            ini_set('default_socket_timeout', $anterior);
         }
     }
 }
