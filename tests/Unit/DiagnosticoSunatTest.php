@@ -100,3 +100,25 @@ it('recognizes PHP transport warnings converted to exceptions without logging th
     expect($error->tipo)->toBe('conexion_tls')->and($error->getPrevious())->toBeNull()
         ->and(json_encode($error->seguro()))->not->toContain('SECRET');
 });
+
+it('separates native HTTP failures remote SOAP faults and local decoder failures safely', function (string $faultcode, string $message, string $tipo, ?int $http, ?string $soap) {
+    $error = FalloSunat::desde(new SoapFault($faultcode, $message, null, ['Password' => 'SOL-SECRET', 'certificate' => 'PRIVATE-CERT']));
+    expect($error->tipo)->toBe($tipo)->and($error->estadoHttp)->toBe($http)->and($error->codigoSunat)->toBe($soap)
+        ->and($error->getPrevious())->toBeNull()->and(json_encode($error->seguro()))->not->toContain('SOL-SECRET', 'PRIVATE-CERT', 'Password', '<Envelope');
+})->with([
+    ['HTTP', 'Internal Server Error', 'http_servidor', 500, null],
+    ['HTTP', 'Bad Gateway', 'http_servidor', 502, null],
+    ['HTTP', 'Service Unavailable SOL-SECRET', 'http_servidor', 503, null],
+    ['HTTP', 'Gateway Time-out', 'http_servidor', 504, null],
+    ['HTTP', 'Unauthorized', 'http_cliente', 401, null],
+    ['HTTP', 'Authorization Required', 'http_cliente', 401, null],
+    ['HTTP', 'Forbidden', 'http_cliente', 403, null],
+    ['HTTP', 'Not Found', 'http_cliente', 404, null],
+    ['HTTP', 'Too Many Requests', 'http_cliente', 429, null],
+    ['HTTP', 'Error Fetching http headers', 'http_sin_cabeceras', null, null],
+    ['HTTP', 'unrecognized SOL-SECRET 503', 'http_no_clasificado', null, null],
+    ['soap-env:Server.200', 'Failed to establish a backside connection', 'soap_sunat', null, '200'],
+    ['soap-env:Server', 'SOAP-ERROR: Parsing WSDL: Could not connect to backend SOL-SECRET', 'soap_sunat', null, null],
+    ['Client', 'looks like we got no XML document', 'soap_decodificacion', null, null],
+    ['WSDL', 'SOAP-ERROR: Parsing WSDL: private file SOL-SECRET', 'soap_wsdl_local', null, null],
+]);
