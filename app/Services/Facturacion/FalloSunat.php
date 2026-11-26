@@ -20,6 +20,7 @@ final class FalloSunat extends RuntimeException
         'http_sin_cabeceras' => ['transporte_http', 'No se recibieron cabeceras HTTP válidas. Puede ser una espera agotada o un cierre del servicio o intermediario; no hay un estado HTTP confirmado.'],
         'http_no_clasificado' => ['transporte_http', 'El cliente SOAP informó un fallo HTTP sin un estado reconocible. No se puede atribuir su origen con certeza.'],
         'soap_decodificacion' => ['respuesta_no_verificable', 'El cliente SOAP no pudo interpretar la respuesta como XML SOAP válido. No se confirma el resultado del ticket.'],
+        'soap_configuracion_local' => ['local', 'No se pudo configurar de forma temporal el tiempo de espera del cliente SOAP. No se realizó la operación.'],
         'soap_wsdl_local' => ['local', 'No se pudo cargar o interpretar la definición WSDL del cliente SOAP.'],
         'entorno_inconsistente' => ['local', 'La configuración actual no corresponde al entorno del comprobante. No se contactó al servicio.'],
         'soap_autenticacion' => ['autenticacion_soap', 'El servicio devolvió un fallo de autenticación o autorización SOAP.'],
