@@ -12,14 +12,26 @@ use ZipArchive;
 
 class TransporteSunat
 {
+    public function endpoint(#[\SensitiveParameter] ConfiguracionFacturacion $config, bool $consultaCdr = false): string
+    {
+        if ($consultaCdr) {
+            ReglasFiscales::exigir($config->entorno->value === 'produccion', 'No existe una consulta CDR de facturas Beta configurada. No se utilizará Producción como alternativa.');
+
+            return SunatEndpoints::FE_CONSULTA_CDR;
+        }
+
+        return $config->entorno->value === 'beta' ? SunatEndpoints::FE_BETA : SunatEndpoints::FE_PRODUCCION;
+    }
+
     public function cliente(#[\SensitiveParameter] ConfiguracionFacturacion $config, string $ruc, bool $consultaCdr = false): SoapClient
     {
+        $endpoint = $this->endpoint($config, $consultaCdr);
         // Greenter's default client disables TLS verification. Always supply explicit verified options.
         $cliente = new SoapClient($consultaCdr ? WsdlProvider::getConsultPath() : WsdlProvider::getBillPath(), [
             'trace' => false, 'exceptions' => true, 'connection_timeout' => 10,
             'stream_context' => stream_context_create(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true, 'allow_self_signed' => false], 'http' => ['timeout' => 25]]),
         ]);
-        $cliente->setService($consultaCdr ? SunatEndpoints::FE_CONSULTA_CDR : ($config->entorno->value === 'beta' ? SunatEndpoints::FE_BETA : SunatEndpoints::FE_PRODUCCION));
+        $cliente->setService($endpoint);
         $cliente->setCredentials($ruc.($config->usuario_sol ?? ''), $config->clave_sol ?? '');
 
         return $cliente;
@@ -57,6 +69,9 @@ class TransporteSunat
 
     public function consultar(#[\SensitiveParameter] ConfiguracionFacturacion $config, Comprobante $c, ?string $ticket): RespuestaSunat
     {
+        if ($config->entorno->value !== XmlFiscal::dato($c, 'entorno') || $c->entorno !== XmlFiscal::dato($c, 'entorno')) {
+            throw new FalloSunat('entorno_inconsistente');
+        }
         $ruc = (string) $c->emisor['ruc'];
         $esFactura = XmlFiscal::dato($c, 'tipo') === '01';
         if ($esFactura) {
@@ -74,6 +89,10 @@ class TransporteSunat
                 throw new FalloSunat('respuesta_invalida');
             }
             if (isset($estado->content) && is_string($estado->content) && $estado->content !== '') {
+                if (! $esFactura && ! in_array($codigo, ['0', '99'], true)) {
+                    throw new FalloSunat('respuesta_invalida');
+                }
+
                 return new RespuestaSunat(cdr: $estado->content, codigo: $codigo);
             }
 
