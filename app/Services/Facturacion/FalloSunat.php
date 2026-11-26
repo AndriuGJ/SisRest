@@ -15,6 +15,13 @@ final class FalloSunat extends RuntimeException
         'conexion_tls' => ['conexion', 'Falló la verificación o negociación TLS. No se deshabilitó la seguridad.'],
         'conexion_timeout' => ['conexion', 'Se agotó el tiempo de espera; la recepción del documento no está confirmada.'],
         'conexion_red' => ['conexion', 'No se pudo completar la conexión HTTP con el servicio.'],
+        'http_servidor' => ['respuesta_http', 'El transporte informó un error HTTP del servidor remoto o de un intermediario. El estado del ticket no está confirmado.'],
+        'http_cliente' => ['respuesta_http', 'El transporte informó un error HTTP de acceso o solicitud. No demuestra por sí solo un error de clave SOL.'],
+        'http_sin_cabeceras' => ['transporte_http', 'No se recibieron cabeceras HTTP válidas. Puede ser una espera agotada o un cierre del servicio o intermediario; no hay un estado HTTP confirmado.'],
+        'http_no_clasificado' => ['transporte_http', 'El cliente SOAP informó un fallo HTTP sin un estado reconocible. No se puede atribuir su origen con certeza.'],
+        'soap_decodificacion' => ['respuesta_no_verificable', 'El cliente SOAP no pudo interpretar la respuesta como XML SOAP válido. No se confirma el resultado del ticket.'],
+        'soap_wsdl_local' => ['local', 'No se pudo cargar o interpretar la definición WSDL del cliente SOAP.'],
+        'entorno_inconsistente' => ['local', 'La configuración actual no corresponde al entorno del comprobante. No se contactó al servicio.'],
         'soap_autenticacion' => ['autenticacion_soap', 'El servicio devolvió un fallo de autenticación o autorización SOAP.'],
         'soap_sunat' => ['respuesta_sunat', 'El servicio devolvió un SOAP Fault; no equivale a un CDR de aceptación o rechazo.'],
         'respuesta_invalida' => ['respuesta_sunat', 'El servicio respondió sin la estructura esperada de CDR, ticket o estado.'],
@@ -25,14 +32,15 @@ final class FalloSunat extends RuntimeException
         'cdr_nombre' => ['cdr_local', 'El ZIP no contiene únicamente el XML esperado o excede el tamaño permitido.'],
         'cdr_xml' => ['cdr_local', 'El XML del CDR es inválido o contiene declaraciones no permitidas.'],
         'cdr_referencia' => ['cdr_local', 'El CDR no corresponde al emisor o documento enviado.'],
+        'cdr_no_definitivo' => ['respuesta_no_verificable', 'El CDR no expresa un resultado fiscal definitivo. Se conserva el estado anterior del resumen.'],
         'cdr_codigo' => ['cdr_local', 'El CDR contiene un código de respuesta inválido.'],
         'cdr_guardado' => ['local', 'No se pudo conservar el CDR en el almacenamiento privado.'],
         'error_no_clasificado' => ['local_no_clasificado', 'Ocurrió un error no clasificado. Revise la etapa y la referencia de diagnóstico.'],
     ];
 
-    public function __construct(public readonly string $tipo, public readonly ?string $codigoSunat = null)
+    public function __construct(public readonly string $tipo, public readonly ?string $codigoSunat = null, public readonly ?int $estadoHttp = null)
     {
-        if (! isset(self::CATALOGO[$tipo]) || ($codigoSunat !== null && ! preg_match('/^\d{1,5}$/D', $codigoSunat))) {
+        if (($estadoHttp !== null && ($estadoHttp < 400 || $estadoHttp > 599)) || ! isset(self::CATALOGO[$tipo]) || ($codigoSunat !== null && ! preg_match('/^\d{1,5}$/D', $codigoSunat))) {
             throw new \InvalidArgumentException('Diagnóstico fiscal inválido.');
         }
         parent::__construct(self::CATALOGO[$tipo][1]);
@@ -55,25 +63,53 @@ final class FalloSunat extends RuntimeException
         if ($codigo !== null) {
             return new self('soap_sunat', $codigo);
         }
-        // Pattern matching is only a hint; original text/trace is never retained.
+        // HTTP errors from the native client are not SOAP fault codes. Never scrape arbitrary numbers.
         $texto = strtolower($error->getMessage());
+        if (strcasecmp($fault, 'WSDL') === 0 || ($error instanceof ErrorException && str_starts_with($texto, 'soap-error: parsing wsdl:'))) {
+            return new self('soap_wsdl_local');
+        }
+        if (preg_match('/^(?:[\w-]+:)?Client$/D', $fault) && (str_starts_with($texto, 'looks like we got no xml document') || str_starts_with($texto, 'soap-error: encoding:'))) {
+            return new self('soap_decodificacion');
+        }
+        // A real remote SOAP Server/Client fault must not be relabelled by words in faultstring.
+        if (preg_match('/^(?:[\w-]+:)?(?:Client|Server|Sender|Receiver)$/D', $fault)) {
+            return new self('soap_sunat');
+        }
+        if (strcasecmp($fault, 'HTTP') === 0) {
+            foreach ([
+                400 => 'bad request', 401 => ['unauthorized', 'authorization required'], 403 => 'forbidden', 404 => 'not found',
+                405 => 'method not allowed', 408 => 'request timeout', 413 => 'payload too large',
+                415 => 'unsupported media type', 429 => 'too many requests',
+                500 => 'internal server error', 501 => 'not implemented', 502 => 'bad gateway',
+                503 => 'service unavailable', 504 => ['gateway timeout', 'gateway time-out'],
+            ] as $estado => $razon) {
+                foreach ((array) $razon as $frase) {
+                    if ($texto === $frase || str_starts_with($texto, $frase.' ')) {
+                        return new self($estado >= 500 ? 'http_servidor' : 'http_cliente', estadoHttp: $estado);
+                    }
+                }
+            }
+        }
+        // Network patterns are hints only: never retain the original text, SOAP detail or trace.
+
         foreach ([
             'conexion_dns' => '/getaddrinfo|php_network_getaddresses|name or service not known|could not resolve|temporary failure in name resolution/',
             'conexion_tls' => '/certificate verify failed|ssl operation failed|tls handshake|failed to enable crypto|ssl handshake/',
             'conexion_timeout' => '/timed out|timeout|time out/',
-            'conexion_red' => '/could not connect|connection refused|connection reset|error fetching http headers|failed to connect|network is unreachable/',
+            'http_sin_cabeceras' => '/error fetching http headers/',
+            'conexion_red' => '/could not connect|connection refused|connection reset|failed to connect|network is unreachable/',
         ] as $tipo => $patron) {
             if (preg_match($patron, $texto)) {
                 return new self($tipo);
             }
         }
 
-        return new self($error instanceof SoapFault ? 'soap_sunat' : 'error_no_clasificado');
+        return new self(strcasecmp($fault, 'HTTP') === 0 ? 'http_no_clasificado' : ($error instanceof SoapFault ? 'soap_sunat' : 'error_no_clasificado'));
     }
 
-    /** @return array{categoria:string,tipo:string,codigo_sunat:?string,mensaje:string} */
+    /** @return array{categoria:string,tipo:string,codigo_sunat:?string,estado_http:?int,mensaje:string} */
     public function seguro(): array
     {
-        return ['categoria' => self::CATALOGO[$this->tipo][0], 'tipo' => $this->tipo, 'codigo_sunat' => $this->codigoSunat, 'mensaje' => $this->getMessage()];
+        return ['categoria' => self::CATALOGO[$this->tipo][0], 'tipo' => $this->tipo, 'codigo_sunat' => $this->codigoSunat, 'estado_http' => $this->estadoHttp, 'mensaje' => $this->getMessage()];
     }
 }
