@@ -63,7 +63,7 @@ class EnviarComprobante
                 $etapa = 'registro_respuesta';
                 $this->registrar($actor, $salida->id, $respuesta, $etapa);
             } catch (Throwable $error) {
-                $this->incierto($salida->id, false, $error, $etapa);
+                $this->incierto($actor, $salida->id, false, $error, $etapa);
             }
         }
 
@@ -83,11 +83,12 @@ class EnviarComprobante
             }
             $envio = $c->envios()->lockForUpdate()->orderByDesc('id')->firstOrFail();
             $ocupado = $envio->estado === EnvioEstado::EN_PROCESO || $envio->consultando;
-            if ($ocupado && $envio->iniciado_at?->gt(now()->subMinutes(2))) {
+            $inicio = $envio->estado === EnvioEstado::EN_PROCESO ? $envio->iniciado_at : ($envio->consulta_iniciada_at ?? $envio->iniciado_at);
+            if ($ocupado && $inicio?->gt(now()->subMinutes(2))) {
                 return null;
             }
             ReglasFiscales::exigir(XmlFiscal::dato($c, 'tipo') === '01' ? $config->entorno->value === 'produccion' : $envio->ticket !== null, 'Este resultado requiere conciliación manual: la consulta necesita un ticket de resumen o una factura de producción.');
-            $envio->update(['consultando' => true, 'iniciado_at' => now()]);
+            $envio->update(['consultando' => true, 'consulta_iniciada_at' => now(), 'consulta_finalizada_at' => null]);
 
             return $envio;
         }, 3);
@@ -96,9 +97,9 @@ class EnviarComprobante
             try {
                 $respuesta = app(TransporteSunat::class)->consultar(ConfiguracionFacturacion::firstOrFail(), Comprobante::findOrFail($id), $salida->ticket);
                 $etapa = 'registro_respuesta';
-                $this->registrar($actor, $salida->id, $respuesta, $etapa);
+                $this->registrar($actor, $salida->id, $respuesta, $etapa, consulta: true);
             } catch (Throwable $error) {
-                $this->incierto($salida->id, true, $error, $etapa);
+                $this->incierto($actor, $salida->id, true, $error, $etapa);
             }
         }
 
@@ -184,14 +185,18 @@ class EnviarComprobante
             $c = Comprobante::lockForUpdate()->findOrFail($id);
             AccesoFacturacion::cobro($actor, $c->cobro()->firstOrFail());
             $envio = $c->envios()->lockForUpdate()->orderByDesc('id')->first();
-            if (! $envio || ! $envio->iniciado_at?->lte(now()->subMinutes(2))) {
+            if (! $envio) {
+                return;
+            }
+            $inicio = $envio->estado === EnvioEstado::EN_PROCESO ? $envio->iniciado_at : ($envio->consulta_iniciada_at ?? $envio->iniciado_at);
+            if (! $inicio?->lte(now()->subMinutes(2))) {
                 return;
             }
             if ($envio->estado === EnvioEstado::EN_PROCESO) {
                 $envio->update(['estado' => 'resultado_incierto', 'consultando' => false, 'finalizado_at' => now(), 'mensaje' => 'El envío se interrumpió sin respuesta verificable. Consulta o concilia el resultado antes de repetirlo.']);
                 $c->update(['estado_sunat' => 'desconocido']);
             } elseif ($envio->consultando) {
-                $envio->update(['consultando' => false, 'finalizado_at' => now(), 'mensaje' => 'La consulta anterior se interrumpió. Puedes volver a consultar el resultado.']);
+                $envio->update(['consultando' => false, 'consulta_finalizada_at' => now()]);
             }
         }, 3);
     }
@@ -210,7 +215,7 @@ class EnviarComprobante
         return $xml;
     }
 
-    private function registrar(User $actor, int $envioId, #[\SensitiveParameter] RespuestaSunat $r, string &$etapa): void
+    private function registrar(User $actor, int $envioId, #[\SensitiveParameter] RespuestaSunat $r, string &$etapa, bool $consulta = false): void
     {
         $envioLeido = ComprobanteEnvio::findOrFail($envioId);
         $c = Comprobante::findOrFail($envioLeido->comprobante_id);
@@ -234,9 +239,12 @@ class EnviarComprobante
             ComprobanteEnvio::whereKey($envioId)->whereNull('cdr_recibido_ruta')->update(['cdr_recibido_ruta' => $ruta, 'cdr_recibido_sha256' => hash('sha256', $r->cdr)]);
             $etapa = 'cdr_lectura';
             $cdr = app(LeerCdr::class)->leer($r->cdr, $envioLeido->xml_nombre ?? '', (string) $c->emisor['ruc']);
+            if ($consulta && $this->estadoCdr($cdr) === 'desconocido') {
+                throw new FalloSunat('cdr_no_definitivo');
+            }
         }
         $etapa = 'registro_respuesta';
-        DB::transaction(function () use ($actor, $envioId, $r, $cdr, $ruta): void {
+        DB::transaction(function () use ($actor, $envioId, $r, $cdr, $ruta, $consulta): void {
             $leido = ComprobanteEnvio::findOrFail($envioId);
             $c = Comprobante::lockForUpdate()->findOrFail($leido->comprobante_id);
             $envio = ComprobanteEnvio::lockForUpdate()->findOrFail($envioId);
@@ -246,39 +254,52 @@ class EnviarComprobante
             if ($cdr !== null) {
                 $estado = $this->estadoCdr($cdr);
                 $c->update(['estado_sunat' => $estado, 'cdr_ruta' => $ruta]);
-                $envio->update(['estado' => $estado === 'desconocido' ? 'resultado_incierto' : $estado, 'codigo_respuesta' => $cdr['codigo'], 'mensaje' => $cdr['mensaje'].($cdr['observaciones'] ? "\n".implode("\n", $cdr['observaciones']) : ''), 'cdr_ruta' => $ruta, 'consultando' => false, 'finalizado_at' => now()]);
+                $envio->update(['estado' => $estado === 'desconocido' ? 'resultado_incierto' : $estado, 'codigo_respuesta' => $cdr['codigo'], 'mensaje' => ($consulta && $envio->mensaje ? $envio->mensaje."\n\nResultado de consulta: " : '').$cdr['mensaje'].($cdr['observaciones'] ? "\n".implode("\n", $cdr['observaciones']) : ''), 'cdr_ruta' => $ruta, 'consultando' => false, ($consulta ? 'consulta_finalizada_at' : 'finalizado_at') => now()]);
             } elseif ($r->ticket !== null) {
                 $envio->update(['estado' => 'enviado', 'ticket' => $r->ticket, 'mensaje' => 'Resumen recibido. Consulta el ticket para obtener el CDR.', 'finalizado_at' => now()]);
                 $c->update(['estado_sunat' => 'enviado']);
             } elseif ($r->pendiente) {
-                $envio->update(['consultando' => false, 'codigo_respuesta' => $r->codigo, 'mensaje' => $r->codigo === '98' ? 'SUNAT continúa procesando el resumen.' : 'La consulta aún no devolvió un CDR. Conserva el documento y concilia el resultado.', 'finalizado_at' => now()]);
+                $envio->update(['consultando' => false, 'codigo_respuesta' => $r->codigo, 'consulta_finalizada_at' => now()]);
             }
-            activity()->causedBy($actor)->performedOn($c)->withProperties(['estado_sunat' => $c->estado_sunat->value, 'envio' => $envioId])->log('Respuesta de facturación registrada');
+            activity()->causedBy($actor)->performedOn($c)->withProperties(['estado_sunat' => $c->estado_sunat->value, 'envio' => $envioId, 'operacion' => $consulta ? 'consulta' : 'envio', 'codigo_respuesta' => $r->codigo])->log('Respuesta de facturación registrada');
         }, 3);
     }
 
-    private function incierto(int $id, bool $consulta, #[\SensitiveParameter] Throwable $error, string $etapa): void
+    private function incierto(User $actor, int $id, bool $consulta, #[\SensitiveParameter] Throwable $error, string $etapa): void
     {
-        $diagnostico = FalloSunat::desde($error)->seguro() + [
+        $fallo = $etapa === 'transporte' || $error instanceof FalloSunat ? FalloSunat::desde($error) : new FalloSunat('error_no_clasificado');
+        $diagnostico = $fallo->seguro() + [
             'referencia' => (string) Str::uuid(),
             'etapa' => $etapa,
             'operacion' => $consulta ? 'consulta' : 'envio',
             'fecha' => now()->toIso8601String(),
         ];
-        DB::transaction(function () use ($id, $consulta, $diagnostico): void {
+        DB::transaction(function () use ($actor, $id, $consulta, $diagnostico): void {
             $leido = ComprobanteEnvio::findOrFail($id);
             $c = Comprobante::lockForUpdate()->findOrFail($leido->comprobante_id);
             $envio = ComprobanteEnvio::lockForUpdate()->findOrFail($id);
             if (in_array($c->estado_sunat, [SunatEstado::ACEPTADO, SunatEstado::OBSERVADO, SunatEstado::RECHAZADO], true)) {
                 return;
             }
+            $tipo = XmlFiscal::dato($c, 'tipo');
+            $diagnostico += [
+                'metodo_soap' => $consulta ? ($tipo === '03' ? 'getStatus' : 'getStatusCdr') : ($tipo === '03' ? 'sendSummary' : 'sendBill'),
+                'servicio' => XmlFiscal::dato($c, 'entorno') === 'beta' ? 'fe_beta' : ($consulta && $tipo === '01' ? 'consulta_cdr_produccion' : 'fe_produccion'),
+            ];
             $campo = $consulta ? 'diagnostico_consulta' : 'diagnostico_envio';
             if ($consulta || $envio->diagnostico_envio === null) {
                 $envio->setAttribute($campo, $diagnostico);
             }
-            $envio->update(['consultando' => false, 'estado' => $consulta ? $envio->estado->value : 'resultado_incierto', 'mensaje' => $consulta ? 'No se pudo completar la consulta. Puedes consultar nuevamente.' : 'No se obtuvo una respuesta verificable. No repitas el envío; consulta o concilia el resultado.', 'finalizado_at' => now()]);
+            $cambios = ['consultando' => false, ($consulta ? 'consulta_finalizada_at' : 'finalizado_at') => now()];
+            if (! $consulta) {
+                $cambios += ['estado' => 'resultado_incierto', 'mensaje' => 'No se obtuvo una respuesta verificable. No repitas el envío; consulta o concilia el resultado.'];
+            }
+            $envio->update($cambios);
             if (! $consulta) {
                 $c->update(['estado_sunat' => 'desconocido']);
+            }
+            if ($consulta) {
+                activity()->causedBy($actor)->performedOn($c)->withProperties($diagnostico + ['envio_id' => $id])->log('Consulta SUNAT sin respuesta verificable');
             }
             // Explicit allowlist only. Never report($error), faultstring, detail or SOAP envelopes.
             Log::warning('Diagnóstico seguro SUNAT', $diagnostico + ['envio_id' => $id, 'comprobante_id' => $c->id, 'entorno' => XmlFiscal::dato($c, 'entorno')]);
