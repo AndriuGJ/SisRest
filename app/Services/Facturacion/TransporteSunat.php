@@ -94,15 +94,30 @@ class TransporteSunat
         }
         $ruc = (string) $c->emisor['ruc'];
         $esFactura = XmlFiscal::dato($c, 'tipo') === '01';
-        if ($esFactura) {
-            ReglasFiscales::exigir($config->entorno->value === 'produccion', 'La consulta de CDR de facturas está disponible en producción. En beta revisa el resultado con el servicio de pruebas.');
-            $respuesta = $this->llamar($config, $ruc, true, 'getStatusCdr', ['parameters' => ['rucComprobante' => $ruc, 'tipoComprobante' => '01', 'serieComprobante' => XmlFiscal::dato($c, 'serie'), 'numeroComprobante' => $c->correlativo]]);
-            $estado = is_object($respuesta) ? ($respuesta->statusCdr ?? null) : null;
-        } else {
+        if (! $esFactura) {
             ReglasFiscales::exigir($ticket !== null && $ticket !== '', 'El envío no devolvió ticket. Concilia su resultado antes de volver a informar la boleta.');
-            $respuesta = $this->llamar($config, $ruc, false, 'getStatus', ['parameters' => ['ticket' => $ticket]]);
-            $estado = is_object($respuesta) ? ($respuesta->status ?? null) : null;
+
+            return $this->consultarTicket($config, $ruc, $ticket, XmlFiscal::dato($c, 'entorno'));
         }
+        ReglasFiscales::exigir($config->entorno->value === 'produccion', 'La consulta de CDR de facturas está disponible en producción. En beta revisa el resultado con el servicio de pruebas.');
+        $respuesta = $this->llamar($config, $ruc, true, 'getStatusCdr', ['parameters' => ['rucComprobante' => $ruc, 'tipoComprobante' => '01', 'serieComprobante' => XmlFiscal::dato($c, 'serie'), 'numeroComprobante' => XmlFiscal::correlativoFiscal($c)]]);
+
+        return $this->interpretarEstado(is_object($respuesta) ? ($respuesta->statusCdr ?? null) : null, true);
+    }
+
+    public function consultarTicket(#[\SensitiveParameter] ConfiguracionFacturacion $config, string $ruc, #[\SensitiveParameter] string $ticket, string $entorno): RespuestaSunat
+    {
+        if ($config->entorno->value !== $entorno) {
+            throw new FalloSunat('entorno_inconsistente');
+        }
+        ReglasFiscales::exigir($ticket !== '', 'No hay un ticket para consultar.');
+        $respuesta = $this->llamar($config, $ruc, false, 'getStatus', ['parameters' => ['ticket' => $ticket]]);
+
+        return $this->interpretarEstado(is_object($respuesta) ? ($respuesta->status ?? null) : null, false);
+    }
+
+    private function interpretarEstado(mixed $estado, bool $esFactura): RespuestaSunat
+    {
         if (is_object($estado)) {
             $codigo = isset($estado->statusCode) && (is_string($estado->statusCode) || is_int($estado->statusCode)) ? (string) $estado->statusCode : '';
             if (! preg_match('/^\d{1,5}$/D', $codigo)) {
