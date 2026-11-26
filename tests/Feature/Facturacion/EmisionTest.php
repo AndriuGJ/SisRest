@@ -41,6 +41,7 @@ use Carbon\CarbonImmutable;
 use Database\Seeders\EjemploInventarioSeeder;
 use Database\Seeders\RolesPermisosSeeder;
 use Greenter\Ws\Services\SoapClient;
+use Greenter\Ws\Services\WsdlProvider;
 use Greenter\XMLSecLibs\Sunat\SignedXml;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -537,7 +538,7 @@ test('logs only allowlisted metadata even when SOAP fault includes credentials X
     app(EnviarComprobante::class)->enviar($this->actor, $c->id);
     $envio = $c->envios()->firstOrFail();
     expect($envio->diagnostico_envio['codigo_sunat'])->toBe('0102')->and(json_encode($envio->toArray()))->not->toContain('SOL-SECRET', 'PRIVATE-CERTIFICATE', '/private/key.pem', '<Password>');
-    Log::shouldHaveReceived('warning')->once()->with('Diagnóstico seguro SUNAT', Mockery::on(fn ($context) => ! array_diff(array_keys($context), ['categoria', 'tipo', 'codigo_sunat', 'mensaje', 'referencia', 'etapa', 'operacion', 'fecha', 'envio_id', 'comprobante_id', 'entorno']) && ! str_contains(json_encode($context), 'SECRET') && $context['codigo_sunat'] === '0102'));
+    Log::shouldHaveReceived('warning')->once()->with('Diagnóstico seguro SUNAT', Mockery::on(fn ($context) => ! array_diff(array_keys($context), ['categoria', 'tipo', 'codigo_sunat', 'estado_http', 'mensaje', 'referencia', 'etapa', 'operacion', 'fecha', 'metodo_soap', 'servicio', 'envio_id', 'comprobante_id', 'entorno']) && ! str_contains(json_encode($context), 'SECRET') && $context['codigo_sunat'] === '0102'));
 });
 
 test('distinguishes private CDR storage failure from SUNAT rejection', function () {
@@ -711,3 +712,189 @@ test('local recovery rolls back the fiscal result if its audit cannot be written
     expect($c->fresh()->estado_sunat->value)->toBe('desconocido')->and($c->fresh()->cdr_ruta)->toBeNull()->and($envio->fresh()->getAttributes())->toBe($antes)
         ->and(Activity::where('description', 'CDR almacenado reprocesado localmente')->count())->toBe(0);
 });
+
+test('routes summary ticket queries exclusively to Beta billService with getStatus parameters', function () {
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $config = ConfiguracionFacturacion::firstOrFail();
+    $transport = Mockery::mock(TransporteSunat::class)->makePartial();
+    expect($transport->endpoint($config))->toBe('https://e-beta.sunat.gob.pe/ol-ti-itcpfegem-beta/billService');
+    $soap = Mockery::mock(SoapClient::class);
+    $soap->shouldReceive('call')->once()->with('getStatus', ['parameters' => ['ticket' => 'T-BETA-QUERY']])->andReturn((object) ['status' => (object) ['statusCode' => '98']]);
+    $transport->shouldReceive('cliente')->once()->with($config, '20131312955')->andReturn($soap);
+    $r = $transport->consultar($config, $c, 'T-BETA-QUERY');
+    expect($r->pendiente)->toBeTrue()->and($r->codigo)->toBe('98')->and($r->cdr)->toBeNull();
+    expect(fn () => $transport->endpoint($config, true))->toThrow(ValidationException::class);
+});
+
+test('blocks a configuration environment mismatch before resolving any SOAP client', function () {
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $snapshot = $c->configuracion_tributaria;
+    $snapshot['entorno'] = 'not-beta';
+    $c->configuracion_tributaria = $snapshot;
+    $transport = Mockery::mock(TransporteSunat::class)->makePartial();
+    $transport->shouldNotReceive('cliente');
+    expect(fn () => $transport->consultar(ConfiguracionFacturacion::firstOrFail(), $c, 'T-BETA'))->toThrow(FalloSunat::class, 'entorno');
+});
+
+test('failed ticket queries retain the pending summary ticket original send record and append safe audit history', function (string $faultcode, string $message, string $tipo, ?int $http) {
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $transport = $this->mock(TransporteSunat::class);
+    $transport->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(ticket: 'T-PRESERVED-SECRET'));
+    $service = app(EnviarComprobante::class);
+    $service->enviar($this->actor, $c->id);
+    $envio = $c->envios()->firstOrFail();
+    $envio->update(['diagnostico_envio' => (new FalloSunat('error_no_clasificado'))->seguro() + ['referencia' => 'ORIGINAL', 'etapa' => 'registro_respuesta', 'operacion' => 'envio', 'fecha' => now()->toIso8601String()]]);
+    $original = $envio->refresh()->getAttributes();
+    Log::spy();
+    $transport->shouldReceive('consultar')->twice()->andThrow(new SoapFault($faultcode, $message, null, ['Password' => 'SOL-SECRET', 'cert' => 'PRIVATE-CERT']));
+    $service->consultar($this->actor, $c->id);
+    $primera = $envio->fresh()->diagnostico_consulta['referencia'];
+    $service->consultar($this->actor, $c->id);
+    $actual = $envio->fresh();
+    expect($actual->diagnostico_consulta['tipo'])->toBe($tipo)->and($actual->diagnostico_consulta['estado_http'])->toBe($http)
+        ->and($actual->diagnostico_consulta['metodo_soap'])->toBe('getStatus')->and($actual->diagnostico_consulta['servicio'])->toBe('fe_beta')
+        ->and($actual->diagnostico_consulta['referencia'])->not->toBe($primera)->and($actual->consultando)->toBeFalse()
+        ->and($actual->consulta_iniciada_at)->not->toBeNull()->and($actual->consulta_finalizada_at)->not->toBeNull()
+        ->and(Arr::except($actual->getAttributes(), ['consultando', 'consulta_iniciada_at', 'consulta_finalizada_at', 'diagnostico_consulta', 'updated_at']))->toBe(Arr::except($original, ['consultando', 'consulta_iniciada_at', 'consulta_finalizada_at', 'diagnostico_consulta', 'updated_at']))
+        ->and($c->fresh()->estado_sunat->value)->toBe('enviado')->and($c->fresh()->cdr_ruta)->toBeNull()->and($c->envios()->count())->toBe(1);
+    $audits = Activity::where('description', 'Consulta SUNAT sin respuesta verificable')->get();
+    expect($audits)->toHaveCount(2)->and($audits->first()->properties->get('referencia'))->toBe($primera)
+        ->and(json_encode($audits->pluck('properties')->all()))->not->toContain('SOL-SECRET', 'PRIVATE-CERT', 'T-PRESERVED-SECRET', 'Password');
+    Log::shouldHaveReceived('warning')->twice()->with('Diagnóstico seguro SUNAT', Mockery::on(fn ($context) => ! str_contains(json_encode($context), 'SECRET') && ! str_contains(json_encode($context), 'PRIVATE-CERT')));
+    $service->enviar($this->actor, $c->id); // One send only, even after repeated consultation failures.
+    $this->get(route('comprobantes.ver', $c))->assertOk()->assertSee('pendiente de CDR verificable')->assertSee('getStatus');
+})->with([
+    ['HTTP', 'Internal Server Error', 'http_servidor', 500],
+    ['HTTP', 'Service Unavailable SOL-SECRET', 'http_servidor', 503],
+    ['HTTP', 'Error Fetching http headers', 'http_sin_cabeceras', null],
+    ['soap-env:Server.200', 'Failed to establish a backside connection SOL-SECRET', 'soap_sunat', null],
+    ['soap-env:Client.0102', 'SOL-SECRET', 'soap_autenticacion', null],
+    ['Client', 'looks like we got no XML document', 'soap_decodificacion', null],
+]);
+
+test('a status code without a validated CDR never accepts a summary or clears its ticket', function (string $codigo) {
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(ticket: 'T-PENDING'));
+    $service = app(EnviarComprobante::class);
+    $service->enviar($this->actor, $c->id);
+    $envio = $c->envios()->firstOrFail();
+    $soap = Mockery::mock(SoapClient::class);
+    $soap->shouldReceive('call')->once()->with('getStatus', ['parameters' => ['ticket' => 'T-PENDING']])->andReturn((object) ['status' => (object) ['statusCode' => $codigo]]);
+    $transport = Mockery::mock(TransporteSunat::class)->makePartial();
+    $transport->shouldReceive('cliente')->once()->andReturn($soap);
+    app()->instance(TransporteSunat::class, $transport);
+    $service->consultar($this->actor, $c->id);
+    expect($c->fresh()->estado_sunat->value)->toBe('enviado')->and($envio->fresh()->estado->value)->toBe('enviado')
+        ->and($envio->fresh()->ticket)->toBe('T-PENDING')->and($envio->fresh()->codigo_respuesta)->toBe($codigo)->and($c->fresh()->cdr_ruta)->toBeNull();
+})->with(['98', '0', '99', '0127']);
+
+test('malformed contradictory or invalid CDR query responses preserve the ticket without acceptance', function (string $caso) {
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(ticket: 'T-INVALID'));
+    $service = app(EnviarComprobante::class);
+    $service->enviar($this->actor, $c->id);
+    $response = match ($caso) {
+        'estructura' => (object) ['unexpected' => 'SECRET'],
+        'codigo' => (object) ['status' => (object) ['statusCode' => 'SECRET']],
+        'contradictorio' => (object) ['status' => (object) ['statusCode' => '98', 'content' => 'SECRET']],
+        'cdr' => (object) ['status' => (object) ['statusCode' => '0', 'content' => 'SECRET not ZIP']],
+        'cdr_no_definitivo' => (object) ['status' => (object) ['statusCode' => '0', 'content' => zipCdrFiscal($c, $c->envios()->firstOrFail()->xml_nombre, '0100')]],
+    };
+    $soap = Mockery::mock(SoapClient::class);
+    $soap->shouldReceive('call')->once()->andReturn($response);
+    $transport = Mockery::mock(TransporteSunat::class)->makePartial();
+    $transport->shouldReceive('cliente')->once()->andReturn($soap);
+    app()->instance(TransporteSunat::class, $transport);
+    $service->consultar($this->actor, $c->id);
+    $envio = $c->envios()->firstOrFail();
+    expect($c->fresh()->estado_sunat->value)->toBe('enviado')->and($envio->ticket)->toBe('T-INVALID')->and($envio->estado->value)->toBe('enviado')
+        ->and($envio->diagnostico_consulta['tipo'])->toBe(match ($caso) {
+            'cdr' => 'cdr_zip', 'cdr_no_definitivo' => 'cdr_no_definitivo', default => 'respuesta_invalida'
+        })->and($envio->cdr_ruta)->toBeNull()
+        ->and(json_encode($envio->diagnostico_consulta))->not->toContain('SECRET');
+})->with(['estructura', 'codigo', 'contradictorio', 'cdr', 'cdr_no_definitivo']);
+
+test('native SOAP serializes getStatus to the Beta endpoint without enabling trace or retaining envelopes', function (string $caso) {
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $config = ConfiguracionFacturacion::firstOrFail();
+    $payload = match ($caso) {
+        'pendiente' => '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><getStatusResponse xmlns="http://service.sunat.gob.pe"><status><statusCode>98</statusCode></status></getStatusResponse></soap:Body></soap:Envelope>',
+        'fault' => '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><soap:Fault><faultcode>soap:Server.200</faultcode><faultstring>Failed to establish a backside connection</faultstring></soap:Fault></soap:Body></soap:Envelope>',
+        'no_xml' => 'not XML SOL-SECRET',
+    };
+    $soap = new class(WsdlProvider::getBillPath(), ['trace' => false, 'exceptions' => true]) extends SoapClient
+    {
+        public string $fixture;
+
+        public ?string $destino = null;
+
+        public ?string $accion = null;
+
+        public function __doRequest(#[SensitiveParameter] string $request, string $location, string $action, int $version, bool $oneWay = false): ?string
+        {
+            $this->destino = $location;
+            $this->accion = $action;
+            $dom = new DOMDocument;
+            expect($dom->loadXML($request))->toBeTrue();
+            $xp = new DOMXPath($dom);
+            expect($xp->evaluate('string(//*[local-name()="getStatus"]/*[local-name()="ticket"])'))->toBe('T-NATIVE');
+
+            return $this->fixture; // Deterministic local fixture; no network request.
+        }
+    };
+    $soap->fixture = $payload;
+    $transport = Mockery::mock(TransporteSunat::class)->makePartial();
+    $soap->setService($transport->endpoint($config));
+    $transport->shouldReceive('cliente')->once()->andReturn($soap);
+    if ($caso === 'pendiente') {
+        expect($transport->consultar($config, $c, 'T-NATIVE')->codigo)->toBe('98');
+    } else {
+        try {
+            $transport->consultar($config, $c, 'T-NATIVE');
+            $this->fail('Expected a safe SOAP diagnosis');
+        } catch (FalloSunat $error) {
+            expect($error->tipo)->toBe($caso === 'fault' ? 'soap_sunat' : 'soap_decodificacion')->and($error->estadoHttp)->toBeNull();
+        }
+    }
+    expect($soap->destino)->toBe('https://e-beta.sunat.gob.pe/ol-ti-itcpfegem-beta/billService')->and($soap->accion)->toBe('urn:getStatus')
+        ->and($soap->__getLastRequest())->toBeNull()->and($soap->__getLastResponse())->toBeNull();
+})->with(['pendiente', 'fault', 'no_xml']);
+
+test('ticket query locking and interrupted recovery use consultation dates without changing send timestamps', function () {
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $transport = $this->mock(TransporteSunat::class);
+    $transport->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(ticket: 'T-LOCK'));
+    $service = app(EnviarComprobante::class);
+    $service->enviar($this->actor, $c->id);
+    $envio = $c->envios()->firstOrFail();
+    $envio->update(['iniciado_at' => now()->subDay(), 'consultando' => true, 'consulta_iniciada_at' => now()]);
+    $original = $envio->refresh();
+    $transport->shouldNotReceive('consultar');
+    $service->consultar($this->actor, $c->id);
+    $service->recuperarInterrumpido($this->actor, $c->id);
+    expect($envio->fresh()->consultando)->toBeTrue();
+    $envio->update(['consulta_iniciada_at' => now()->subMinutes(3)]);
+    $service->recuperarInterrumpido($this->actor, $c->id);
+    expect($envio->fresh()->consultando)->toBeFalse()->and($envio->fresh()->iniciado_at->equalTo($original->iniciado_at))->toBeTrue()
+        ->and($envio->fresh()->finalizado_at->equalTo($original->finalizado_at))->toBeTrue()->and($envio->fresh()->mensaje)->toBe($original->mensaje)
+        ->and($envio->fresh()->ticket)->toBe('T-LOCK')->and($c->fresh()->estado_sunat->value)->toBe('enviado');
+});
+
+test('ticket transport only finalizes after a matching validated CDR with a consistent summary status', function (string $estadoConsulta, string $codigoCdr, bool $observaciones, string $esperado) {
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(ticket: 'T-FINAL'));
+    $service = app(EnviarComprobante::class);
+    $service->enviar($this->actor, $c->id);
+    $envio = $c->envios()->firstOrFail();
+    $original = $envio->getAttributes();
+    $zip = zipCdrFiscal($c, $envio->xml_nombre, $codigoCdr, observado: $observaciones);
+    $soap = Mockery::mock(SoapClient::class);
+    $soap->shouldReceive('call')->once()->with('getStatus', ['parameters' => ['ticket' => 'T-FINAL']])->andReturn((object) ['status' => (object) ['statusCode' => $estadoConsulta, 'content' => $zip]]);
+    $transport = Mockery::mock(TransporteSunat::class)->makePartial();
+    $transport->shouldReceive('cliente')->once()->andReturn($soap);
+    app()->instance(TransporteSunat::class, $transport);
+    $service->consultar($this->actor, $c->id);
+    expect($c->fresh()->estado_sunat->value)->toBe($esperado)->and($envio->fresh()->ticket)->toBe('T-FINAL')
+        ->and($envio->fresh()->getRawOriginal('iniciado_at'))->toBe($original['iniciado_at'])->and($envio->fresh()->getRawOriginal('finalizado_at'))->toBe($original['finalizado_at'])
+        ->and($envio->fresh()->mensaje)->toContain($original['mensaje'], 'Resultado de consulta:')->and($envio->fresh()->consulta_finalizada_at)->not->toBeNull();
+})->with([['0', '0', false, 'aceptado'], ['0', '0', true, 'observado'], ['99', '2335', false, 'rechazado']]);
