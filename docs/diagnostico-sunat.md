@@ -73,3 +73,43 @@ Resultado y auditoría se guardan en una misma transacción con bloqueo de compr
 El comando `facturacion:diagnosticar` anterior sigue siendo de **solo lectura**: no reprocesa ni concilia. La nueva acción de la pantalla es la que registra explícitamente el resultado validado. Esta función no corrige ni vuelve a firmar el ubigeo del XML emitido; conserva la observación recibida.
 
 Validación del reprocesamiento local: **550 pruebas en total, 542 aprobadas, 8 omitidas, 3820 aserciones**; grupo específico de facturación/diagnóstico, **82 aprobadas**. PHPStan de los tres archivos PHP modificados: **0 errores**. `optimize:clear`, `view:cache`, Pint y `git diff --check` correctos. Las pruebas incluyen recuperación con observación `4093`, aceptación sin observaciones, rechazo, alteración/ausencia/tamaño/hash/ruta del archivo, CDR ajeno, directorios inseguros, permisos, confirmación e identificadores Livewire, idempotencia, conflicto con un resultado definitivo y reversión ante fallo de auditoría.
+
+## Consulta de tickets de boletas en SUNAT Beta
+
+`getStatus` de resúmenes usa **BillService**, con `parameters.ticket`, en `https://e-beta.sunat.gob.pe/ol-ti-itcpfegem-beta/billService`. No usa el `getStatus` de BillConsultService ni `getStatusCdr` de facturas. El WSDL local de Greenter define `SOAPAction: urn:getStatus`; la ubicación se fija explícitamente al endpoint del entorno. Se añadió una comprobación previa que bloquea la consulta si el entorno actual difiere del comprobante; nunca deriva un ticket Beta a Producción.
+
+La clasificación anterior agrupaba errores de transporte diferentes en `conexion_red`. Ahora se distinguen:
+
+| Tipo | Evidencia y alcance |
+| --- | --- |
+| `http_servidor` / `http_cliente` | El cliente nativo informa un fallo `HTTP` con un motivo estándar reconocido. `estado_http` se deduce de ese motivo (p. ej. Service Unavailable → 503); no es una captura de cabeceras ni prueba de qué servidor/intermediario lo generó. Un 401 HTTP no demuestra por sí solo una clave SOL incorrecta. |
+| `http_sin_cabeceras` | Error Fetching http headers: no se recibieron cabeceras válidas. Sin estado HTTP confirmado; podría ser espera agotada, cierre remoto o intermediario. No se inventa un 500/503. |
+| `soap_sunat` / `soap_autenticacion` | SOAP Fault con su código numérico permitido. `Server.200` es un **código SOAP 200**, nunca HTTP 200 ni CDR aceptado. No se reclasifica como conexión por palabras de su mensaje. |
+| `soap_decodificacion` | El cliente no pudo interpretar la respuesta como XML SOAP. No confirma el resultado fiscal. |
+| `soap_wsdl_local`, `entorno_inconsistente`, `error_no_clasificado` | Problema local de definición/configuración u otro error sin evidencia suficiente para atribuirlo al remoto. |
+| `conexion_dns`, `conexion_tls`, `conexion_timeout`, `conexion_red` | Se conservan los indicios de DNS, TLS, tiempo de espera y conexión, sin copiar el texto original. |
+
+Solo se guardan valores de un catálogo cerrado, código permitido, método SOAP y servicio previsto (`getStatus` / `fe_beta`), etapa y referencia. No se guardan sobres, XML, `faultstring`, `detail`, contraseñas, certificados, claves ni tickets en los logs o auditorías de diagnóstico. Se conserva `trace=false`, verificación TLS y los tiempos de espera existentes. El ticket permanece en su registro privado original.
+
+Ante una consulta fallida, la boleta/resumen conserva su estado **enviado, pendiente de CDR verificable**, el ticket, mensaje y diagnóstico originales. Las fechas de consulta se separan del envío mediante `consulta_iniciada_at` y `consulta_finalizada_at`; no se reconstruyen fechas antiguas que versiones previas ya hubieran reemplazado. Cada nuevo fallo de consulta queda en la auditoría con actor y referencia, y `diagnostico_consulta` sigue mostrando el último fallo. No hay consultas ni reenvíos automáticos. Un `98`, un `0` o un `99` sin CDR no equivale a aceptación. Un ZIP inválido o un estado `98` acompañado contradictoriamente de un CDR tampoco acepta el documento.
+
+Para desplegar esta ampliación:
+
+```bash
+git pull origin codex/base-restaurante
+php artisan migrate
+php artisan optimize:clear
+php artisan view:cache
+```
+
+La migración solo añade dos fechas anulables al intento. Después se puede pulsar **Consultar resultado**, que únicamente consulta el ticket guardado. No pulsar acciones de emisión/envío, cambiar el entorno, borrar intentos ni alterar estados para resolver una indisponibilidad. El comando `facturacion:diagnosticar` permite inspeccionar el diagnóstico local sin consultar SUNAT.
+
+### Qué puede concluirse sobre SUNAT Beta
+
+El endpoint y la estructura de la llamada de SisRest eran correctos. La deficiencia encontrada en SisRest era la clasificación demasiado amplia de los errores y la reutilización de las fechas de envío para consultas. Descargar el WSDL mediante GET (curl/PHP) no prueba que funcione el POST SOAP `getStatus` ni el servicio interno que procesa tickets.
+
+Existen [reportes operativos de otro integrador](https://github.com/carlosvidal/sunat-service/blob/main/README.md#11-notas-operativas) que describen `Server.200 / Failed to establish a backside connection` en `getStatus` Beta. Son un indicio externo, **no una confirmación oficial ni una comprobación de este ticket o de disponibilidad actual**. No se realizó una consulta autenticada real en este trabajo. Los antiguos `conexion_red` no permiten reconstruir cuál fue el error remoto; las nuevas consultas distinguen la evidencia disponible sin adivinar la causa.
+
+Referencia del contrato del servicio: [documentación de Greenter, BillService y endpoints](https://fe-primer.greenter.dev/docs/webservices/), y las implementaciones instaladas `SoapClient`, `ExtService` y los WSDL de Greenter. Las pruebas usan mocks o respuestas locales del cliente SOAP nativo; no contactan SUNAT ni fabrican una aceptación operativa.
+
+Validación de esta ampliación: suite completa **588 pruebas, 580 aprobadas, 8 omitidas, 4164 aserciones**. Después del último refuerzo para conservar el estado ante un CDR no definitivo, se repitió el grupo de facturación/diagnóstico: **121 aprobadas, 1165 aserciones**. PHPStan de los cuatro archivos PHP modificados: **0 errores**. Pint, compilación Blade y comprobación de diferencias correctos. No se consultó un ticket real ni se envió un resumen en estas pruebas.
