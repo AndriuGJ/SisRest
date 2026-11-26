@@ -17,6 +17,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $xml_ruta
  * @property string|null $xml_sha256
  * @property int|null $usuario_id
+ * @property CarbonImmutable|null $consulta_iniciada_at
+ * @property CarbonImmutable|null $consulta_finalizada_at
  * @property bool $consultando
  * @property int $id
  * @property CarbonInterface|null $created_at
@@ -45,6 +47,8 @@ class ComprobanteEnvio extends Model
         'xml_sha256',
         'usuario_id',
         'consultando',
+        'consulta_iniciada_at',
+        'consulta_finalizada_at',
 
         'comprobante_id',
         'intento',
@@ -64,6 +68,8 @@ class ComprobanteEnvio extends Model
             'diagnostico_envio' => 'array',
             'diagnostico_consulta' => 'array',
             'consultando' => 'boolean',
+            'consulta_iniciada_at' => 'immutable_datetime',
+            'consulta_finalizada_at' => 'immutable_datetime',
 
             'estado' => EstadoComprobanteEnvio::class,
             'iniciado_at' => 'immutable_datetime',
