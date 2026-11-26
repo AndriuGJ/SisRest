@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Configuracion\LogoEmpresaController;
 use App\Http\Controllers\Facturacion\ArchivoComprobanteController;
+use App\Http\Controllers\Facturacion\ArchivoResumenController;
 use App\Http\Controllers\Inventario\ImagenProductoController;
 use App\Livewire\Administracion\Roles;
 use App\Livewire\Administracion\RolFormulario;
@@ -31,6 +32,8 @@ use App\Livewire\Facturacion\ComprobantePantalla;
 use App\Livewire\Facturacion\Comprobantes;
 use App\Livewire\Facturacion\ConfiguracionFiscal;
 use App\Livewire\Facturacion\EmisionCobro;
+use App\Livewire\Facturacion\ResumenDiarioPantalla;
+use App\Livewire\Facturacion\ResumenesDiarios;
 use App\Livewire\Impresion\DocumentosImpresion;
 use App\Livewire\Inventario\InsumoFormulario;
 use App\Livewire\Inventario\Insumos;
@@ -149,6 +152,12 @@ Route::middleware(['auth'])->group(function () {
     Route::get('configuracion/sistema/tipografia', AparienciaPantalla::class)->defaults('seccion', 'tipografia')->middleware('permission:configuracion.sistema')->name('configuracion.tipografia');
     Route::get('configuracion/sistema/colores', AparienciaPantalla::class)->defaults('seccion', 'colores')->middleware('permission:configuracion.sistema')->name('configuracion.colores');
     Route::get('configuracion/sistema/facturacion', ConfiguracionFiscal::class)->middleware('permission:configuracion.sistema')->name('configuracion.facturacion');
+    Route::middleware('permission:comprobantes.ver')->prefix('facturacion/resumenes')->name('resumenes.')->group(function () {
+        Route::get('/', ResumenesDiarios::class)->name('index');
+        Route::get('{resumen}/archivo/{archivo}', ArchivoResumenController::class)->whereIn('archivo', ['xml', 'cdr'])->name('archivo');
+        Route::get('{resumen}', ResumenDiarioPantalla::class)->name('ver');
+    });
+
     Route::middleware('permission:comprobantes.ver')->prefix('comprobantes')->name('comprobantes.')->group(function () {
         Route::get('/', Comprobantes::class)->name('index');
         Route::get('cobros/{cobro}/emitir', EmisionCobro::class)->middleware('permission:comprobantes.emitir')->name('emitir');
