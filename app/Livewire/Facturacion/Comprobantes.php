@@ -39,7 +39,15 @@ class Comprobantes extends Component
         abort_unless($actor instanceof User, 403);
         $actual = AccesoFacturacion::usuario($actor);
         $comprobantes = Comprobante::whereHas('cobro', fn ($q) => $q->whereIn('pedido_id', AccesoPos::consulta($actual)->select('id'))->whereIn('turno_caja_id', AccesoCajas::consulta($actual)->select('id')))
-            ->when($this->buscar !== '', fn ($q) => $q->where(fn ($q) => $q->where('receptor->nombre', 'like', '%'.mb_substr($this->buscar, 0, 100).'%')->orWhere('receptor->numero', 'like', '%'.mb_substr($this->buscar, 0, 100).'%')->orWhere('configuracion_tributaria->serie', 'like', '%'.mb_substr($this->buscar, 0, 100).'%')))
+            ->when($this->buscar !== '', fn ($q) => $q->where(function ($q) {
+                $busqueda = trim(mb_substr($this->buscar, 0, 100));
+                $q->where('receptor->nombre', 'like', '%'.$busqueda.'%')->orWhere('receptor->numero', 'like', '%'.$busqueda.'%')->orWhere('configuracion_tributaria->serie', 'like', '%'.$busqueda.'%');
+                if (preg_match('/^([FB][A-Z0-9]{3})-(\d{1,8})$/iD', $busqueda, $m)) {
+                    $q->orWhere(fn ($q) => $q->where('configuracion_tributaria->serie', strtoupper($m[1]))->where('correlativo', (int) $m[2]));
+                } elseif (ctype_digit($busqueda)) {
+                    $q->orWhere('correlativo', (int) $busqueda);
+                }
+            }))
             ->when($this->estado !== '', fn ($q) => $q->where('estado_sunat', $this->estado))->when($this->entorno !== '', fn ($q) => $q->where('configuracion_tributaria->entorno', $this->entorno))
             ->latest('id')->paginate(15);
 
