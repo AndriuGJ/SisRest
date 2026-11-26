@@ -7,6 +7,7 @@ use App\Livewire\Impresion\DocumentosImpresion;
 use App\Models\Caja;
 use App\Models\Cobro;
 use App\Models\Comprobante;
+use App\Models\ComprobanteEnvio;
 use App\Models\ConfiguracionFacturacion;
 use App\Models\Empresa;
 use App\Models\MedioPago;
@@ -26,6 +27,7 @@ use App\Services\Facturacion\ConfigurarFacturacion;
 use App\Services\Facturacion\EmitirComprobante;
 use App\Services\Facturacion\EnviarComprobante;
 use App\Services\Facturacion\FalloSunat;
+use App\Services\Facturacion\LeerCdr;
 use App\Services\Facturacion\RepresentacionFiscal;
 use App\Services\Facturacion\RespuestaSunat;
 use App\Services\Facturacion\TransporteSunat;
@@ -40,13 +42,20 @@ use Database\Seeders\EjemploInventarioSeeder;
 use Database\Seeders\RolesPermisosSeeder;
 use Greenter\Ws\Services\SoapClient;
 use Greenter\XMLSecLibs\Sunat\SignedXml;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Filesystem\FilesystemAdapter;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
+use Spatie\Activitylog\Models\Activity;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 function cuentaFiscal(User $actor, TurnoCaja $turno, array $productos, ?Mesa $mesa = null, ?string $envio = null): Pedido
 {
@@ -115,10 +124,10 @@ function emitirFiscal(Cobro $cobro, User $actor, string $tipo = '03', ?string $c
 
     return app(EmitirComprobante::class)->emitir($actor, $cobro->id, $clave ?? (string) Str::uuid(), fiscalCliente($tipo), array_replace($filas, $afectaciones), ConfigurarFacturacion::version(Empresa::firstOrFail(), ConfiguracionFacturacion::firstOrFail()));
 }
-function zipCdrFiscal(Comprobante $c, string $nombre, string $codigo = '0', string $ruc = '20131312955', string $referencia = '', bool $observado = false): string
+function zipCdrFiscal(Comprobante $c, string $nombre, string $codigo = '0', string $ruc = '20131312955', string $referencia = '', bool $observado = false, string $nota = 'Observación de prueba'): string
 {
     $referencia = $referencia ?: (str_contains($nombre, '-RC-') ? substr($nombre, 12) : XmlFiscal::numero($c));
-    $xml = '<?xml version="1.0"?><ApplicationResponse xmlns="urn:oasis:names:specification:ubl:schema:xsd:ApplicationResponse-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">'.($observado ? '<cbc:Note>Observación de prueba</cbc:Note>' : '').'<cac:ReceiverParty><cac:PartyIdentification><cbc:ID>'.$ruc.'</cbc:ID></cac:PartyIdentification></cac:ReceiverParty><cac:DocumentResponse><cac:Response><cbc:ReferenceID>'.$referencia.'</cbc:ReferenceID><cbc:ResponseCode>'.$codigo.'</cbc:ResponseCode><cbc:Description>Respuesta de prueba</cbc:Description></cac:Response></cac:DocumentResponse></ApplicationResponse>';
+    $xml = '<?xml version="1.0"?><ApplicationResponse xmlns="urn:oasis:names:specification:ubl:schema:xsd:ApplicationResponse-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">'.($observado ? '<cbc:Note>'.htmlspecialchars($nota, ENT_XML1).'</cbc:Note>' : '').'<cac:ReceiverParty><cac:PartyIdentification><cbc:ID>'.$ruc.'</cbc:ID></cac:PartyIdentification></cac:ReceiverParty><cac:DocumentResponse><cac:Response><cbc:ReferenceID>'.$referencia.'</cbc:ReferenceID><cbc:ResponseCode>'.$codigo.'</cbc:ResponseCode><cbc:Description>Respuesta de prueba</cbc:Description></cac:Response></cac:DocumentResponse></ApplicationResponse>';
     $file = tempnam(sys_get_temp_dir(), 'test-cdr');
     $zip = new ZipArchive;
     $zip->open($file, ZipArchive::OVERWRITE);
@@ -545,4 +554,160 @@ test('distinguishes private CDR storage failure from SUNAT rejection', function 
     $envio = $c->envios()->firstOrFail();
     expect($envio->diagnostico_envio['tipo'])->toBe('cdr_guardado')->and($envio->diagnostico_envio['etapa'])->toBe('cdr_guardado')
         ->and($c->fresh()->estado_sunat->value)->toBe('desconocido')->and($envio->cdr_ruta)->toBeNull();
+});
+
+/** Simulate the previous parser failure after SUNAT returned and the ZIP was captured. */
+function intentoRecuperableFiscal(Comprobante $c, User $actor, string $zip): ComprobanteEnvio
+{
+    $transport = Mockery::mock(TransporteSunat::class);
+    $transport->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(cdr: $zip));
+    $transport->shouldNotReceive('consultar');
+    app()->instance(TransporteSunat::class, $transport);
+    $lector = Mockery::mock(LeerCdr::class);
+    $lector->shouldReceive('leer')->once()->andThrow(new FalloSunat('cdr_nombre'));
+    app()->instance(LeerCdr::class, $lector);
+    app(EnviarComprobante::class)->enviar($actor, $c->id);
+    app()->instance(LeerCdr::class, new LeerCdr);
+
+    return $c->envios()->firstOrFail();
+}
+
+function directoriosCdrFiscal(string $bytes, string $directorio = 'sunat/'): string
+{
+    $file = tempnam(sys_get_temp_dir(), 'test-cdr-dir');
+    try {
+        file_put_contents($file, $bytes);
+        $zip = new ZipArchive;
+        $zip->open($file);
+        $zip->addEmptyDir($directorio);
+        $zip->close();
+
+        return file_get_contents($file);
+    } finally {
+        unlink($file);
+    }
+}
+
+test('recovers the stored CDR locally with atomic audit and preserves original diagnostics and history', function (string $codigo, bool $observado, string $estado) {
+    $c = emitirFiscal($this->cobro, $this->actor, '01');
+    $bytes = directoriosCdrFiscal(zipCdrFiscal($c, XmlFiscal::nombre($c), $codigo, observado: $observado, nota: '4093 - El codigo de ubigeo del domicilio fiscal del emisor no es válido'));
+    $envio = intentoRecuperableFiscal($c, $this->actor, $bytes);
+    $envio->update(['diagnostico_consulta' => ['tipo' => 'conexion_timeout']]);
+    $original = $envio->refresh()->getAttributes();
+    $documentoOriginal = $c->fresh()->getAttributes();
+    $caja = MovimientoCaja::count();
+    $stock = MovimientoInventario::count();
+    ConfiguracionFacturacion::firstOrFail()->update(['habilitada' => false, 'usuario_sol' => null, 'clave_sol' => null]);
+    $service = app(EnviarComprobante::class);
+    $resultado = $service->reprocesarCdr($this->actor, $c->id, $envio->id);
+    expect($resultado->estado_sunat->value)->toBe($estado)->and($resultado->cdr_ruta)->toBe($envio->cdr_recibido_ruta)
+        ->and($envio->fresh()->codigo_respuesta)->toBe($codigo)->and($envio->fresh()->mensaje)->toContain($original['mensaje'], 'CDR reprocesado localmente:')
+        ->and(Storage::disk('local')->get($envio->cdr_recibido_ruta))->toBe($bytes)
+        ->and(Arr::except($envio->fresh()->getAttributes(), ['estado', 'codigo_respuesta', 'cdr_ruta', 'mensaje', 'updated_at']))->toBe(Arr::except($original, ['estado', 'codigo_respuesta', 'cdr_ruta', 'mensaje', 'updated_at']))
+        ->and(Arr::except($resultado->getAttributes(), ['estado_sunat', 'cdr_ruta', 'updated_at']))->toBe(Arr::except($documentoOriginal, ['estado_sunat', 'cdr_ruta', 'updated_at']))
+        ->and($c->envios()->count())->toBe(1)->and(Comprobante::count())->toBe(1)->and(MovimientoCaja::count())->toBe($caja)->and(MovimientoInventario::count())->toBe($stock);
+    if ($observado) {
+        expect($envio->fresh()->mensaje)->toContain('4093');
+    }
+    $audit = Activity::where('description', 'CDR almacenado reprocesado localmente')->sole();
+    expect($audit->causer_id)->toBe($this->actor->id)->and($audit->subject_id)->toBe($c->id)->and($audit->properties->get('estado_sunat'))->toBe($estado)
+        ->and($audit->properties->get('cdr_sha256'))->toBe(hash('sha256', $bytes));
+    $despues = $envio->fresh()->getAttributes();
+    $service->reprocesarCdr($this->actor, $c->id, $envio->id);
+    expect($envio->fresh()->getAttributes())->toBe($despues)->and(Activity::where('description', 'CDR almacenado reprocesado localmente')->count())->toBe(1);
+})->with([['0', true, 'observado'], ['0', false, 'aceptado'], ['2335', false, 'rechazado']]);
+
+test('refuses missing altered or oversized stored CDR evidence without any state or history mutation', function (string $caso) {
+    $c = emitirFiscal($this->cobro, $this->actor, '01');
+    $envio = intentoRecuperableFiscal($c, $this->actor, zipCdrFiscal($c, XmlFiscal::nombre($c)));
+    match ($caso) {
+        'ausente' => Storage::disk('local')->delete($envio->cdr_recibido_ruta),
+        'alterado' => Storage::disk('local')->put($envio->cdr_recibido_ruta, 'altered SECRET'),
+        'grande' => Storage::disk('local')->put($envio->cdr_recibido_ruta, str_repeat('x', 2 * 1024 * 1024 + 1)),
+        'sin_hash' => $envio->update(['cdr_recibido_sha256' => null]),
+        'ruta_ajena' => $envio->update(['cdr_recibido_ruta' => 'comprobantes/beta/other/received.zip']),
+    };
+    $antes = $envio->refresh()->getAttributes();
+    expect(fn () => app(EnviarComprobante::class)->reprocesarCdr($this->actor, $c->id, $envio->id))->toThrow(ValidationException::class);
+    expect($c->fresh()->estado_sunat->value)->toBe('desconocido')->and($envio->fresh()->getAttributes())->toBe($antes)
+        ->and(Activity::where('description', 'CDR almacenado reprocesado localmente')->count())->toBe(0);
+})->with(['ausente', 'alterado', 'grande', 'sin_hash', 'ruta_ajena']);
+
+test('validates CDR content reference and fiscal outcome even when its stored hash matches', function (string $caso) {
+    $c = emitirFiscal($this->cobro, $this->actor, '01');
+    $bytes = match ($caso) {
+        'ruc' => zipCdrFiscal($c, XmlFiscal::nombre($c), ruc: '20999999999'),
+        'referencia' => zipCdrFiscal($c, XmlFiscal::nombre($c), referencia: 'F001-999'),
+        'nombre' => zipCdrFiscal($c, '20131312955-01-F001-999'),
+        'codigo' => zipCdrFiscal($c, XmlFiscal::nombre($c), '0100'),
+        'zip' => 'SECRET not a ZIP',
+        'directorio_inseguro' => directoriosCdrFiscal(zipCdrFiscal($c, XmlFiscal::nombre($c)), '../unsafe/'),
+    };
+    $envio = intentoRecuperableFiscal($c, $this->actor, $bytes);
+    $antes = $envio->getAttributes();
+    expect(fn () => app(EnviarComprobante::class)->reprocesarCdr($this->actor, $c->id, $envio->id))->toThrow($caso === 'codigo' ? ValidationException::class : FalloSunat::class);
+    expect($c->fresh()->estado_sunat->value)->toBe('desconocido')->and($envio->fresh()->getAttributes())->toBe($antes)
+        ->and(Activity::where('description', 'CDR almacenado reprocesado localmente')->count())->toBe(0);
+})->with(['ruc', 'referencia', 'nombre', 'codigo', 'zip', 'directorio_inseguro']);
+
+test('local recovery enforces permissions inactive users target identity and in-flight consultation locks', function () {
+    $c = emitirFiscal($this->cobro, $this->actor, '01');
+    $envio = intentoRecuperableFiscal($c, $this->actor, zipCdrFiscal($c, XmlFiscal::nombre($c)));
+    $user = User::factory()->create();
+    $service = app(EnviarComprobante::class);
+    expect(fn () => $service->reprocesarCdr($user, $c->id, $envio->id))->toThrow(AuthorizationException::class);
+    expect(fn () => $service->reprocesarCdr($this->actor, $c->id, $envio->id + 1))->toThrow(ModelNotFoundException::class);
+    $envio->update(['consultando' => true]);
+    expect(fn () => $service->reprocesarCdr($this->actor, $c->id, $envio->id))->toThrow(ValidationException::class);
+    $envio->update(['consultando' => false]);
+    $this->actor->update(['activo' => false]);
+    expect(fn () => $service->reprocesarCdr($this->actor, $c->id, $envio->id))->toThrow(HttpException::class);
+    expect($c->fresh()->estado_sunat->value)->toBe('desconocido')->and($envio->fresh()->cdr_ruta)->toBeNull();
+});
+
+test('Livewire local recovery uses confirmation locked identifiers and reports hash changes after review', function () {
+    $c = emitirFiscal($this->cobro, $this->actor, '01');
+    $envio = intentoRecuperableFiscal($c, $this->actor, directoriosCdrFiscal(zipCdrFiscal($c, XmlFiscal::nombre($c), observado: true)));
+    Livewire::test(ComprobantePantalla::class, ['comprobante' => $c])->call('reprocesarCdr')->assertForbidden();
+    $screen = Livewire::test(ComprobantePantalla::class, ['comprobante' => $c])->assertSee('Reprocesar CDR almacenado')
+        ->call('solicitarReprocesamiento', $envio->id)->assertSet('reprocesarEnvioId', $envio->id);
+    Storage::disk('local')->put($envio->cdr_recibido_ruta, 'tampered after confirmation');
+    $screen->call('reprocesarCdr')->assertHasErrors('facturacion')->assertSet('reprocesarEnvioId', null);
+    expect($c->fresh()->estado_sunat->value)->toBe('desconocido');
+});
+
+test('Livewire local recovery registers observations once and forbids identifier tampering', function () {
+    $c = emitirFiscal($this->cobro, $this->actor, '01');
+    $envio = intentoRecuperableFiscal($c, $this->actor, directoriosCdrFiscal(zipCdrFiscal($c, XmlFiscal::nombre($c), observado: true)));
+    expect(fn () => Livewire::test(ComprobantePantalla::class, ['comprobante' => $c])->set('reprocesarEnvioId', $envio->id))->toThrow(CannotUpdateLockedPropertyException::class);
+    Livewire::test(ComprobantePantalla::class, ['comprobante' => $c])->call('solicitarReprocesamiento', $envio->id)->call('reprocesarCdr')->assertHasNoErrors()->assertSet('reprocesarEnvioId', null)->assertDontSee('Reprocesar CDR almacenado');
+    expect($c->fresh()->estado_sunat->value)->toBe('observado')->and($envio->fresh()->diagnostico_envio['tipo'])->toBe('cdr_nombre');
+});
+
+test('local recovery cannot replace a definitive fiscal result with a different stored CDR', function () {
+    $c = emitirFiscal($this->cobro, $this->actor, '01');
+    $envio = intentoRecuperableFiscal($c, $this->actor, zipCdrFiscal($c, XmlFiscal::nombre($c)));
+    $service = app(EnviarComprobante::class);
+    $service->reprocesarCdr($this->actor, $c->id, $envio->id);
+    $otro = zipCdrFiscal($c, XmlFiscal::nombre($c), '2335');
+    Storage::disk('local')->put($envio->cdr_recibido_ruta, $otro);
+    $envio->update(['cdr_recibido_sha256' => hash('sha256', $otro)]);
+    $antes = $envio->refresh()->getAttributes();
+    expect(fn () => $service->reprocesarCdr($this->actor, $c->id, $envio->id))->toThrow(ValidationException::class);
+    expect($c->fresh()->estado_sunat->value)->toBe('aceptado')->and($envio->fresh()->getAttributes())->toBe($antes)
+        ->and(Activity::where('description', 'CDR almacenado reprocesado localmente')->count())->toBe(1);
+});
+
+test('local recovery rolls back the fiscal result if its audit cannot be written', function () {
+    $c = emitirFiscal($this->cobro, $this->actor, '01');
+    $envio = intentoRecuperableFiscal($c, $this->actor, zipCdrFiscal($c, XmlFiscal::nombre($c)));
+    $antes = $envio->getAttributes();
+    Event::listen('eloquent.creating: '.Activity::class, function ($activity) {
+        if ($activity->description === 'CDR almacenado reprocesado localmente') {
+            throw new RuntimeException('simulated audit failure');
+        }
+    });
+    expect(fn () => app(EnviarComprobante::class)->reprocesarCdr($this->actor, $c->id, $envio->id))->toThrow(RuntimeException::class, 'simulated audit failure');
+    expect($c->fresh()->estado_sunat->value)->toBe('desconocido')->and($c->fresh()->cdr_ruta)->toBeNull()->and($envio->fresh()->getAttributes())->toBe($antes)
+        ->and(Activity::where('description', 'CDR almacenado reprocesado localmente')->count())->toBe(0);
 });
