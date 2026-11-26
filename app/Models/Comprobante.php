@@ -9,6 +9,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * @property string $entorno
@@ -120,5 +121,17 @@ class Comprobante extends Model
     public function envios(): HasMany
     {
         return $this->hasMany(ComprobanteEnvio::class, 'comprobante_id');
+    }
+
+    /** @return HasOne<ResumenDiarioDetalle, $this> */
+    public function resumenActivo(): HasOne
+    {
+        return $this->hasOne(ResumenDiarioDetalle::class, 'comprobante_activo_id');
+    }
+
+    /** @return HasMany<ResumenDiarioDetalle, $this> */
+    public function resumenesDetalles(): HasMany
+    {
+        return $this->hasMany(ResumenDiarioDetalle::class);
     }
 }
