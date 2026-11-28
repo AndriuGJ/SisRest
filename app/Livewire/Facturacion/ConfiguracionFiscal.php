@@ -65,7 +65,7 @@ class ConfiguracionFiscal extends Component
         foreach (['ruc', 'razon_social', 'nombre_comercial', 'direccion', 'ubigeo', 'departamento', 'provincia', 'distrito', 'telefono', 'correo'] as $campo) {
             $this->empresaDatos[$campo] = (string) ($e->$campo ?? '');
         }
-        $this->facturacion = ['habilitada' => $c->habilitada, 'entorno' => $c->entorno->value, 'tasa_impuesto' => $c->tasa_impuesto ?? '', 'vigente_desde' => $c->vigente_desde?->toDateString() ?? '', 'vigente_hasta' => $c->vigente_hasta?->toDateString() ?? '', 'usuario_sol' => '', 'clave_sol' => '', 'clave_certificado' => '', 'confirmarProduccion' => false];
+        $this->facturacion = ['modalidad_boletas_beta' => $c->modalidad_boletas_beta, 'modalidad_boletas_produccion' => $c->modalidad_boletas_produccion, 'individual_produccion_confirmada' => $c->individual_produccion_confirmada, 'habilitada' => $c->habilitada, 'entorno' => $c->entorno->value, 'tasa_impuesto' => $c->tasa_impuesto ?? '', 'vigente_desde' => $c->vigente_desde?->toDateString() ?? '', 'vigente_hasta' => $c->vigente_hasta?->toDateString() ?? '', 'usuario_sol' => '', 'clave_sol' => '', 'clave_certificado' => '', 'confirmarProduccion' => false];
         $this->version = ConfigurarFacturacion::version($e, $c);
         $this->certificado = null;
     }
