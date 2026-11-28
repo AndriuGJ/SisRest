@@ -6,6 +6,7 @@ use App\Models\Comprobante;
 use App\Models\ComprobanteEnvio;
 use App\Models\ConfiguracionFacturacion;
 use App\Models\Empresa;
+use App\Models\ResumenDiario;
 use App\Models\SerieComprobante;
 use App\Models\TipoComprobante;
 use App\Models\User;
@@ -49,7 +50,7 @@ class ConfigurarFacturacion
             $config = ConfiguracionFacturacion::where('empresa_id', $empresa->id)->lockForUpdate()->firstOrFail();
             self::autorizar($actor);
             ReglasFiscales::exigir(hash_equals(self::version($empresa, $config), $version), 'La configuración cambió en otra sesión. Recarga la página antes de guardar.');
-            ReglasFiscales::exigir(! ComprobanteEnvio::where(fn ($q) => $q->where('estado', 'en_proceso')->orWhere('consultando', true))->exists(), 'Hay un envío o consulta en proceso. Si se interrumpió, actualiza su estado desde el comprobante antes de cambiar la configuración.');
+            ReglasFiscales::exigir(! ComprobanteEnvio::where(fn ($q) => $q->where('estado', 'en_proceso')->orWhere('consultando', true))->exists() && ! ResumenDiario::where('estado', 'en_proceso')->orWhere('consultando', true)->exists(), 'Hay un envío o consulta en proceso. Si se interrumpió, actualiza su estado desde el comprobante antes de cambiar la configuración.');
             $e = Validator::make($empresaDatos, [
                 'ruc' => ['required', 'digits:11'], 'razon_social' => ['required', 'string', 'max:200'], 'nombre_comercial' => ['nullable', 'string', 'max:150'],
                 'direccion' => ['required', 'string', 'max:250'], 'ubigeo' => ['required', 'digits:6'],
@@ -59,12 +60,21 @@ class ConfigurarFacturacion
             ReglasFiscales::exigir(ReglasFiscales::ruc($empresaDatos['ruc']), 'El RUC de la empresa no es válido.', 'empresaDatos.ruc');
             ReglasFiscales::exigir($empresa->ruc === null || $empresa->ruc === $e['ruc'] || ! Comprobante::exists(), 'Ya existen comprobantes: no se puede cambiar el RUC emisor.');
             $f = Validator::make($facturacion, [
+                'modalidad_boletas_beta' => ['sometimes', 'required', 'in:individual,resumen_diario'],
+                'modalidad_boletas_produccion' => ['sometimes', 'required', 'in:individual,resumen_diario'],
+                'individual_produccion_confirmada' => ['sometimes', 'required', 'boolean'],
                 'habilitada' => ['required', 'boolean'], 'entorno' => ['required', 'in:beta,produccion'],
                 'tasa_impuesto' => ['nullable', 'numeric', 'gt:0', 'max:100', 'decimal:0,4'],
                 'vigente_desde' => ['nullable', 'date_format:Y-m-d'], 'vigente_hasta' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:vigente_desde'],
                 'usuario_sol' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9]+$/'], 'clave_sol' => ['nullable', 'string', 'max:200'],
                 'clave_certificado' => ['nullable', 'string', 'max:200'], 'confirmarProduccion' => ['required', 'boolean'],
             ])->validate();
+            $beta = $f['modalidad_boletas_beta'] ?? $config->modalidad_boletas_beta;
+            $produccion = $f['modalidad_boletas_produccion'] ?? $config->modalidad_boletas_produccion;
+            $autorizada = $f['individual_produccion_confirmada'] ?? $config->individual_produccion_confirmada;
+            ReglasFiscales::exigir($produccion !== 'individual' || $autorizada === true, 'Confirma que tu sistema de emisión autorizado permite boletas individuales en producción.');
+            ReglasFiscales::exigir(($f['usuario_sol'] ?? '') === '' || ! str_starts_with($f['usuario_sol'], $e['ruc']), 'Ingresa el usuario SOL sin anteponer el RUC.', 'facturacion.usuario_sol');
+            $config->fill(['modalidad_boletas_beta' => $beta, 'modalidad_boletas_produccion' => $produccion, 'individual_produccion_confirmada' => $autorizada]);
             if ($f['entorno'] === 'produccion' && ($config->entorno->value !== 'produccion' || (! $config->habilitada && $f['habilitada']))) {
                 ReglasFiscales::exigir($f['confirmarProduccion'] === true, 'Confirma que habilitas la emisión real en producción.');
             }
