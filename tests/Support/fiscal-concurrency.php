@@ -73,7 +73,7 @@ if (($argv[1] ?? '') === 'worker') {
                 }usleep(10000);
             }
 
-            return new RespuestaSunat(ticket: 'T-'.basename($nombre));
+            return str_contains($nombre, '-RC-') || $nombre === 'consulta' ? new RespuestaSunat(ticket: 'T-'.basename($nombre)) : new RespuestaSunat(cdr: 'invalid-cdr-concurrency-fixture');
         }
 
         public function consultarTicket(ConfiguracionFacturacion $config, string $ruc, string $ticket, string $entorno): RespuestaSunat
@@ -203,13 +203,13 @@ try {
     openssl_pkcs12_export($cert, $pfx, $key, 'test');
     Storage::disk('local')->put($rutaCert, Crypt::encryptString($pfx));
     Empresa::first()->update(['ruc' => '20131312955', 'razon_social' => 'TEST CONCURRENCY', 'direccion' => 'TEST', 'ubigeo' => '150101', 'departamento' => 'LIMA', 'provincia' => 'LIMA', 'distrito' => 'LIMA']);
-    ConfiguracionFacturacion::first()->update(['habilitada' => true, 'entorno' => 'beta', 'usuario_sol' => 'TEST', 'clave_sol' => 'TEST', 'clave_certificado' => 'test', 'certificado_ruta' => $rutaCert, 'tasa_impuesto' => '18', 'vigente_desde' => now('America/Lima')->toDateString(), 'vigente_hasta' => null]);
+    ConfiguracionFacturacion::first()->update(['modalidad_boletas_beta' => 'resumen_diario', 'habilitada' => true, 'entorno' => 'beta', 'usuario_sol' => 'TEST', 'clave_sol' => 'TEST', 'clave_certificado' => 'test', 'certificado_ruta' => $rutaCert, 'tasa_impuesto' => '18', 'vigente_desde' => now('America/Lima')->toDateString(), 'vigente_hasta' => null]);
     do {
         $numeroSerie = 'B'.strtoupper(substr(Str::random(8), 0, 3));
     } while (SerieComprobante::where('serie', $numeroSerie)->exists());
     $serieFiscal = SerieComprobante::create(['tipo_comprobante_id' => TipoComprobante::where('codigo', '03')->firstOrFail()->id, 'serie' => $numeroSerie, 'entorno' => 'beta', 'activo' => true]);
     $cobrosFiscales = [];
-    for ($i = 0; $i < 7; $i++) {
+    for ($i = 0; $i < 8; $i++) {
         $pedido = app(GestionPedidos::class)->abrir($actor, $turno->id, (string) Str::uuid(), ['modalidad' => 'rapida', 'mesaId' => '', 'mozoId' => (string) $actor->id, 'comensales' => '', 'observaciones' => '', 'destinatario' => '', 'telefono' => '', 'direccion' => '', 'referencia' => '', 'costoEnvio' => '0'])->refresh();
         $pedidos[] = $pedido->id;
         app(GestionPedidos::class)->guardar($actor, $pedido->id, $turno->id, GestionPedidos::huella($pedido), ['clienteId' => '', 'comensales' => '', 'observaciones' => ''], ['uno' => ['detalleId' => '', 'productoId' => (string) $producto->id, 'cantidad' => '1', 'nota' => '']]);
@@ -256,7 +256,13 @@ try {
     if (competirFiscal('resumen_consultar', [$r->id, $r->id], $actor->id, $serieFiscal->id, $dir) !== 1 || $r->fresh()->estado !== 'enviado' || $r->eventos()->where('operacion', 'consulta_pendiente')->count() !== 1) {
         throw new RuntimeException('La consulta concurrente duplicó operaciones o perdió el estado pendiente.');
     }
-    echo json_encode(['result' => 'passed', 'checks' => ['same charge and different UUIDs', 'same charge and repeated UUID', 'shared series numbering', 'same summary sent once', 'unique concurrent summary numbers', 'SUNAT outside database transactions', 'grouped RC generation idempotency', 'different RC sequences and competing memberships', 'grouped RC sent once', 'ticket consultation claimed once']], JSON_THROW_ON_ERROR).PHP_EOL;
+    ConfiguracionFacturacion::firstOrFail()->update(['modalidad_boletas_beta' => 'individual']);
+    competirFiscal('emitir', [$cobrosFiscales[7], $cobrosFiscales[7]], $actor->id, $serieFiscal->id, $dir);
+    $individual = Comprobante::where('cobro_id', $cobrosFiscales[7])->firstOrFail();
+    if (competirFiscal('enviar', [$individual->id, $individual->id], $actor->id, $serieFiscal->id, $dir) !== 1 || $individual->envios()->count() !== 1 || $individual->fresh()->estado_sunat->value !== 'desconocido' || $individual->resumenActivo()->exists()) {
+        throw new RuntimeException('La boleta individual repitió el envío o se desvió a un resumen ante una respuesta no verificable.');
+    }
+    echo json_encode(['result' => 'passed', 'checks' => ['same charge and different UUIDs', 'same charge and repeated UUID', 'shared series numbering', 'same summary sent once', 'unique concurrent summary numbers', 'SUNAT outside database transactions', 'grouped RC generation idempotency', 'different RC sequences and competing memberships', 'grouped RC sent once', 'ticket consultation claimed once', 'individual boleta sent once despite uncertain CDR']], JSON_THROW_ON_ERROR).PHP_EOL;
 } finally {
     $idsCobro = DB::table('cobros')->whereIn('pedido_id', $pedidos)->pluck('id');
     $docs = Comprobante::whereIn('cobro_id', $idsCobro)->get();
