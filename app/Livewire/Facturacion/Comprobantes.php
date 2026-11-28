@@ -38,7 +38,7 @@ class Comprobantes extends Component
         $actor = Auth::user();
         abort_unless($actor instanceof User, 403);
         $actual = AccesoFacturacion::usuario($actor);
-        $comprobantes = Comprobante::whereHas('cobro', fn ($q) => $q->whereIn('pedido_id', AccesoPos::consulta($actual)->select('id'))->whereIn('turno_caja_id', AccesoCajas::consulta($actual)->select('id')))
+        $comprobantes = Comprobante::with('cobro')->whereHas('cobro', fn ($q) => $q->whereIn('pedido_id', AccesoPos::consulta($actual)->select('id'))->whereIn('turno_caja_id', AccesoCajas::consulta($actual)->select('id')))
             ->when($this->buscar !== '', fn ($q) => $q->where(function ($q) {
                 $busqueda = trim(mb_substr($this->buscar, 0, 100));
                 $q->where('receptor->nombre', 'like', '%'.$busqueda.'%')->orWhere('receptor->numero', 'like', '%'.$busqueda.'%')->orWhere('configuracion_tributaria->serie', 'like', '%'.$busqueda.'%');
