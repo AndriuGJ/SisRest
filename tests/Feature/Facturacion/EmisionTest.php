@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\EnviarComprobanteSunat;
 use App\Livewire\Facturacion\ComprobantePantalla;
 use App\Livewire\Facturacion\Comprobantes;
 use App\Livewire\Facturacion\ConfiguracionFiscal;
@@ -28,12 +29,14 @@ use App\Services\Cobros\GestionCobros;
 use App\Services\Facturacion\CalculoTributario;
 use App\Services\Facturacion\CertificadoFiscal;
 use App\Services\Facturacion\ConfigurarFacturacion;
+use App\Services\Facturacion\DocumentoPruebaBeta;
 use App\Services\Facturacion\EmitirComprobante;
 use App\Services\Facturacion\EnviarComprobante;
 use App\Services\Facturacion\FalloSunat;
 use App\Services\Facturacion\GestionResumenes;
 use App\Services\Facturacion\ImportarResumenesHistoricos;
 use App\Services\Facturacion\LeerCdr;
+use App\Services\Facturacion\ModalidadBoletas;
 use App\Services\Facturacion\RepresentacionFiscal;
 use App\Services\Facturacion\RespuestaSunat;
 use App\Services\Facturacion\TransporteSunat;
@@ -58,6 +61,7 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -162,7 +166,7 @@ beforeEach(function () {
     $this->cobro = realizarCobroFiscal($this->actor, $pedido, $this->turno, seleccionFiscal($pedido), ['p1' => pagoFiscal('efectivo', $total, $total)]);
     Empresa::firstOrFail()->update(['ruc' => '20131312955', 'razon_social' => 'Restaurante & Prueba SAC', 'direccion' => 'Av. Prueba 100', 'ubigeo' => '150101', 'departamento' => 'LIMA', 'provincia' => 'LIMA', 'distrito' => 'LIMA']);
     Storage::disk('local')->put('certificados/test.enc', Crypt::encryptString(certificadoPruebaFiscal()));
-    ConfiguracionFacturacion::firstOrFail()->update(['habilitada' => true, 'entorno' => 'beta', 'usuario_sol' => 'MODDATOS', 'clave_sol' => 'moddatos', 'certificado_ruta' => 'certificados/test.enc', 'clave_certificado' => 'test-cert-password', 'tasa_impuesto' => '18', 'vigente_desde' => now('America/Lima')->toDateString()]);
+    ConfiguracionFacturacion::firstOrFail()->update(['modalidad_boletas_beta' => 'resumen_diario', 'habilitada' => true, 'entorno' => 'beta', 'usuario_sol' => 'MODDATOS', 'clave_sol' => 'moddatos', 'certificado_ruta' => 'certificados/test.enc', 'clave_certificado' => 'test-cert-password', 'tasa_impuesto' => '18', 'vigente_desde' => now('America/Lima')->toDateString()]);
     SerieComprobante::whereIn('serie', ['F001', 'B001'])->update(['activo' => true]);
 });
 
@@ -427,6 +431,11 @@ test('SOAP transport packages the exact frozen XML and distinguishes invoice CDR
     $c = emitirFiscal($this->cobro, $this->actor, $tipo);
     $nombre = XmlFiscal::nombre($c);
     $xml = Storage::disk('local')->get($c->xml_ruta);
+    if ($tipo === '03') {
+        $summary = app(XmlFiscal::class)->resumen($c, 1, CarbonImmutable::now('America/Lima'));
+        $nombre = $summary->getName();
+        $xml = app(XmlFiscal::class)->firmar($summary, app(CertificadoFiscal::class)->cargar(ConfiguracionFacturacion::firstOrFail()), $c);
+    }
     $config = ConfiguracionFacturacion::firstOrFail();
     $soap = Mockery::mock(SoapClient::class);
     $soap->shouldReceive('call')->once()->with($tipo === '03' ? 'sendSummary' : 'sendBill', Mockery::on(function ($args) use ($nombre, $xml) {
@@ -1372,3 +1381,221 @@ test('grouped sendSummary and getStatus use native SOAP serialization and simula
     expect($soap->calls)->toBe(2)->and($r->fresh()->estado)->toBe('aceptado')->and($a->fresh()->estado_sunat->value)->toBe('aceptado')->and($b->fresh()->estado_sunat->value)->toBe('aceptado')
         ->and($soap->__getLastRequest())->toBeNull();
 });
+
+test('freezes individual boleta mode while historical and explicitly summarized documents retain their own route', function () {
+    $config = ConfiguracionFacturacion::firstOrFail();
+    $config->update(['modalidad_boletas_beta' => 'individual']);
+    $c = emitirFiscal($this->cobro, $this->actor);
+    expect(ModalidadBoletas::de($c))->toBe('individual');
+    $config->update(['modalidad_boletas_beta' => 'resumen_diario']);
+    expect(ModalidadBoletas::de($c->fresh()))->toBe('individual')
+        ->and(app(GestionResumenes::class)->elegibles($this->actor)->whereKey($c->id)->exists())->toBeFalse();
+    $mock = $this->mock(TransporteSunat::class);
+    $mock->shouldReceive('enviar')->once()->withArgs(fn ($conf, $ruc, $tipo, $nombre, $xml) => $tipo === '03' && $nombre === XmlFiscal::nombre($c) && $xml === Storage::disk('local')->get($c->xml_ruta))->andReturn(new RespuestaSunat(cdr: zipCdrFiscal($c, XmlFiscal::nombre($c))));
+    app(EnviarComprobante::class)->enviar($this->actor, $c->id);
+    app(EnviarComprobante::class)->enviar($this->actor, $c->id);
+    expect($c->fresh()->estado_sunat->value)->toBe('aceptado')->and($c->envios()->count())->toBe(1)
+        ->and($c->envios()->first()->ticket)->toBeNull()->and(ResumenDiario::count())->toBe(0)
+        ->and($c->cobro->fresh()->estado->value)->toBe('confirmado');
+});
+
+test('individual boletas use sendBill SOAP with the exact stored XML and immediate raw CDR', function () {
+    ConfiguracionFacturacion::firstOrFail()->update(['modalidad_boletas_beta' => 'individual']);
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $soap = Mockery::mock(SoapClient::class);
+    $zip = zipCdrFiscal($c, XmlFiscal::nombre($c));
+    $soap->shouldReceive('call')->once()->with('sendBill', Mockery::on(function ($args) use ($c) {
+        $f = tempnam(sys_get_temp_dir(), 'individual-zip');
+        file_put_contents($f, $args['parameters']['contentFile']);
+        try {
+            $z = new ZipArchive;
+            expect($z->open($f))->toBeTrue();
+            $ok = $z->numFiles === 1 && $z->getFromName(XmlFiscal::nombre($c).'.xml') === Storage::disk('local')->get($c->xml_ruta);
+            $z->close();
+
+            return $ok && $args['parameters']['fileName'] === XmlFiscal::nombre($c).'.zip';
+        } finally {
+            unlink($f);
+        }
+    }))->andReturn((object) ['applicationResponse' => $zip]);
+    $t = Mockery::mock(TransporteSunat::class)->makePartial();
+    $t->shouldReceive('cliente')->once()->andReturn($soap);
+    app()->instance(TransporteSunat::class, $t);
+    app(EnviarComprobante::class)->enviar($this->actor, $c->id);
+    expect($c->fresh()->estado_sunat->value)->toBe('aceptado')
+        ->and(Storage::disk('local')->get($c->fresh()->cdr_ruta))->toBe($zip);
+});
+
+test('individual boleta verifies CDR reference observations rejection and uncertain responses without changing its payment', function (string $codigo, bool $nota, string $estado) {
+    ConfiguracionFacturacion::firstOrFail()->update(['modalidad_boletas_beta' => 'individual']);
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $hash = XmlFiscal::dato($c, 'xml_sha256');
+    $caja = MovimientoCaja::count();
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(cdr: zipCdrFiscal($c, XmlFiscal::nombre($c), $codigo, observado: $nota)));
+    app(EnviarComprobante::class)->enviar($this->actor, $c->id);
+    app(EnviarComprobante::class)->enviar($this->actor, $c->id);
+    expect($c->fresh()->estado_sunat->value)->toBe($estado)->and(XmlFiscal::dato($c->fresh(), 'xml_sha256'))->toBe($hash)
+        ->and($c->cobro->fresh()->estado->value)->toBe('confirmado')->and(MovimientoCaja::count())->toBe($caja)
+        ->and($c->envios()->count())->toBe(1);
+})->with([['0', false, 'aceptado'], ['0', true, 'observado'], ['2335', false, 'rechazado'], ['1033', false, 'desconocido']]);
+
+test('individual 0111 HTTP timeout and backend SOAP faults keep original boleta and safe diagnosis', function (string $tipo, ?string $codigo) {
+    Log::spy();
+    ConfiguracionFacturacion::firstOrFail()->update(['modalidad_boletas_beta' => 'individual']);
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andThrow(new FalloSunat($tipo, $codigo));
+    app(EnviarComprobante::class)->enviar($this->actor, $c->id);
+    app(EnviarComprobante::class)->enviar($this->actor, $c->id);
+    $d = $c->envios()->first()->diagnostico_envio;
+    expect($c->fresh()->estado_sunat->value)->toBe('desconocido')->and($d['tipo'])->toBe($tipo)
+        ->and($d['metodo_soap'])->toBe('sendBill')->and($d['codigo_sunat'])->toBe($codigo)
+        ->and($c->envios()->count())->toBe(1)->and(ResumenDiario::count())->toBe(0);
+})->with([['soap_autenticacion', '0111'], ['http_sin_cabeceras', null], ['conexion_timeout', null], ['soap_sunat', '200']]);
+
+test('PEM and P12 use the same validation and reject absent or mismatched private keys', function () {
+    openssl_pkcs12_read(certificadoPruebaFiscal(), $certs, 'test-cert-password');
+    $pem = $certs['pkey']."\n".$certs['cert'];
+    $service = app(CertificadoFiscal::class);
+    expect(openssl_x509_check_private_key($service->pem($pem, ''), openssl_pkey_get_private($pem)))->toBeTrue();
+    expect(fn () => $service->pem($certs['cert'], ''))->toThrow(ValidationException::class);
+    $other = openssl_pkey_new(['private_key_bits' => 2048]);
+    openssl_pkey_export($other, $otherPem);
+    expect(fn () => $service->pem($otherPem.$certs['cert'], ''))->toThrow(ValidationException::class);
+});
+
+test('production individual boletas require explicit confirmation and never inherit Beta choice', function () {
+    $config = ConfiguracionFacturacion::firstOrFail();
+    $config->update(['modalidad_boletas_beta' => 'individual', 'entorno' => 'produccion']);
+    expect(ModalidadBoletas::configurada($config))->toBe('resumen_diario');
+    $config->modalidad_boletas_produccion = 'individual';
+    expect(fn () => ModalidadBoletas::configurada($config))->toThrow(ValidationException::class);
+    $config->individual_produccion_confirmada = true;
+    expect(ModalidadBoletas::configurada($config))->toBe('individual');
+});
+
+test('historical boleta mode fallback never changes its signed identity or pending ticket', function () {
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $c->update(['configuracion_tributaria' => Arr::except($c->configuracion_tributaria, ['modalidad_envio'])]);
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(ticket: 'T-LEGACY-UNCHANGED'));
+    app(EnviarComprobante::class)->enviar($this->actor, $c->id);
+    ConfiguracionFacturacion::firstOrFail()->update(['modalidad_boletas_beta' => 'individual']);
+    $anterior = $c->envios()->first()->getRawOriginal();
+    app(EnviarComprobante::class)->enviar($this->actor, $c->id);
+    expect($c->envios()->first()->getRawOriginal())->toBe($anterior)->and($c->resumenActivo()->exists())->toBeTrue();
+});
+
+test('Beta diagnostic aliases generate private fixtures without changing commercial data or contacting SUNAT', function (string $comando) {
+    $this->mock(TransporteSunat::class)->shouldNotReceive('enviar')->shouldNotReceive('consultarTicket');
+    $counts = [Comprobante::count(), Cobro::count(), MovimientoCaja::count(), MovimientoInventario::count()];
+    $series = SerieComprobante::pluck('ultimo_correlativo', 'id')->all();
+    Storage::disk('local')->put('certificate-diagnostic.p12', certificadoPruebaFiscal());
+    putenv('SUNAT_TEST_CLAVE_CERTIFICADO=test-cert-password');
+    try {
+        $this->artisan($comando, ['--certificado' => Storage::disk('local')->path('certificate-diagnostic.p12')])->assertSuccessful();
+        $this->artisan($comando, ['--certificado' => Storage::disk('local')->path('certificate-diagnostic.p12')])->assertSuccessful();
+    } finally {
+        putenv('SUNAT_TEST_CLAVE_CERTIFICADO');
+    }
+    expect([Comprobante::count(), Cobro::count(), MovimientoCaja::count(), MovimientoInventario::count()])->toBe($counts)
+        ->and(SerieComprobante::pluck('ultimo_correlativo', 'id')->all())->toBe($series);
+    $xmls = array_filter(Storage::disk('local')->allFiles('sunat-pruebas-beta'), fn ($p) => str_ends_with($p, '.xml'));
+    expect(count($xmls))->toBe(2);
+})->with(['sunat:test-factura', 'sunat:test-boleta', 'sunat:test-resumen']);
+
+test('individual boleta production consultation sends document type 03 and its original fiscal number', function () {
+    $config = ConfiguracionFacturacion::firstOrFail();
+    $config->update(['modalidad_boletas_beta' => 'individual']);
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $c->update(['entorno' => 'produccion', 'configuracion_tributaria' => [...$c->configuracion_tributaria, 'entorno' => 'produccion']]);
+    $config->update(['entorno' => 'produccion']);
+    $soap = Mockery::mock(SoapClient::class);
+    $soap->shouldReceive('call')->once()->with('getStatusCdr', ['parameters' => ['rucComprobante' => '20131312955', 'tipoComprobante' => '03', 'serieComprobante' => 'B001', 'numeroComprobante' => '00000001']])->andReturn((object) ['statusCdr' => (object) ['statusCode' => '0001', 'content' => 'SIMULATED-ZIP']]);
+    $t = Mockery::mock(TransporteSunat::class)->makePartial();
+    $t->shouldReceive('cliente')->once()->with($config, '20131312955', true)->andReturn($soap);
+    expect($t->consultar($config, $c, null)->cdr)->toBe('SIMULATED-ZIP');
+});
+
+test('a queued individual send reuses durable attempt protection and keeps only IDs in its payload', function () {
+    ConfiguracionFacturacion::firstOrFail()->update(['modalidad_boletas_beta' => 'individual']);
+    $c = emitirFiscal($this->cobro, $this->actor);
+    Queue::fake();
+    Livewire::test(ComprobantePantalla::class, ['comprobante' => $c])->call('solicitarEnvioCola')->call('enviarEnCola')->assertHasNoErrors();
+    Queue::assertPushedOn('sunat', EnviarComprobanteSunat::class, fn ($job) => $job->comprobanteId === $c->id && $job->usuarioId === $this->actor->id && $job->tries === 1);
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(cdr: zipCdrFiscal($c, XmlFiscal::nombre($c))));
+    $job = new EnviarComprobanteSunat($c->id, $this->actor->id);
+    $job->handle(app(EnviarComprobante::class));
+    $job->handle(app(EnviarComprobante::class));
+    expect($c->envios()->count())->toBe(1)->and($c->fresh()->estado_sunat->value)->toBe('aceptado');
+});
+
+test('Beta diagnostic sends keep private CDR and consecutive independent numbers without creating commercial records', function () {
+    Storage::disk('local')->put('certificate-diagnostic.p12', certificadoPruebaFiscal());
+    putenv('SUNAT_TEST_CLAVE_CERTIFICADO=test-cert-password');
+    $mock = $this->mock(TransporteSunat::class);
+    $mock->shouldReceive('enviar')->twice()->andReturnUsing(function ($config, $ruc, $tipo, $nombre, $xml) {
+        expect($config->entorno->value)->toBe('beta')->and($tipo)->toBe('03')->and($nombre)->not->toContain('-RC-');
+        $c = app(DocumentoPruebaBeta::class)->crear('03', 'BTS1', (int) substr($nombre, -8), $ruc);
+
+        return new RespuestaSunat(cdr: zipCdrFiscal($c, $nombre, ruc: $ruc));
+    });
+    try {
+        for ($i = 0; $i < 2; $i++) {
+            $this->artisan('sunat:test-boleta', ['--enviar' => true, '--certificado' => Storage::disk('local')->path('certificate-diagnostic.p12')])->assertSuccessful();
+        }
+    } finally {
+        putenv('SUNAT_TEST_CLAVE_CERTIFICADO');
+    }
+    expect(Comprobante::count())->toBe(0)->and(ComprobanteEnvio::count())->toBe(0);
+    foreach ([1, 2] as $i) {
+        $name = '20000000001-03-BTS1-'.str_pad((string) $i, 8, '0', STR_PAD_LEFT);
+        $r = json_decode(Storage::disk('local')->get('sunat-pruebas-beta/20000000001/'.$name.'.json'), true);
+        expect($r['estado'])->toBe('aceptado')->and($r['cdr_recibidos'][0]['sha256'])->toBe(hash('sha256', Storage::disk('local')->get($r['cdr_recibidos'][0]['ruta'])));
+    }
+});
+
+test('Beta diagnostic ticket consultation preserves a failed query and never resends its summary', function () {
+    Storage::disk('local')->put('certificate-diagnostic.p12', certificadoPruebaFiscal());
+    putenv('SUNAT_TEST_CLAVE_CERTIFICADO=test-cert-password');
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(ticket: 'T-ISOLATED-ONLY'));
+    try {
+        $this->artisan('sunat:test-resumen', ['--enviar' => true, '--certificado' => Storage::disk('local')->path('certificate-diagnostic.p12')])->assertSuccessful();
+    } finally {
+        putenv('SUNAT_TEST_CLAVE_CERTIFICADO');
+    }
+    $files = array_filter(Storage::disk('local')->allFiles('sunat-pruebas-beta'), fn ($p) => str_contains($p, '-RC-') && str_ends_with($p, '.json'));
+    $ruta = array_values($files)[0];
+    $this->mock(TransporteSunat::class)->shouldReceive('consultarTicket')->once()->andThrow(new FalloSunat('http_sin_cabeceras'));
+    $this->artisan('sunat:test-ticket', ['--archivo' => $ruta, '--enviar' => true])->assertFailed();
+    $r = json_decode(Storage::disk('local')->get($ruta), true);
+    expect($r['ticket'])->toBe('T-ISOLATED-ONLY')->and($r['estado'])->toBe('enviado')->and($r['consultas'][0]['tipo'])->toBe('http_sin_cabeceras');
+});
+
+test('an individual boleta can recover its captured CDR locally without resending or replacing the original diagnosis', function () {
+    ConfiguracionFacturacion::firstOrFail()->update(['modalidad_boletas_beta' => 'individual']);
+    $c = emitirFiscal($this->cobro, $this->actor);
+    $zip = zipCdrFiscal($c, XmlFiscal::nombre($c), observado: true);
+    $this->mock(TransporteSunat::class)->shouldReceive('enviar')->once()->andReturn(new RespuestaSunat(cdr: $zip));
+    $this->mock(LeerCdr::class)->shouldReceive('leer')->once()->andThrow(new FalloSunat('cdr_xml'));
+    $s = app(EnviarComprobante::class);
+    $s->enviar($this->actor, $c->id);
+    $envio = $c->envios()->first();
+    $diagnostico = $envio->diagnostico_envio;
+    expect($c->fresh()->estado_sunat->value)->toBe('desconocido');
+    app()->instance(LeerCdr::class, new LeerCdr);
+    $s->reprocesarCdr($this->actor, $c->id, $envio->id);
+    $s->reprocesarCdr($this->actor, $c->id, $envio->id);
+    expect($c->fresh()->estado_sunat->value)->toBe('observado')->and($envio->fresh()->diagnostico_envio)->toBe($diagnostico)
+        ->and($envio->fresh()->cdr_recibido_sha256)->toBe(hash('sha256', $zip))->and($c->envios()->count())->toBe(1);
+});
+
+test('invalid SOL input is rejected locally without exposing the supplied value', function (string $usuario, string $clave, string $tipo) {
+    $config = ConfiguracionFacturacion::firstOrFail();
+    $config->usuario_sol = $usuario;
+    $config->clave_sol = $clave;
+    try {
+        (new TransporteSunat)->cliente($config, '20131312955');
+        $this->fail('Expected local credential rejection');
+    } catch (FalloSunat $error) {
+        expect($error->tipo)->toBe($tipo)->and(json_encode($error->seguro()))->not->toContain('SECRET');
+    }
+})->with([['20131312955SECRET', 'SECRET', 'usuario_sol_formato'], ['', 'SECRET', 'credenciales_incompletas']]);
