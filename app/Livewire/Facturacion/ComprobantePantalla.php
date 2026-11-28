@@ -3,11 +3,13 @@
 namespace App\Livewire\Facturacion;
 
 use App\Concerns\ConAlertas;
+use App\Jobs\EnviarComprobanteSunat;
 use App\Models\Comprobante;
 use App\Models\User;
 use App\Services\Facturacion\AccesoFacturacion;
 use App\Services\Facturacion\EnviarComprobante;
 use App\Services\Facturacion\FalloSunat;
+use App\Services\Facturacion\ModalidadBoletas;
 use App\Services\Facturacion\XmlFiscal;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Auth;
@@ -64,7 +66,7 @@ class ComprobantePantalla extends Component
         $c = $this->comprobante();
         AccesoFacturacion::usuario($this->actor(), 'comprobantes.emitir');
         $this->envioConfirmado = true;
-        $this->confirmar('Enviar a SUNAT', mb_strtoupper(XmlFiscal::dato($c, 'entorno')).' · '.XmlFiscal::numero($c).'. '.(XmlFiscal::dato($c, 'tipo') === '03' ? 'Se informará esta boleta mediante un resumen y luego podrás consultar su ticket.' : 'Se enviará el XML firmado y se guardará la constancia de recepción.'), 'enviar', 'Enviar documento');
+        $this->confirmar('Enviar a SUNAT', mb_strtoupper(XmlFiscal::dato($c, 'entorno')).' · '.XmlFiscal::numero($c).'. '.(ModalidadBoletas::resumen($c) ? 'Se informará esta boleta mediante un resumen y luego podrás consultar su ticket.' : 'Se enviará el XML firmado y se guardará la constancia de recepción.'), 'enviar', 'Enviar documento');
     }
 
     public function enviar(): void
@@ -73,6 +75,26 @@ class ComprobantePantalla extends Component
         $this->envioConfirmado = false;
         app(EnviarComprobante::class)->enviar($this->actor(), $this->comprobanteId);
         $this->notificar('Revisa el estado de SUNAT y el historial de envío.', 'info', toast: false);
+    }
+
+    public function solicitarEnvioCola(): void
+    {
+        $c = $this->comprobante();
+        AccesoFacturacion::usuario($this->actor(), 'comprobantes.emitir');
+        abort_if(ModalidadBoletas::resumen($c), 403);
+        $this->envioConfirmado = true;
+        $this->confirmar('Enviar en segundo plano', XmlFiscal::numero($c).' · Se pondrá en la cola SUNAT. El cobro no cambia; revisa el resultado cuando termine el trabajador.', 'enviarEnCola', 'Encolar envío');
+    }
+
+    public function enviarEnCola(): void
+    {
+        abort_unless($this->envioConfirmado, 403);
+        $this->envioConfirmado = false;
+        $c = $this->comprobante();
+        AccesoFacturacion::usuario($this->actor(), 'comprobantes.emitir');
+        abort_if(ModalidadBoletas::resumen($c) || $c->envios()->exists() || $c->resumenActivo()->exists(), 403);
+        EnviarComprobanteSunat::dispatch($c->id, $this->actor()->id)->onConnection('database')->onQueue('sunat')->afterCommit();
+        $this->notificar('Envío en cola SUNAT. Mantén activo el trabajador y actualiza este detalle para conocer el resultado.', 'info', toast: false);
     }
 
     public function consultar(): void
