@@ -16,6 +16,9 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
  * @property int $empresa_id
+ * @property string $modalidad_boletas_beta
+ * @property string $modalidad_boletas_produccion
+ * @property bool $individual_produccion_confirmada
  * @property bool $habilitada
  * @property EntornoConfiguracionFacturacion $entorno
  * @property string|null $usuario_sol
@@ -36,6 +39,9 @@ class ConfiguracionFacturacion extends Model
 
         'empresa_id',
         'habilitada',
+        'modalidad_boletas_beta',
+        'modalidad_boletas_produccion',
+        'individual_produccion_confirmada',
         'entorno',
         'usuario_sol',
         'clave_sol',
@@ -54,6 +60,7 @@ class ConfiguracionFacturacion extends Model
             'vigente_hasta' => 'immutable_date',
 
             'habilitada' => 'boolean',
+            'individual_produccion_confirmada' => 'boolean',
             'entorno' => EntornoConfiguracionFacturacion::class,
             'tasa_impuesto' => 'decimal:4',
             'vigente_desde' => 'immutable_date',
@@ -72,7 +79,7 @@ class ConfiguracionFacturacion extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['habilitada', 'entorno', 'tasa_impuesto', 'vigente_desde'])
+            ->logOnly(['modalidad_boletas_beta', 'modalidad_boletas_produccion', 'individual_produccion_confirmada', 'habilitada', 'entorno', 'tasa_impuesto', 'vigente_desde'])
             ->logOnlyDirty()
             ->dontLogEmptyChanges();
     }
