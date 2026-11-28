@@ -11,6 +11,8 @@ use Throwable;
 final class FalloSunat extends RuntimeException
 {
     private const CATALOGO = [
+        'credenciales_incompletas' => ['local', 'Configura el usuario y la clave SOL del entorno seleccionado. No se realizó la operación SOAP.'],
+        'usuario_sol_formato' => ['local', 'Ingresa solamente el usuario SOL, sin anteponer el RUC. No se realizó la operación SOAP.'],
         'conexion_dns' => ['conexion', 'No se pudo resolver el servidor remoto.'],
         'conexion_tls' => ['conexion', 'Falló la verificación o negociación TLS. No se deshabilitó la seguridad.'],
         'conexion_timeout' => ['conexion', 'Se agotó el tiempo de espera; la recepción del documento no está confirmada.'],
@@ -44,7 +46,7 @@ final class FalloSunat extends RuntimeException
         if (($estadoHttp !== null && ($estadoHttp < 400 || $estadoHttp > 599)) || ! isset(self::CATALOGO[$tipo]) || ($codigoSunat !== null && ! preg_match('/^\d{1,5}$/D', $codigoSunat))) {
             throw new \InvalidArgumentException('Diagnóstico fiscal inválido.');
         }
-        parent::__construct(self::CATALOGO[$tipo][1]);
+        parent::__construct($tipo === 'soap_autenticacion' && str_pad($codigoSunat ?? '', 4, '0', STR_PAD_LEFT) === '0111' ? 'SUNAT devolvió 0111: revisa la autorización del emisor y del usuario SOL para este servicio.' : self::CATALOGO[$tipo][1]);
     }
 
     public static function desde(#[\SensitiveParameter] Throwable $error): self
