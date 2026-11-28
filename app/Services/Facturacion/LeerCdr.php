@@ -69,7 +69,7 @@ class LeerCdr
         $referencia = (string) $xp->evaluate('string(/*/cac:DocumentResponse/cac:Response/cbc:ReferenceID)');
         $receptor = (string) $xp->evaluate('string(/*/cac:ReceiverParty/cac:PartyIdentification/cbc:ID)');
         $sinRuc = substr($nombre, strlen($ruc) + 1);
-        $numero = str_starts_with($sinRuc, '01-') ? substr($sinRuc, 3) : $sinRuc;
+        $numero = preg_match('/^(01|03)-/', $sinRuc) === 1 ? substr($sinRuc, 3) : $sinRuc;
         if ($receptor !== $ruc || ! in_array($referencia, [$nombre, $sinRuc, $numero], true)) {
             throw new FalloSunat('cdr_referencia');
         }
