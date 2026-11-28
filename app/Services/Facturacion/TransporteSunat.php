@@ -33,6 +33,12 @@ class TransporteSunat
         // Greenter's default client disables TLS verification. Always supply explicit verified options.
         $cliente = new SoapClient($consultaCdr ? WsdlProvider::getConsultPath() : WsdlProvider::getBillPath(), $this->opcionesCliente());
         $cliente->setService($endpoint);
+        if (trim($config->usuario_sol ?? '') === '' || ($config->clave_sol ?? '') === '') {
+            throw new FalloSunat('credenciales_incompletas');
+        }
+        if (str_starts_with($config->usuario_sol ?? '', $ruc)) {
+            throw new FalloSunat('usuario_sol_formato');
+        }
         $cliente->setCredentials($ruc.($config->usuario_sol ?? ''), $config->clave_sol ?? '');
 
         return $cliente;
@@ -77,11 +83,13 @@ class TransporteSunat
         } finally {
             @unlink($archivo);
         }
-        $respuesta = $this->llamar($config, $ruc, false, $tipo === '03' ? 'sendSummary' : 'sendBill', ['parameters' => ['fileName' => $nombre.'.zip', 'contentFile' => $contenido]]);
-        if ($tipo === '03' && is_object($respuesta) && isset($respuesta->ticket) && is_string($respuesta->ticket) && $respuesta->ticket !== '') {
+        $esResumen = $tipo === '03' && preg_match('/^'.preg_quote($ruc, '/').'-RC-\d{8}-[1-9]\d{0,4}$/D', $nombre) === 1;
+        ReglasFiscales::exigir($esResumen || preg_match('/^'.preg_quote($ruc, '/').'-'.preg_quote($tipo, '/').'-[FB][A-Z0-9]{3}-[0-9]{1,8}$/D', $nombre) === 1, 'La identidad del archivo no corresponde al documento.');
+        $respuesta = $this->llamar($config, $ruc, false, $esResumen ? 'sendSummary' : 'sendBill', ['parameters' => ['fileName' => $nombre.'.zip', 'contentFile' => $contenido]]);
+        if ($esResumen && is_object($respuesta) && isset($respuesta->ticket) && is_string($respuesta->ticket) && $respuesta->ticket !== '') {
             return new RespuestaSunat(ticket: $respuesta->ticket);
         }
-        if ($tipo === '01' && is_object($respuesta) && isset($respuesta->applicationResponse) && is_string($respuesta->applicationResponse) && $respuesta->applicationResponse !== '') {
+        if (! $esResumen && is_object($respuesta) && isset($respuesta->applicationResponse) && is_string($respuesta->applicationResponse) && $respuesta->applicationResponse !== '') {
             return new RespuestaSunat(cdr: $respuesta->applicationResponse);
         }
         throw new FalloSunat('respuesta_invalida');
@@ -93,14 +101,14 @@ class TransporteSunat
             throw new FalloSunat('entorno_inconsistente');
         }
         $ruc = (string) $c->emisor['ruc'];
-        $esFactura = XmlFiscal::dato($c, 'tipo') === '01';
-        if (! $esFactura) {
+        $esIndividual = ! ModalidadBoletas::resumen($c);
+        if (! $esIndividual) {
             ReglasFiscales::exigir($ticket !== null && $ticket !== '', 'El envío no devolvió ticket. Concilia su resultado antes de volver a informar la boleta.');
 
             return $this->consultarTicket($config, $ruc, $ticket, XmlFiscal::dato($c, 'entorno'));
         }
-        ReglasFiscales::exigir($config->entorno->value === 'produccion', 'La consulta de CDR de facturas está disponible en producción. En beta revisa el resultado con el servicio de pruebas.');
-        $respuesta = $this->llamar($config, $ruc, true, 'getStatusCdr', ['parameters' => ['rucComprobante' => $ruc, 'tipoComprobante' => '01', 'serieComprobante' => XmlFiscal::dato($c, 'serie'), 'numeroComprobante' => XmlFiscal::correlativoFiscal($c)]]);
+        ReglasFiscales::exigir($config->entorno->value === 'produccion', 'La consulta de CDR de comprobantes individuales está disponible en producción. En beta revisa el resultado con el servicio de pruebas.');
+        $respuesta = $this->llamar($config, $ruc, true, 'getStatusCdr', ['parameters' => ['rucComprobante' => $ruc, 'tipoComprobante' => XmlFiscal::dato($c, 'tipo'), 'serieComprobante' => XmlFiscal::dato($c, 'serie'), 'numeroComprobante' => XmlFiscal::correlativoFiscal($c)]]);
 
         return $this->interpretarEstado(is_object($respuesta) ? ($respuesta->statusCdr ?? null) : null, true);
     }
@@ -116,7 +124,7 @@ class TransporteSunat
         return $this->interpretarEstado(is_object($respuesta) ? ($respuesta->status ?? null) : null, false);
     }
 
-    private function interpretarEstado(mixed $estado, bool $esFactura): RespuestaSunat
+    private function interpretarEstado(mixed $estado, bool $esIndividual): RespuestaSunat
     {
         if (is_object($estado)) {
             $codigo = isset($estado->statusCode) && (is_string($estado->statusCode) || is_int($estado->statusCode)) ? (string) $estado->statusCode : '';
@@ -124,7 +132,7 @@ class TransporteSunat
                 throw new FalloSunat('respuesta_invalida');
             }
             if (isset($estado->content) && is_string($estado->content) && $estado->content !== '') {
-                if (! $esFactura && ! in_array($codigo, ['0', '99'], true)) {
+                if (! $esIndividual && ! in_array($codigo, ['0', '99'], true)) {
                     throw new FalloSunat('respuesta_invalida');
                 }
 
