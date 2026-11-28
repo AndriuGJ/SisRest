@@ -68,7 +68,8 @@ class EmitirComprobante
             $calculo = app(CalculoTributario::class)->calcular($cobro, $tasa, $afectaciones);
             $letras = (new NumberFormatter('es_PE', NumberFormatter::SPELLOUT))->format((int) explode('.', $cobro->total)[0]);
             ReglasFiscales::exigir(is_string($letras), 'No se pudo expresar el importe en letras.');
-            $snapshot = ['correlativo_xml' => str_pad((string) ($serie->ultimo_correlativo + 1), 8, '0', STR_PAD_LEFT), 'tipo' => $tipo, 'serie' => $serie->serie, 'entorno' => $config->entorno->value, 'tasa' => $config->tasa_impuesto,
+            $modalidad = $tipo === '03' ? ModalidadBoletas::configurada($config) : 'individual';
+            $snapshot = ['modalidad_envio' => $modalidad, 'correlativo_xml' => str_pad((string) ($serie->ultimo_correlativo + 1), 8, '0', STR_PAD_LEFT), 'tipo' => $tipo, 'serie' => $serie->serie, 'entorno' => $config->entorno->value, 'tasa' => $config->tasa_impuesto,
                 'tipografia' => app(IdentidadVisual::class)->tipografia(), 'fecha_hora' => $fecha->toIso8601String(), 'leyenda' => 'SON '.mb_strtoupper($letras).' CON '.explode('.', $cobro->total)[1].'/100 SOLES'];
             foreach (['gravadas', 'exoneradas', 'inafectas', 'igv_gratuitas'] as $campo) {
                 $snapshot[$campo] = $calculo[$campo];
