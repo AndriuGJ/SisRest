@@ -23,6 +23,7 @@ class GestionResumenes
     public function elegibles(User $actor): Builder
     {
         return AccesoResumenes::comprobantes($actor)->where('configuracion_tributaria->tipo', '03')->where('estado', 'emitido')->where('estado_sunat', 'pendiente')
+            ->where(fn ($q) => $q->whereNull('configuracion_tributaria->modalidad_envio')->orWhere('configuracion_tributaria->modalidad_envio', 'resumen_diario'))
             ->where('moneda', 'PEN')->whereDoesntHave('envios')->whereDoesntHave('resumenActivo');
     }
 
