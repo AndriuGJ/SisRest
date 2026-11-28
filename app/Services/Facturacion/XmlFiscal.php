@@ -67,7 +67,7 @@ class XmlFiscal
             ->setMtoOperInafectas((float) self::dato($c, 'inafectas'))->setMtoOperGratuitas((float) $c->operaciones_gratuitas)
             ->setMtoIGVGratuitas((float) self::dato($c, 'igv_gratuitas'))->setMtoIGV((float) $c->impuestos)->setTotalImpuestos((float) $c->impuestos);
         $lineas = [];
-        foreach ($c->detalles()->orderBy('id')->get() as $d) {
+        foreach ($c->detalles->sortBy('id') as $d) {
             $linea = (new SaleDetail)->setCodProducto($d->codigo_producto)->setDescripcion($d->descripcion)
                 ->setUnidad($d->unidad_sunat)->setCantidad((float) $d->cantidad)->setMtoValorUnitario((float) $d->valor_unitario)
                 ->setMtoPrecioUnitario((float) $d->precio_unitario)->setMtoValorVenta((float) $d->base_imponible)
@@ -98,7 +98,7 @@ class XmlFiscal
             ->setClienteTipo((string) $c->receptor['tipo'])->setClienteNro((string) $c->receptor['numero'])
             ->setTotal((float) $c->total)->setMtoOperGravadas((float) self::dato($c, 'gravadas'))
             ->setMtoOperExoneradas((float) self::dato($c, 'exoneradas'))->setMtoOperInafectas((float) self::dato($c, 'inafectas'))
-            ->setMtoOperGratuitas((float) $c->operaciones_gratuitas)->setMtoIGV((float) $c->impuestos);
+            ->setMtoOperGratuitas((float) $c->operaciones_gratuitas)->setMtoIGV((float) $c->impuestos)->setPorcentajeIgv((float) self::dato($c, 'tasa'));
 
         return (new Summary)->setFecGeneracion($c->fecha_emision)->setFecResumen($fecha)->setCorrelativo((string) $numero)
             ->setCompany($this->empresa($c))->setMoneda($c->moneda)->setDetails([$detalle]);
