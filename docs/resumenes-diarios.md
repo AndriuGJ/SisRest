@@ -1,5 +1,7 @@
 # Resúmenes diarios y numeración electrónica de SisRest
 
+Desde la modalidad configurable, solo las boletas destinadas a **resumen diario** son elegibles. Las boletas nuevas de Beta pueden enviarse individualmente. Ver [configuración y pruebas de ambas modalidades](facturacion-individual-beta.md). Los documentos antiguos conservan su modalidad original.
+
 ## Funcionamiento
 
 En **Facturación → Resúmenes diarios** se listan lotes por fecha de emisión, entorno y estado. Los indicadores separan pendientes de envío, enviados pendientes de CDR, aceptados, observados e inciertos. La tabla muestra fecha de generación, cantidad de boletas, total y ticket. El detalle permite revisar cada documento, descargar su XML firmado/CDR y consultar el historial.
@@ -38,7 +40,7 @@ La migración `000083` ejecuta `ImportarResumenesHistoricos`: vincula los resúm
 
 La operación es idempotente y genérica, sin depender de un ticket concreto. El resumen pendiente `20568780681-RC-20261126-1` queda visible conservando su ticket original, sin publicarlo en logs. El vínculo permite abrir el historial original y descargar sus mismos archivos. Las facturas se excluyen de esta importación.
 
-La consulta de un registro unitario vinculado sigue delegándose al servicio compatible original y su proyección se sincroniza. Los envíos unitarios compatibles que se produzcan también se incorporan al módulo; la interfaz de boletas orienta ahora a la selección agrupada. Una boleta ya reservada en un RC agrupado no puede volver a enviarse por la antigua vía individual.
+La consulta de un registro unitario vinculado sigue delegándose al servicio compatible original y su proyección se sincroniza. Los envíos unitarios compatibles que se produzcan también se incorporan al módulo; la interfaz de boletas con modalidad resumen diario orienta a la selección agrupada. Una boleta ya reservada en un RC agrupado no puede volver a enviarse por la antigua vía individual.
 
 Si se necesita repetir solo la incorporación local:
 
