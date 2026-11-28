@@ -27,6 +27,7 @@ class EnviarComprobante
             $c = Comprobante::lockForUpdate()->findOrFail($id);
             AccesoFacturacion::cobro($actor, $c->cobro()->firstOrFail(), 'comprobantes.emitir');
             $this->validarConfiguracion($e, $config, $c);
+            ReglasFiscales::exigir(XmlFiscal::dato($c, 'tipo') !== '03' || ModalidadBoletas::resumen($c) || $config->entorno->value !== 'produccion' || $config->individual_produccion_confirmada, 'No está confirmada la autorización para boletas individuales en producción.');
             if (XmlFiscal::dato($c, 'tipo') === '03' && $c->resumenActivo()->exists()) {
                 return null; // A grouped or historical RC already owns this boleta.
             }
@@ -40,7 +41,7 @@ class EnviarComprobante
             $xml = $this->xml($c->xml_ruta, XmlFiscal::dato($c, 'xml_sha256'));
             $nombre = XmlFiscal::nombre($c);
             $ruta = $c->xml_ruta;
-            if ($tipo === '03') {
+            if ($tipo === '03' && ModalidadBoletas::resumen($c)) {
                 $fecha = $hoy->toDateString();
                 $entorno = $config->entorno->value;
                 $fila = DB::table('secuencias_resumen')->where(compact('fecha', 'entorno'))->lockForUpdate()->first();
@@ -100,7 +101,7 @@ class EnviarComprobante
             if ($ocupado && $inicio?->gt(now()->subMinutes(2))) {
                 return null;
             }
-            ReglasFiscales::exigir(XmlFiscal::dato($c, 'tipo') === '01' ? $config->entorno->value === 'produccion' : $envio->ticket !== null, 'Este resultado requiere conciliación manual: la consulta necesita un ticket de resumen o una factura de producción.');
+            ReglasFiscales::exigir(! ModalidadBoletas::resumen($c) ? $config->entorno->value === 'produccion' : $envio->ticket !== null, 'Este resultado requiere conciliación manual: la consulta necesita un ticket de resumen o un comprobante individual de producción.');
             $envio->update(['consultando' => true, 'consulta_iniciada_at' => now(), 'consulta_finalizada_at' => null]);
 
             return $envio;
@@ -129,9 +130,9 @@ class EnviarComprobante
             $c = Comprobante::lockForUpdate()->findOrFail($id);
             AccesoFacturacion::cobro($actor, $c->cobro()->firstOrFail(), 'comprobantes.emitir');
             $envio = $c->envios()->whereKey($envioId)->lockForUpdate()->firstOrFail();
-            ReglasFiscales::exigir(XmlFiscal::dato($c, 'tipo') === '01' && $c->entorno === XmlFiscal::dato($c, 'entorno') && in_array($c->entorno, ['beta', 'produccion'], true), 'El reprocesamiento local requiere una factura con entorno consistente.');
+            ReglasFiscales::exigir(! ModalidadBoletas::resumen($c) && $c->entorno === XmlFiscal::dato($c, 'entorno') && in_array($c->entorno, ['beta', 'produccion'], true), 'El reprocesamiento local requiere un comprobante individual con entorno consistente.');
             ReglasFiscales::exigir(! $envio->consultando && $envio->estado !== EnvioEstado::EN_PROCESO, 'Hay una operación en curso. Espera a que finalice antes de reprocesar el CDR.');
-            ReglasFiscales::exigir($envio->xml_nombre === XmlFiscal::nombre($c), 'El intento no corresponde a la factura.');
+            ReglasFiscales::exigir($envio->xml_nombre === XmlFiscal::nombre($c), 'El intento no corresponde al comprobante.');
             $contenido = $this->cdrAlmacenado($c, $envio);
             $cdr = app(LeerCdr::class)->leer($contenido, $envio->xml_nombre, (string) $c->emisor['ruc']);
             $estado = $this->estadoCdr($cdr);
@@ -247,6 +248,9 @@ class EnviarComprobante
         $c = Comprobante::findOrFail($envioLeido->comprobante_id);
         $cdr = null;
         $ruta = null;
+        if ($r->ticket !== null && ! ModalidadBoletas::resumen($c)) {
+            throw new FalloSunat('respuesta_invalida');
+        }
         if ($r->cdr !== null) {
             $etapa = 'cdr_guardado';
             if (strlen($r->cdr) > 2 * 1024 * 1024) {
@@ -307,10 +311,9 @@ class EnviarComprobante
             if (in_array($c->estado_sunat, [SunatEstado::ACEPTADO, SunatEstado::OBSERVADO, SunatEstado::RECHAZADO], true)) {
                 return;
             }
-            $tipo = XmlFiscal::dato($c, 'tipo');
             $diagnostico += [
-                'metodo_soap' => $consulta ? ($tipo === '03' ? 'getStatus' : 'getStatusCdr') : ($tipo === '03' ? 'sendSummary' : 'sendBill'),
-                'servicio' => XmlFiscal::dato($c, 'entorno') === 'beta' ? 'fe_beta' : ($consulta && $tipo === '01' ? 'consulta_cdr_produccion' : 'fe_produccion'),
+                'metodo_soap' => $consulta ? (ModalidadBoletas::resumen($c) ? 'getStatus' : 'getStatusCdr') : (ModalidadBoletas::resumen($c) ? 'sendSummary' : 'sendBill'),
+                'servicio' => XmlFiscal::dato($c, 'entorno') === 'beta' ? 'fe_beta' : ($consulta && ! ModalidadBoletas::resumen($c) ? 'consulta_cdr_produccion' : 'fe_produccion'),
             ];
             $campo = $consulta ? 'diagnostico_consulta' : 'diagnostico_envio';
             if ($consulta || $envio->diagnostico_envio === null) {
