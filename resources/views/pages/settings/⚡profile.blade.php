@@ -1,8 +1,8 @@
 <?php
 
+use App\Concerns\ConAlertas;
 use App\Concerns\ProfileValidationRules;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Flux\Flux;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
@@ -11,6 +11,7 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 new #[Title('Profile settings')] class extends Component {
+    use ConAlertas;
     use ProfileValidationRules;
 
     public string $name = '';
@@ -22,7 +23,7 @@ new #[Title('Profile settings')] class extends Component {
     public function mount(): void
     {
         $this->name = Auth::user()->name;
-        $this->email = Auth::user()->email;
+        $this->email = Auth::user()->email ?? '';
     }
 
     /**
@@ -38,6 +39,7 @@ new #[Title('Profile settings')] class extends Component {
 
         $validated = $this->validate($this->profileRules($user->id));
 
+        $validated['email'] = $validated['email'] ?: null;
         $user->fill($validated);
 
         if ($user->isDirty('email')) {
@@ -46,7 +48,7 @@ new #[Title('Profile settings')] class extends Component {
 
         $user->save();
 
-        Flux::toast(variant: 'success', text: __('Profile updated.'));
+        $this->notificar('Perfil actualizado.');
     }
 
     /**
@@ -54,6 +56,7 @@ new #[Title('Profile settings')] class extends Component {
      */
     public function resendVerificationNotification(): void
     {
+        abort_unless(\Laravel\Fortify\Features::enabled(\Laravel\Fortify\Features::emailVerification()), 404);
         $user = Auth::user();
 
         if ($user->hasVerifiedEmail()) {
@@ -70,14 +73,14 @@ new #[Title('Profile settings')] class extends Component {
     #[Computed]
     public function hasUnverifiedEmail(): bool
     {
-        return Auth::user() instanceof MustVerifyEmail && ! Auth::user()->hasVerifiedEmail();
+        return \Laravel\Fortify\Features::enabled(\Laravel\Fortify\Features::emailVerification())
+            && Auth::user() instanceof MustVerifyEmail && ! Auth::user()->hasVerifiedEmail();
     }
 
     #[Computed]
     public function showDeleteUser(): bool
     {
-        return ! Auth::user() instanceof MustVerifyEmail
-            || (Auth::user() instanceof MustVerifyEmail && Auth::user()->hasVerifiedEmail());
+        return false;
     }
 }; ?>
 
@@ -91,7 +94,7 @@ new #[Title('Profile settings')] class extends Component {
             <flux:input wire:model="name" :label="__('Name')" type="text" required autofocus autocomplete="name" />
 
             <div>
-                <flux:input wire:model="email" :label="__('Email')" type="email" required autocomplete="email" />
+                <flux:input wire:model="email" :label="__('Email')" type="email" autocomplete="email" />
 
                 @if ($this->hasUnverifiedEmail)
                     <div>

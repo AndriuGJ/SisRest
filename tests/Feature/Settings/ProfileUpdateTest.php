@@ -28,7 +28,7 @@ test('profile information can be updated', function () {
     expect($user->email_verified_at)->toBeNull();
 });
 
-test('email is stored in lowercase so the user can still log in', function () {
+test('email is stored in lowercase and username login remains available', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user);
@@ -44,7 +44,7 @@ test('email is stored in lowercase so the user can still log in', function () {
     $this->post(route('logout'));
 
     $this->post(route('login.store'), [
-        'email' => 'Test@Example.com',
+        'username' => $user->username,
         'password' => 'password',
     ]);
 
@@ -78,33 +78,14 @@ test('email verification status is unchanged when email address is unchanged', f
     expect($user->refresh()->email_verified_at)->not->toBeNull();
 });
 
-test('user can delete their account', function () {
+test('staff cannot delete their own account', function () {
     $user = User::factory()->create();
-
     $this->actingAs($user);
 
-    $response = Livewire::test('pages::settings.delete-user-modal')
+    Livewire::test('pages::settings.delete-user-modal')
         ->set('password', 'password')
-        ->call('deleteUser');
-
-    $response
-        ->assertHasNoErrors()
-        ->assertRedirect('/');
-
-    expect($user->fresh())->toBeNull();
-    expect(auth()->check())->toBeFalse();
-});
-
-test('correct password must be provided to delete account', function () {
-    $user = User::factory()->create();
-
-    $this->actingAs($user);
-
-    $response = Livewire::test('pages::settings.delete-user-modal')
-        ->set('password', 'wrong-password')
-        ->call('deleteUser');
-
-    $response->assertHasErrors(['password']);
+        ->call('deleteUser')
+        ->assertForbidden();
 
     expect($user->fresh())->not->toBeNull();
 });

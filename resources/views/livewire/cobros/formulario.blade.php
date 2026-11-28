@@ -1,0 +1,414 @@
+<div class="cobro-screen">
+    <header class="cobro-header">
+        <div>
+            <h1>Detalle del pedido</h1>
+            <p>{{ $pedido->codigo }} ·
+                {{ $pedido->modalidad->value === 'mesa' ? 'Mesa ' . ($pedido->mesa_codigo ?? $pedido->mesa?->codigo) : ($pedido->modalidad->value === 'rapida' ? 'Para llevar' : 'Delivery') }}
+            </p>
+        </div>
+        <flux:button href="{{ route('pos.pedido', $pedido) }}" wire:navigate icon="arrow-left">Volver al pedido
+        </flux:button>
+    </header>
+    @if ($errors->any())
+        <p role="alert"
+            class="border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">
+            {{ $errors->first() }}</p>
+    @endif
+    <div class="cobro-columns">
+        <section class="cobro-detalle min-w-0">
+            <div class="cobro-section-title flex flex-wrap items-center justify-between gap-2">
+                <h2>Productos de la cuenta</h2>
+                <div class="flex gap-2">
+                    <flux:button size="sm" wire:click="selectPending">Todos los pendientes</flux:button>
+                    <flux:button size="sm" variant="ghost" wire:click="clearSelection">Limpiar</flux:button>
+                </div>
+            </div>
+            <p class="px-4 pt-3 text-xs text-zinc-500">Para dividir la cuenta, indica las cantidades que pagará este
+                grupo. El resto permanece pendiente.</p>
+            <div class="divide-y divide-zinc-200 px-4 dark:divide-zinc-700">
+                @forelse($lineas as $detalle)
+                    @php($pendiente = bcsub(bcsub($detalle->cantidad, $detalle->cantidad_anulada, 4), $detalle->cantidad_cobrada, 4))
+                    <div wire:key="cobrar-linea-{{ $detalle->id }}"
+                        class="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_100px_110px] sm:items-end {{ bccomp($pendiente, '0', 4) <= 0 ? 'opacity-50' : '' }}">
+                        <div>
+                            <p class="text-sm font-medium">{{ $detalle->descripcion }}</p>
+                            <p class="mt-1 text-xs text-zinc-500">S/ {{ $detalle->precio_unitario }} por unidad ·
+                                Pedido: {{ \App\Support\Cantidad::mostrar($detalle->cantidad) }} · Cobrado:
+                                {{ \App\Support\Cantidad::mostrar($detalle->cantidad_cobrada) }}</p>
+                            @if ($detalle->beneficio_autorizado_at)
+                                <p class="mt-1 text-xs text-green-700 dark:text-green-400">
+                                    {{ $detalle->es_cortesia ? 'Cortesía autorizada' : 'Descuento autorizado' }} · En
+                                    la selección: −S/ {{ $lineasImportes[$detalle->id]['beneficio'] }}</p>
+                            @endif
+                            <p
+                                class="mt-1 text-xs {{ bccomp($pendiente, '0', 4) > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-green-700 dark:text-green-400' }}">
+                                Pendiente: {{ \App\Support\Cantidad::mostrar($pendiente) }}</p>
+                        </div>
+                        @if (bccomp($pendiente, '0', 4) > 0)
+                            <flux:input wire:model.live.debounce.300ms="cantidades.{{ $detalle->id }}"
+                                label="A cobrar"
+                                aria-label="Cantidad a cobrar {{ $detalle->descripcion }} línea {{ $detalle->id }}"
+                                type="number" min="0" max="{{ \App\Support\Cantidad::mostrar($pendiente) }}"
+                            step="1" placeholder="0" size="sm" />@else<p
+                                class="text-xs text-green-700 dark:text-green-400">Pagado</p>
+                        @endif
+                        <p class="text-sm font-semibold sm:pb-2 sm:text-right">S/
+                            {{ $lineasImportes[$detalle->id]['total'] }}</p>
+                    </div>
+                @empty<p class="py-8 text-sm text-zinc-500">No hay productos confirmados para cobrar. Guarda y
+                        confirma el pedido desde el POS.</p>
+                @endforelse
+            </div>
+
+            <div class="cobro-totales space-y-4 p-4">
+                <dl class="space-y-3 text-sm">
+                    <div class="flex justify-between gap-2">
+                        <dt>Subtotal seleccionado</dt>
+                        <dd>S/ {{ $subtotal }}</dd>
+                    </div>
+                    <div class="flex justify-between gap-2">
+                        <dt>Descuentos / cortesías por producto</dt>
+                        <dd>− S/ {{ $descuentoProductos }}</dd>
+                    </div>
+                    <div class="flex justify-between gap-2">
+                        <dt>Descuento general</dt>
+                        <dd>− S/ {{ $descuentoGeneral }}</dd>
+                    </div>
+                    <div class="flex justify-between gap-2">
+                        <dt>Delivery</dt>
+                        <dd>S/ {{ $incluirEnvio ? $envioPendiente : '0.00' }}</dd>
+                    </div>
+                    <div class="flex justify-between border-t border-zinc-200 pt-3 text-xl font-semibold">
+                        <dt>Total</dt>
+                        <dd data-cobro-total>S/ {{ $total }}</dd>
+                    </div>
+                </dl>
+                @can('descuentos.aplicar')<details @if ($descuentoTipo !== '') open @endif>
+                        <summary class="cursor-pointer text-sm font-medium">Aplicar descuento general</summary>
+                        <div class="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                            <flux:heading level="2">Descuento de este cobro</flux:heading>
+                            <flux:select wire:model.live="descuentoTipo" label="Descuento general">
+                                <option value="">Sin descuento general</option>
+                                <option value="porcentaje">Porcentaje</option>
+                                <option value="soles">Soles</option>
+                            </flux:select>
+                            @if ($descuentoTipo !== '')
+                                <flux:input wire:model.live.debounce.300ms="descuentoValor"
+                                    label="Valor del descuento general" inputmode="decimal" />
+                                <flux:select wire:model="motivoId" label="Motivo del descuento general">
+                                    <option value="">Seleccionar motivo</option>
+                                    @foreach ($motivosBeneficio as $motivoBeneficio)
+                                        <option value="{{ $motivoBeneficio->id }}">{{ $motivoBeneficio->nombre }}</option>
+                                    @endforeach
+                                </flux:select>
+                                <flux:textarea wire:model="motivoDetalle" label="Detalle del descuento general"
+                                    rows="2" maxlength="500" />
+                            @endif
+                            <p class="text-xs text-zinc-500">Solo afecta los productos seleccionados en este cobro; no al
+                                envío ni a cobros anteriores. No se acumula con beneficios por producto. Cubrir el importe
+                                completo exige también autorización de cortesía.</p>
+                            @if (!$puedeGeneral && $descuentoTipo !== '')
+                                <p class="text-sm text-amber-700 dark:text-amber-300">Hay productos con beneficio. Retira el
+                                    descuento general o cambia la selección.</p>
+                            @endif
+                        </div>
+                </details>@endcan
+                @if (bccomp($envioPendiente, '0', 2) > 0)
+                    <div class="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                        <flux:checkbox wire:model.live="incluirEnvio"
+                            label="Cobrar el envío pendiente: S/ {{ $envioPendiente }}" />
+                        <p class="mt-2 text-xs text-zinc-500">Se incluirá completo en este cobro. No volverá a cobrarse
+                            a los demás grupos.</p>
+                    </div>
+                @endif
+                @if ($historial->isNotEmpty())
+                    <div class="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                        <flux:heading level="2">Cobros registrados</flux:heading>
+                        <div class="mt-3 divide-y divide-zinc-200 dark:divide-zinc-700">
+                            @foreach ($historial as $cobro)
+                                <a href="{{ route('ventas.cobro', $cobro) }}" wire:navigate
+                                    class="flex justify-between gap-3 py-3 text-sm"><span>{{ $cobro->grupo_pagador ?? $cobro->codigo }}<span
+                                            class="mt-1 block text-xs text-zinc-500">{{ $cobro->cobrado_at?->format('d/m/Y H:i') }}
+                                            · {{ ucfirst($cobro->estado->value) }}</span></span><strong
+                                        class="whitespace-nowrap">S/ {{ $cobro->total }}</strong></a>
+                            @endforeach
+                        </div>
+                        <p class="mt-2 text-xs text-zinc-500">Se muestran los cobros de las cajas que tienes permiso de
+                            consultar.</p>
+                    </div>
+                @endif
+            </div>
+        </section>
+        <section class="cobro-form min-w-0 space-y-5 p-4 lg:p-5">
+            <div>
+                <div class="cobro-documentos flex flex-wrap items-center justify-between gap-3">
+                    <h2>Tipo de documento</h2>
+                    <div class="flex flex-wrap gap-1" role="group" aria-label="Tipo de documento">
+
+                        @foreach ($tiposVenta as $codigo => $nombre)
+                            <button type="button" wire:click="$set('documento', '{{ $codigo }}')"
+                                class="cobro-documento {{ $documento === (string) $codigo ? 'cobro-documento-activo' : '' }}"
+                                aria-pressed="{{ $documento === (string) $codigo ? 'true' : 'false' }}">
+                                {{ $nombre }}
+                            </button>
+                        @endforeach
+
+                    </div>
+                </div>
+                <p class="mt-2 text-xs text-zinc-500">
+                    {{ $documento === 'interno' ? 'Nota de venta interna, sin valor tributario. Cliente opcional; no sustituye a una boleta o factura.' : 'Se emitirá e imprimirá el documento elegido al confirmar. El estado de envío a SUNAT se controla por separado.' }}
+                </p>
+            </div>
+            @if ($documento !== 'interno')
+                <div class="space-y-2">
+                    <flux:select wire:model.live="serieId" label="Serie del documento">
+                        <option value="">Seleccionar serie</option>
+                        @foreach ($series as $serie)
+                            <option value="{{ $serie->id }}">{{ $serie->serie }} ·
+                                {{ $serie->tipoComprobante->nombre }}</option>
+                        @endforeach
+                    </flux:select>
+                    @if ($documento === '03')
+                        <p class="text-xs text-zinc-500">
+                            {{ bccomp($total, '700', 2) > 0 ? 'Importe superior a S/ 700: selecciona cliente con DNI o RUC y nombre.' : 'Hasta S/ 700 puedes emitir sin identificar al cliente. Identifícalo si lo solicita.' }}
+                        </p>
+                    @endif
+                </div>
+            @endif
+            @can('clientes.ver')<div class="space-y-3">
+                    <div class="flex items-end gap-2">
+                        <div class="flex-1">
+                            <flux:input wire:model.live.debounce.300ms="clienteSearch" label="Buscar cliente"
+                                placeholder="Nombre, DNI o RUC" icon="magnifying-glass" />
+                        </div>
+                        <flux:button variant="ghost" icon="x-mark" wire:click="$set('clienteId','')"
+                            aria-label="Quitar cliente" />
+                        @can('clientes.crear')
+                            <flux:button icon="user-plus" wire:click="abrirCliente" aria-label="Crear cliente"
+                                title="Crear cliente" />
+                        @endcan
+                    </div>
+                    <flux:select wire:model.live="clienteId" label="Cliente">
+                        <option value="">Sin cliente asignado</option>
+                        @foreach ($clientes as $cliente)
+                            <option value="{{ $cliente->id }}">
+                                {{ $cliente->nombre }}{{ $cliente->numero_documento ? ' · ' . $cliente->numero_documento : '' }}{{ $cliente->activo ? '' : ' (inactivo)' }}
+                            </option>
+                        @endforeach
+                    </flux:select>
+                    @if ($documento === '01')
+                        <p class="text-xs text-zinc-500">Selecciona un cliente con RUC, razón social y dirección.</p>
+                    @endif
+                </div>
+            @endcan
+            <flux:input wire:model="grupoPagador" label="Grupo o pagador (opcional)"
+                placeholder="Familia Pérez, grupo 1…" maxlength="100" />
+            @if ($turnos->isEmpty())
+                <p class="text-sm text-amber-700 dark:text-amber-400">Necesitas una caja abierta autorizada para
+                    cobrar.</p>
+            @endif
+            @if ($documento !== 'interno')
+                <details class="border border-zinc-200 p-3 dark:border-zinc-700">
+                    <summary class="cursor-pointer text-sm font-medium">Afectación del comprobante y cortesías
+                    </summary>
+                    <div class="mt-3 space-y-3">
+                        @foreach ($lineas as $detalle)
+                            @if (bccomp($cantidadesVista[$detalle->id] ?? '0', '0', 4) > 0 &&
+                                    bccomp($lineasImportes[$detalle->id]['bruto'], '0', 2) > 0)
+                                <flux:select wire:model="afectaciones.{{ $detalle->id }}"
+                                    label="{{ $detalle->descripcion }}">
+                                    <option value="">Seleccionar (normal: gravado)</option>
+                                    @foreach ($opcionesFiscales as $codigo => $etiqueta)
+                                        <option value="{{ $codigo }}">{{ $etiqueta }}</option>
+                                    @endforeach
+                                </flux:select>
+                            @endif
+                            @endforeach @if ($incluirEnvio && bccomp($envioPendiente, '0', 2) > 0)
+                                <flux:select wire:model="afectaciones.envio" label="Delivery">
+                                    <option value="10">Gravado</option>
+                                    <option value="20">Exonerado</option>
+                                    <option value="30">Inafecto</option>
+                                </flux:select>
+                            @endif
+                            <p class="text-xs text-zinc-500">
+                                Los precios ya incluyen impuestos. Las cortesías necesitan su afectación gratuita.</p>
+                    </div>
+                </details>
+            @endif
+            <div class="cobro-medios-title flex items-center justify-between gap-3">
+                <h2>Formas de pago</h2>
+                <flux:button size="sm" wire:click="mixedPayment" icon="squares-plus" :disabled="$pagoMixto">
+                    {{ $pagoMixto ? 'Pago mixto activo' : 'Pago mixto' }}</flux:button>
+            </div>
+            @if (!$pagoMixto)
+                <div class="flex flex-wrap gap-2" role="group" aria-label="Medios de pago">
+                    @foreach ($medios as $opcion)
+                        <button type="button" wire:click="usarMedio({{ $opcion->id }})"
+                            class="cobro-medio {{ collect($pagosVista)->contains('medioId', (string) $opcion->id) ? 'cobro-medio-activo' : '' }}"
+                            aria-pressed="{{ collect($pagosVista)->contains('medioId', (string) $opcion->id) ? 'true' : 'false' }}">{{ $opcion->nombre }}</button>
+                    @endforeach
+                </div>
+            @else<p class="text-xs text-zinc-500">Ingresa el importe en los medios que usarás y deja los demás
+                    vacíos o en cero. Por ejemplo: S/ 30 en efectivo y S/ 10 en Plin.</p>
+            @endif
+            <div class="space-y-4">
+                @forelse($pagosVista as $clave=>$pago)
+                    @php($medio = $medios->firstWhere('id', (int) $pago['medioId']))
+                    @php($requiereOperacion = $medio && ($medio->requiere_referencia || in_array(mb_strtolower($medio->codigo), ['yape', 'plin'], true)))
+                    <div wire:key="pago-{{ $clave }}"
+                        class="cobro-pago space-y-3 border border-zinc-200 p-3 dark:border-zinc-700">
+                        <div class="flex items-center justify-between gap-2">
+                            @if ($pagoMixto)
+                                <h3 class="text-sm font-semibold">{{ $medio?->nombre ?? 'Medio no disponible' }}</h3>
+                                <flux:button variant="ghost" size="sm" icon="x-mark"
+                                    wire:click="limpiarPago('{{ $clave }}')"
+                                aria-label="Limpiar importe de {{ $medio?->nombre }}" />@else<div class="flex-1">
+                                    <flux:select wire:model.live="pagos.{{ $clave }}.medioId"
+                                        label="Medio de pago">
+                                        <option value="">Seleccionar medio</option>
+                                        @foreach ($medios as $opcion)
+                                            <option value="{{ $opcion->id }}">{{ $opcion->nombre }}</option>
+                                        @endforeach
+                                    </flux:select>
+                                </div>
+                                <flux:button variant="ghost" size="sm" icon="trash"
+                                    wire:click="removePayment('{{ $clave }}')"
+                                    aria-label="Quitar medio de pago" />
+                            @endif
+                        </div>
+                        <div class="grid gap-3 sm:grid-cols-2">
+                            <flux:input wire:model.live.debounce.300ms="pagos.{{ $clave }}.monto"
+                                label="Importe aplicado (S/)" inputmode="decimal" placeholder="0.00" />
+                            @if ($medio?->afecta_efectivo)
+                                <flux:input wire:model.live.debounce.300ms="pagos.{{ $clave }}.entregado"
+                                    label="Efectivo recibido (S/)" inputmode="decimal"
+                                    placeholder="Igual a lo aplicado" />
+                            @endif
+                        </div>
+                        <flux:button size="sm" variant="ghost"
+                            wire:click="completarPago('{{ $clave }}')">Completar saldo en este medio
+                        </flux:button>
+                        @if (
+                            $medio &&
+                                (!$medio->afecta_efectivo || $requiereOperacion) &&
+                                (!$pagoMixto || ($pago['monto'] !== '' && !preg_match('/^0+(?:[.,]0{1,2})?$/', $pago['monto']))))
+                            <flux:input wire:model="pagos.{{ $clave }}.referencia"
+                                label="{{ $requiereOperacion ? 'Número de operación' : 'Número de operación (opcional)' }}"
+                                maxlength="150" :required="$requiereOperacion" />
+                        @endif
+                        @if ($medio?->afecta_efectivo)
+                            <div>
+                                <p class="mb-2 text-xs text-zinc-500">Efectivo rápido · monto recibido</p>
+                                <div class="flex flex-wrap gap-1"><button type="button"
+                                        class="cobro-rapido cobro-exacto"
+                                        wire:click="efectivoRapido('{{ $clave }}','exacto')">Exacto</button>
+                                    @foreach (['10', '20', '50', '100', '200'] as $billete)
+                                        <button type="button" class="cobro-rapido"
+                                            wire:click="efectivoRapido('{{ $clave }}','{{ $billete }}')">S/
+                                            {{ $billete }}</button>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+                    </div>
+                @empty<p class="text-sm text-zinc-500">Selecciona un medio de pago. Si el total es cero, registra
+                        el cobro sin pagos.</p>
+                @endforelse
+            </div>
+            <div class="cobro-balance grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
+                <div>
+                    <p>Total a cobrar</p><strong>S/ {{ $total }}</strong>
+                </div>
+                <div>
+                    <p>Aplicado</p><strong>S/ {{ $aplicado }}</strong>
+                </div>
+                <div>
+                    <p>Falta aplicar</p><strong>S/ {{ bcsub($total, $aplicado, 2) }}</strong>
+                </div>
+                <div>
+                    <p>Vuelto</p><strong class="text-green-700 dark:text-green-300" data-cobro-vuelto>S/
+                        {{ $vuelto }}</strong>
+                </div>
+            </div>
+            <p class="text-xs text-zinc-500">Solo el efectivo genera vuelto. Efectivo aplicado a caja: S/
+                {{ $efectivo }}. Cada medio se registra una vez.</p>
+        </section>
+    </div>
+    <footer class="cobro-footer flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <p class="text-xs text-zinc-500">Cobro de los productos seleccionados</p><strong class="text-xl">S/
+                {{ $total }}</strong>
+        </div>
+        <div class="flex gap-2">
+            <flux:button href="{{ route('pos.pedido', $pedido) }}" wire:navigate>Volver</flux:button>
+            @if (!in_array($pedido->estado->value, ['cerrado', 'anulado'], true))
+                <flux:button class="cobro-aceptar" variant="primary" icon="banknotes" wire:click="review"
+                    wire:loading.attr="disabled" :disabled="$turnos->isEmpty()">Revisar y cobrar</flux:button>
+            @endif
+        </div>
+    </footer>
+    <flux:modal wire:model="showChargeReview" class="w-full md:max-w-2xl">
+        <div class="space-y-5">
+            <flux:heading size="lg">Registrar cobro</flux:heading>
+            @if ($errors->any())
+                <p role="alert" class="border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    {{ $errors->first() }}</p>
+            @endif
+            <div class="grid grid-cols-2 gap-3 text-sm">
+                <p>Total<br><strong>S/ {{ $revision['total'] ?? $total }}</strong></p>
+                <p>Vuelto<br><strong>S/ {{ $revision['vuelto'] ?? $vuelto }}</strong></p>
+                <p>Efectivo aplicado: S/ {{ $revision['efectivo'] ?? '0.00' }}</p>
+                <p>Digital: S/ {{ $revision['digital'] ?? '0.00' }}</p>
+            </div>
+            <flux:select wire:model.live="turnoId" label="Caja de cobro e impresión" required>
+                <option value="">Seleccionar caja abierta</option>
+                @foreach ($turnos as $turno)
+                    <option value="{{ $turno->id }}">{{ $turno->caja->nombre }} ·
+                        {{ $turno->caja->impresora?->nombre ?? 'Sin impresora configurada' }}</option>
+                @endforeach
+            </flux:select>
+            <p class="text-xs text-zinc-500">Esta caja recibirá el efectivo y usará su impresora para el documento.
+                Ambas opciones de cobro imprimen.</p>
+            @if (!$puedeLiberar)
+                <p class="text-sm text-amber-700">Quedarán consumos o delivery por cobrar. Usa Cobrar y liberar
+                después.</p>@else<p class="text-xs text-zinc-500">Liberar ahora confirma también la entrega de los
+                    consumos pendientes y descuenta su stock. Liberar después mantiene la mesa ocupada para pagos
+                    anticipados.</p>
+            @endif
+            <div class="flex flex-wrap justify-end gap-2">
+                <flux:button wire:click="$set('showChargeReview',false)" wire:loading.attr="disabled"
+                    wire:target="confirmCharge">Cancelar</flux:button>
+                @can('pedidos.editar')@can('entregas.confirmar')@if (!$pedido->mesa_id || auth()->user()->can('mesas.liberar'))
+                    <flux:button variant="primary" wire:click="confirmCharge(true)" wire:loading.attr="disabled"
+                        wire:target="confirmCharge" :disabled="!$puedeLiberar">Cobrar y liberar mesa</flux:button>
+                @endif @endcan @endcan
+                <flux:button class="cobro-aceptar" variant="primary" wire:click="confirmCharge(false)"
+                    wire:loading.attr="disabled" wire:target="confirmCharge">
+                    Cobrar y liberar después</flux:button>
+            </div>
+        </div>
+    </flux:modal>
+    @can('clientes.crear')<flux:modal wire:model="showNewClient" class="w-full md:max-w-lg">
+            <form wire:submit="guardarCliente" class="space-y-4">
+                <flux:heading size="lg">Crear cliente</flux:heading>
+                @if ($errors->any())
+                    <p role="alert" class="text-sm text-red-700">{{ $errors->first() }}</p>
+                @endif
+                <flux:select wire:model.live="nuevoTipoId" label="Tipo de documento" required>
+                    <option value="">Seleccionar</option>
+                    @foreach ($tiposCliente as $tipo)
+                        <option value="{{ $tipo->id }}">{{ $tipo->nombre }}</option>
+                    @endforeach
+                </flux:select>
+                <flux:input wire:model="nuevoNumero" label="DNI o RUC" maxlength="11" required />
+                <flux:input wire:model="nuevoNombre" label="Nombres y apellidos / razón social" maxlength="200"
+                    required />
+                <flux:input wire:model="nuevoDireccion" label="Dirección (obligatoria para RUC)" maxlength="250" />
+                <div class="flex justify-end gap-2">
+                    <flux:button type="button" wire:click="$set('showNewClient',false)">Cancelar</flux:button>
+                    <flux:button variant="primary" type="submit" wire:loading.attr="disabled">Guardar y seleccionar
+                    </flux:button>
+                </div>
+            </form>
+    </flux:modal>@endcan
+</div>
